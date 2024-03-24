@@ -1,0 +1,15 @@
+[tool.poetry]
+name = "dune-tension"
+version = "0.1.0"
+description = ""
+authors = ["typhoon <benjamin.oye@gmail.com>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.11"
+pvrecorder = "^1.2.2"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
