@@ -7,9 +7,27 @@ import matplotlib.pyplot as plt
 import tensorflow as tf
 from maestro import Controller
 from time import sleep
+import json
 
+SETTINGS_FILE = "settings.json"
 # Suppress TensorFlow messages except for errors
 tf.get_logger().setLevel('ERROR')
+
+def load_settings():
+    try:
+        with open(SETTINGS_FILE, 'r') as file:
+            return json.load(file)
+    except FileNotFoundError:
+        return {}
+
+def save_settings(settings):
+    with open(SETTINGS_FILE, 'w') as file:
+        json.dump(settings, file)
+
+def update_settings(key, value):
+    settings = load_settings()
+    settings[key] = value
+    save_settings(settings)
 
 def list_audio_devices():
     devices = sd.query_devices()
@@ -57,7 +75,6 @@ def move_servo_to_wire(wire_number):
     # Insert code here to move the servo to the specified wire number
     # Example:
     pass
-
 
 def pluck_string(controller: Controller):
     """
@@ -118,12 +135,18 @@ def plot_waveform_and_fft(audio_signal, sr, fundamental_freq, fundamental_confid
     plt.show(block=False)
 
 if __name__ == "__main__":
+    settings = load_settings()
+
+    # List available audio devices and allow the user to select one
+    devices = list_audio_devices()
+    selected_device = settings.get('selected_device', 0)
+    recording_duration = settings.get('recording_duration', 0.5)
+    current_wire_number = settings.get('current_wire_number', 0)  # Get current wire number from settings
+    noiseThreshold = 0.01  # Adjust the threshold as needed
+    
     # List available audio devices and allow the user to select one
     devices = list_audio_devices()
     selected_device = devices[0]  # Default to the first sound device
-    recording_duration = .5
-    current_wire_number = 0  # Initialize current_wire_number
-    threshold = 0.01  # Adjust the threshold as needed
 
 
     # Generate CSV filename with timestamp
@@ -133,6 +156,8 @@ if __name__ == "__main__":
     # Initialize the maestro servo controller
     # maestro6 = Controller()
 
+    print(f"\nStarting with wire number {current_wire_number} and device {selected_device['name']}")
+
     while True:
         print("\nPress 'd' to display available sound devices, 'r' to pluck the string and record audio, 'w' to move servo to a wire number, '+' or '-' to move up or down, 'm' to set recording duration, 'q' to quit.")
         key = input()
@@ -140,13 +165,16 @@ if __name__ == "__main__":
         if key == 'd':  # 'd' key pressed
             devices = list_audio_devices()
             selected_device = select_audio_device(devices)
+            update_settings('selected_device', selected_device)
             print(f"Selected audio device: {selected_device['name']}")
+
         elif key == 'r':  # 'r' key pressed
             # pluck_string(maestro6)
-            print("Recording...")
+            print("\nListening...")
             while True:
                 audio_signal = record_audio(int(selected_device['default_samplerate']), .05)
-                if detect_sound(audio_signal, threshold):
+                if detect_sound(audio_signal, noiseThreshold):
+                    print("Recording...")
                     audio_signal = record_audio(int(selected_device['default_samplerate']), recording_duration)
                     break  # Start recording when sound is detected
             audio_signal = record_audio(int(selected_device['default_samplerate']), recording_duration)
@@ -160,25 +188,35 @@ if __name__ == "__main__":
             elif log_prompt.lower() == 'n':
                 print("Frequency not logged.")
             plt.close()
+
         elif key == 'w':  # 'w' key pressed
             wire_number = int(input("Enter the wire number: "))
             move_servo_to_wire(wire_number)
             current_wire_number = wire_number
+            update_settings('current_wire_number', current_wire_number)  # Update current wire number in settings
             print(f"Robot moved to wire number {wire_number}.")
+
         elif key == '=':  # 'u' key pressed
             move_servo_to_wire(current_wire_number+1)
             current_wire_number = current_wire_number+1
+            update_settings('current_wire_number', current_wire_number)  # Update current wire number in settings
             print(f"Robot moved up one wire to {current_wire_number}.")
+
         elif key == '-':  # 'd' key pressed
             move_servo_to_wire(current_wire_number-1)
             current_wire_number = current_wire_number-1
             print(f"Robot moved up one wire to {current_wire_number}.")
+
         elif key == 'm':  # 'm' key pressed
             duration = set_recording_duration()
             if duration is not None:
                 recording_duration = duration
+
         elif key == 'q':  # 'q' key pressed
             print("Quitting...")
             break
+
         else:
             print("Invalid input. Press 'd', 'r', 'w', 'm', or 'q'.")
+
+#save_settings(settings)
