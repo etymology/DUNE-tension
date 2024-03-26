@@ -1,1 +1,3 @@
-DUNE-tension/dune_tension/frequency_log_*
+frequency_log_*
+__pycache__/
+.mypy_cache/

@@ -5,6 +5,8 @@ import csv
 from datetime import datetime
 import matplotlib.pyplot as plt
 import tensorflow as tf
+from maestro import Controller
+from time import sleep
 
 # Suppress TensorFlow messages except for errors
 tf.get_logger().setLevel('ERROR')
@@ -42,11 +44,13 @@ def get_pitch_from_audio(signal, sr):
     return fundamental_freq, fundamental_confidence
 
 def record_audio(sr, duration):  
-    print("Recording...")
     num_samples = int(duration * sr)
     audio = sd.rec(num_samples, samplerate=sr, channels=1, blocking=True)
-    print("Recording finished.")
     return audio.flatten()
+
+def detect_sound(audio_signal, threshold):
+    # Detect sound based on energy threshold
+    return np.max(np.abs(audio_signal)) >= threshold
 
 def move_servo_to_wire(wire_number):
     print(f"Moving servo to wire number {wire_number}...")
@@ -54,11 +58,16 @@ def move_servo_to_wire(wire_number):
     # Example:
     pass
 
-def pluck_string():
+
+def pluck_string(controller: Controller):
+    """
+    controller: an instance of maestro.Controller
+    """
     print("Plucking the string...")
-    # Insert code here to pluck the string using the servo
-    # controller = Controller()
-    # controller.set_target(0, 6000)  # Adjust channel number and target position as needed
+    controller.setSpeed(chan=0, speed=60)
+    controller.setAccel(chan=0, accel=0)
+    while controller.isMoving(chan=0):
+        sleep(0.1)
     pass
 
 def log_frequency_and_wire_number(frequency, confidence, wire_number, filename):
@@ -76,7 +85,7 @@ def set_recording_duration():
         print("Invalid input:", e)
         return None
 
-def plot_waveform_and_fft(audio_signal, sr):
+def plot_waveform_and_fft(audio_signal, sr, fundamental_freq, fundamental_confidence):
     # Plot waveform and FFT
     plt.figure(figsize=(10, 6))
     
@@ -92,10 +101,18 @@ def plot_waveform_and_fft(audio_signal, sr):
     fft = np.abs(np.fft.fft(audio_signal))
     freqs = np.fft.fftfreq(len(audio_signal), 1/sr)
     plt.plot(freqs[:len(freqs)//2], fft[:len(fft)//2])
+    
+    # Add vertical line at the fundamental frequency
+    plt.axvline(fundamental_freq, color='r', linestyle='--', label='Fundamental Frequency')
+    
+    # Add confidence as a caption
+    plt.text(0.95 * fundamental_freq, fft.max(), f'Confidence: {fundamental_confidence:.2f}', color='r', fontsize=10, verticalalignment='bottom', horizontalalignment='right')
+    
     plt.title('FFT')
     plt.xlabel('Frequency (Hz)')
     plt.ylabel('Amplitude')
-    plt.xlim(0, 2000)
+    plt.xlim(0, 3000)
+    plt.legend()
     
     plt.tight_layout()
     plt.show(block=False)
@@ -106,10 +123,15 @@ if __name__ == "__main__":
     selected_device = devices[0]  # Default to the first sound device
     recording_duration = .5
     current_wire_number = 0  # Initialize current_wire_number
+    threshold = 0.01  # Adjust the threshold as needed
+
 
     # Generate CSV filename with timestamp
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     csv_filename = f"frequency_log_{timestamp}.csv"
+
+    # Initialize the maestro servo controller
+    # maestro6 = Controller()
 
     while True:
         print("\nPress 'd' to display available sound devices, 'r' to pluck the string and record audio, 'w' to move servo to a wire number, '+' or '-' to move up or down, 'm' to set recording duration, 'q' to quit.")
@@ -120,11 +142,17 @@ if __name__ == "__main__":
             selected_device = select_audio_device(devices)
             print(f"Selected audio device: {selected_device['name']}")
         elif key == 'r':  # 'r' key pressed
-            pluck_string()
+            # pluck_string(maestro6)
+            print("Recording...")
+            while True:
+                audio_signal = record_audio(int(selected_device['default_samplerate']), .05)
+                if detect_sound(audio_signal, threshold):
+                    audio_signal = record_audio(int(selected_device['default_samplerate']), recording_duration)
+                    break  # Start recording when sound is detected
             audio_signal = record_audio(int(selected_device['default_samplerate']), recording_duration)
             fundamental_freq, fundamental_confidence = get_pitch_from_audio(audio_signal, int(selected_device['default_samplerate']))
             print(f"Fundamental Frequency: {fundamental_freq} Hz, Confidence: {fundamental_confidence}")
-            plot_waveform_and_fft(audio_signal, int(selected_device['default_samplerate']))
+            plot_waveform_and_fft(audio_signal, int(selected_device['default_samplerate']), fundamental_freq, fundamental_confidence)
             log_prompt = input(f"Do you want to log the frequency? [wire number {current_wire_number}](y/n): ")
             if log_prompt.lower() == 'y':
                 log_frequency_and_wire_number(fundamental_freq, fundamental_confidence, current_wire_number, csv_filename)
