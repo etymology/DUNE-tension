@@ -1,1 +1,0 @@
-{"current_wire_number": 400, "selected_device": {"name": "sof-hda-dsp: - (hw:0,0)", "index": 0, "hostapi": 0, "max_input_channels": 2, "max_output_channels": 2, "default_low_input_latency": 0.005333333333333333, "default_low_output_latency": 0.005333333333333333, "default_high_input_latency": 0.032, "default_high_output_latency": 0.032, "default_samplerate": 48000.0}}

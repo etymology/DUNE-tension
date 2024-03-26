@@ -1,3 +1,4 @@
 frequency_log_*
 __pycache__/
 .mypy_cache/
+settings.json

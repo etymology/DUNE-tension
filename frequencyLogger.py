@@ -15,7 +15,7 @@ tf.get_logger().setLevel('ERROR')
 
 def load_settings():
     try:
-        with open(SETTINGS_FILE, 'r') as file:
+        with open(SETTINGS_FILE, 'r') as ffile:
             return json.load(file)
     except FileNotFoundError:
         return {}
