@@ -68,7 +68,7 @@ def record_audio(sr, duration):
 
 def detect_sound(audio_signal, threshold):
     # Detect sound based on energy threshold
-    return np.max(np.abs(audio_signal)) >= threshold
+    return np.average(np.abs(audio_signal)) >= threshold
 
 def move_servo_to_wire(wire_number):
     print(f"Moving servo to wire number {wire_number}...")
@@ -137,24 +137,19 @@ def plot_waveform_and_fft(audio_signal, sr, fundamental_freq, fundamental_confid
 if __name__ == "__main__":
     settings = load_settings()
 
-    # List available audio devices and allow the user to select one
+    # Load the most recent audio device and wire number
     devices = list_audio_devices()
     selected_device = settings.get('selected_device', 0)
     recording_duration = settings.get('recording_duration', 0.5)
     current_wire_number = settings.get('current_wire_number', 0)  # Get current wire number from settings
-    noiseThreshold = 0.01  # Adjust the threshold as needed
+    noiseThreshold = 0.05  # Adjust the threshold as needed
     
-    # List available audio devices and allow the user to select one
-    devices = list_audio_devices()
-    selected_device = devices[0]  # Default to the first sound device
-
-
     # Generate CSV filename with timestamp
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     csv_filename = f"frequency_log_{timestamp}.csv"
 
     # Initialize the maestro servo controller
-    # maestro6 = Controller()
+    maestro6 = Controller()
 
     print(f"\nStarting with wire number {current_wire_number} and device {selected_device['name']}")
 
@@ -169,10 +164,10 @@ if __name__ == "__main__":
             print(f"Selected audio device: {selected_device['name']}")
 
         elif key == 'r':  # 'r' key pressed
-            # pluck_string(maestro6)
+            maestro6.runScriptSub(0) #move zip tie down
             print("\nListening...")
             while True:
-                audio_signal = record_audio(int(selected_device['default_samplerate']), .05)
+                audio_signal = record_audio(int(selected_device['default_samplerate']), .1)
                 if detect_sound(audio_signal, noiseThreshold):
                     print("Recording...")
                     audio_signal = record_audio(int(selected_device['default_samplerate']), recording_duration)
@@ -214,6 +209,7 @@ if __name__ == "__main__":
 
         elif key == 'q':  # 'q' key pressed
             print("Quitting...")
+            maestro6.close()
             break
 
         else:

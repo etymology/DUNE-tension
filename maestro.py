@@ -1,5 +1,6 @@
 import serial
 from sys import version_info
+from time import sleep
 
 PY2 = version_info[0] == 2   #Running Python 2.x?
 
@@ -28,6 +29,7 @@ class Controller:
     # assumes.  If two or more controllers are connected to different serial
     # ports, or you are using a Windows OS, you can provide the tty port.  For
     # example, '/dev/ttyACM2' or for Windows, something like 'COM3'.
+    
     def __init__(self,ttyStr='/dev/ttyACM0',device=0x0c):
         # Open the command port
         self.usb = serial.Serial(ttyStr)
@@ -167,3 +169,14 @@ class Controller:
         cmd = chr(0x24)
         self.sendCmd(cmd)
 
+
+if __name__ == "__main__":
+    maestro = Controller()
+    while True:
+
+        key = input()
+        if key == "":
+            maestro.runScriptSub(0)
+        if key == "q":
+            maestro.close()
+            break
