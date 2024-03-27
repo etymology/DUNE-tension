@@ -55,7 +55,7 @@ def get_pitch_from_audio(signal, sr):
     time, frequency, confidence, _ = crepe.predict(signal_np, sr, viterbi=False)
 
     # Find the fundamental frequency with the highest confidence
-    max_confidence_index = np.argmax(confidence)d
+    max_confidence_index = np.argmax(confidence)
     fundamental_freq = frequency[max_confidence_index]
     fundamental_confidence = confidence[max_confidence_index]
 
