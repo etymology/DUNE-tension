@@ -55,7 +55,7 @@ def get_pitch_from_audio(signal, sr):
     time, frequency, confidence, _ = crepe.predict(signal_np, sr, viterbi=False)
 
     # Find the fundamental frequency with the highest confidence
-    max_confidence_index = np.argmax(confidence)
+    max_confidence_index = np.argmax(confidence)d
     fundamental_freq = frequency[max_confidence_index]
     fundamental_confidence = confidence[max_confidence_index]
 
@@ -80,11 +80,7 @@ def pluck_string(controller: Controller):
     """
     controller: an instance of maestro.Controller
     """
-    print("Plucking the string...")
-    controller.setSpeed(chan=0, speed=60)
-    controller.setAccel(chan=0, accel=0)
-    while controller.isMoving(chan=0):
-        sleep(0.1)
+    controller.runScriptSub(0) #move zip tie down
     pass
 
 def log_frequency_and_wire_number(frequency, confidence, wire_number, filename):
@@ -164,7 +160,7 @@ if __name__ == "__main__":
             print(f"Selected audio device: {selected_device['name']}")
 
         elif key == 'r':  # 'r' key pressed
-            maestro6.runScriptSub(0) #move zip tie down
+            pluck_string(maestro6)
             print("\nListening...")
             while True:
                 audio_signal = record_audio(int(selected_device['default_samplerate']), .1)
