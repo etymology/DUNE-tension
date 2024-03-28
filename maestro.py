@@ -32,7 +32,10 @@ class Controller:
     
     def __init__(self,ttyStr='/dev/ttyACM0',device=0x0c):
         # Open the command port
-        self.usb = serial.Serial(ttyStr)
+        try:
+            self.usb = serial.Serial(ttyStr)
+        except:
+            print("\nWarning: no servo controller found!!!")
         # Command lead-in and device number are sent for each Pololu serial command.
         self.PololuCmd = chr(0xaa) + chr(device)
         # Track target position for each servo. The function isMoving() will

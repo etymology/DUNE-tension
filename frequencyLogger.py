@@ -8,6 +8,9 @@ import tensorflow as tf
 from maestro import Controller
 from time import sleep
 import json
+import sys
+import tty
+import termios
 
 SETTINGS_FILE = "settings.json"
 # Suppress TensorFlow messages except for errors
@@ -80,7 +83,10 @@ def pluck_string(controller: Controller):
     """
     controller: an instance of maestro.Controller
     """
-    controller.runScriptSub(0) #move zip tie down
+    try:
+        controller.runScriptSub(0) #move zip tie down
+    except:
+        print("couldn't move servo")
     pass
 
 def log_frequency_and_wire_number(frequency, confidence, wire_number, filename):
@@ -130,6 +136,19 @@ def plot_waveform_and_fft(audio_signal, sr, fundamental_freq, fundamental_confid
     plt.tight_layout()
     plt.show(block=False)
 
+def getch():
+    """
+    Get a single character from the terminal without requiring the user to press Enter.
+    """
+    fd = sys.stdin.fileno()
+    old_settings = termios.tcgetattr(fd)
+    try:
+        tty.setraw(sys.stdin.fileno())
+        char = sys.stdin.read(1)
+    finally:
+        termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+    return char
+
 if __name__ == "__main__":
     settings = load_settings()
 
@@ -151,7 +170,7 @@ if __name__ == "__main__":
 
     while True:
         print("\nPress 'd' to display available sound devices, 'r' to pluck the string and record audio, 'w' to move servo to a wire number, '+' or '-' to move up or down, 'm' to set recording duration, 'q' to quit.")
-        key = input()
+        key = getch().lower()
 
         if key == 'd':  # 'd' key pressed
             devices = list_audio_devices()
@@ -161,10 +180,11 @@ if __name__ == "__main__":
 
         elif key == 'r':  # 'r' key pressed
             pluck_string(maestro6)
-            print("\nListening...")
+            print("\nWaiting for audio... (press r to override)")
             while True:
+                key = getch().lower()
                 audio_signal = record_audio(int(selected_device['default_samplerate']), .1)
-                if detect_sound(audio_signal, noiseThreshold):
+                if detect_sound(audio_signal, noiseThreshold) or key == "r":
                     print("Recording...")
                     audio_signal = record_audio(int(selected_device['default_samplerate']), recording_duration)
                     break  # Start recording when sound is detected
