@@ -48,7 +48,6 @@ def make_config(APAstr):
             calwires.append(calwire)
 
         if layer == "X":
-            # delx, dely, minwirenum, maxwirenum
             layer_dict = make_config_comp(calx[0], caly[0], calwires[0], 0, -4.79166667, 1, 480)
         elif layer == "V":
             # Zone 1
@@ -70,6 +69,25 @@ def make_config(APAstr):
             Vz5 = Vz5_p1 | Vz5_p2
 
             layer_dict = Vz1 | Vz2 | Vz4 | Vz5
+
+        elif layer == "U":
+            # Zone 1
+            Uz1 = make_config_comp(calx[0], caly[0], calwires[0], 0.0, 5.75, 150, 401)
+
+            # Zone 2
+            Uz2 = make_config_comp(2790, 2081.6, 552, 0.0, -5.75, 400, 551)
+
+            # Zone 4
+            Uz4 = make_config_comp(5150, 392.7, 553, 0.0, 5.75, 553, 751)
+
+            # Zone 5
+            Uz5 = make_config_comp(6300, 2033.8, 982, 0, 5.75, 752, 982)
+
+            layer_dict = Uz1 | Uz2 | Uz4 | Uz5
+
+        elif layer == "G":
+            layer_dict = make_config_comp(calx[0], caly[0], calwires[0], 0, -4.79166667, 1, 481)
+
         apa_dict[layer] = layer_dict
         layer = input("Enter layer or quit (X, V, U, G, q): ")
 
@@ -273,7 +291,7 @@ def manual_g_code(cmd):
 if __name__ == "__main__":
     if not os.path.isfile("Wood_cfg.json"):
         make_config("Wood")
-    print(find_wire_pos(300, "V"))
+    print(find_wire_pos(242, "U"))
 #    manual_g_code("X2112 Y987.8")
 #    test = laser("V", 400)
 #    print(test.pos_x)
