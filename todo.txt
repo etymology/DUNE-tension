@@ -1,0 +1,32 @@
+is moving
+increment
+reading position
+needs to calculate safe path based on where it is
+winder class with pos, velocity, wire number
+optional arguments for moving to particular position
+excel sheet tolerance calculation
+
+go to wire n instead
+have a look up table and then find safe path
+
+winder class with:
+  position
+  velocity
+  
+  move y: specific case of move
+  move x: specific case of move
+  is moving
+
+to do:
+constant updating of position
+expand outside zone 1
+expand outside of v layer
+optional x command
+
+Questions:
+-Zone 1 rhs? yes, zone 1 always closest to head
+-no wire because US_APA_1 not loaded?
+    wire number should just be a state
+    wire num doesnt readout unless you have apa and layer loaded, we dont want to require this
+-what is the "tolerance" on being on a wire?
+    doesnt have tolerance, just based on stepping through wires
