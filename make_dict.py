@@ -22,7 +22,6 @@ for sheetind in range(len(xlsx.sheet_names)):
     for i in range(len(Wire)):
         gcode.append(str(Xlist[i][0])+" "+str(Ylist[i][0]))
 
-
     wiredict = {Wire[i]: gcode[i] for i in range(len(Wire))}
-    with open(sheetstr+".json", "w") as outfile: 
+    with open(sheetstr+".json", "w") as outfile:
         json.dump(wiredict, outfile)
