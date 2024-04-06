@@ -1,6 +1,5 @@
 import serial
 from sys import version_info
-from time import sleep
 
 PY2 = version_info[0] == 2  # Running Python 2.x?
 
@@ -36,7 +35,7 @@ class Controller:
         # Open the command port
         try:
             self.usb = serial.Serial(ttyStr)
-        except:
+        except Exception:
             print("\nWarning: no servo controller found!!!")
         # Command lead-in and device number are sent for each Pololu serial command.
         self.PololuCmd = chr(0xaa) + chr(device)
@@ -144,10 +143,7 @@ class Controller:
     # channel, then the target can never be reached, so it will appear to always be
     # moving to the target.
     def isMoving(self, chan):
-        if self.Targets[chan] > 0:
-            if self.getPosition(chan) != self.Targets[chan]:
-                return True
-        return False
+        return self.Targets[chan] > 0 and self.getPosition(chan) != self.Targets[chan]
 
     # Have all servo outputs reached their targets? This is useful only if Speed and/or
     # Acceleration have been set on one or more of the channels. Returns True or False.
@@ -155,10 +151,7 @@ class Controller:
     def getMovingState(self):
         cmd = chr(0x13)
         self.sendCmd(cmd)
-        if self.usb.read() == chr(0):
-            return False
-        else:
-            return True
+        return self.usb.read() != chr(0)
 
     # Run a Maestro Script subroutine in the currently active script. Scripts can
     # have multiple subroutines, which get numbered sequentially from 0 on up. Code your

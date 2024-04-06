@@ -2,44 +2,37 @@ import re
 import json
 import platform
 import time
-import pandas as pd
 import os.path
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from selenium.webdriver.common.keys import Keys
+
 
 def make_config_comp(calx, caly, calwire, delx, dely, minwirenum, maxwirenum):
-    currdict = {}
-
-    for wire in range(minwirenum, maxwirenum+1):
-        currdict[wire] = {}
-        currdict[wire]["X"] = calx+(wire-calwire)*delx
-        currdict[wire]["Y"] = caly+(wire-calwire)*dely
-    
-    return currdict
+    return {
+        wire: {
+            "X": calx + (wire - calwire) * delx,
+            "Y": caly + (wire - calwire) * dely,
+        }
+        for wire in range(minwirenum, maxwirenum + 1)
+    }
 
 def make_config(APAstr):
     layer = None
     apa_dict = {}
 
     layer = input("Enter layer or quit (X, V, U, G, q): ")
-    while(layer!="q"):
+    while (layer!="q"):
         apa_dict[layer]={}
 
-        calbool = 'y'
         calx = []
         caly = []
         calwires = []
         print("Enter new calibration point(s): ")
-   
-        if(layer == "U" or layer == "V"):
-           Ncalpts = 2
-        else:
-           Ncalpts = 1
- 
-        for n in range(Ncalpts):
+
+        Ncalpts = 2 if layer in ["U", "V"] else 1
+        for _ in range(Ncalpts):
             x = float(input("Enter calibration point X: "))
             y = float(input("Enter calibration point Y: "))
             calwire = int(input("Enter wire number of the calibration point: "))
@@ -91,18 +84,17 @@ def make_config(APAstr):
         apa_dict[layer] = layer_dict
         layer = input("Enter layer or quit (X, V, U, G, q): ")
 
-    out_file = open(APAstr+"_cfg.json", "w") 
-    json.dump(apa_dict, out_file, indent = 6) 
-    out_file.close() 
+    with open(f"{APAstr}_cfg.json", "w") as out_file:
+        json.dump(apa_dict, out_file, indent = 6) 
 
 def zone(x):
-    if(x < 2400.0):
+    if (x < 2400.0):
         return 1
-    elif(2400.0 < x and x < 5000.0):
+    elif 2400.0 < x < 5000.0:
         return 2
-    elif(5000.0 < x and x < 6500.0):
+    elif 5000.0 < x < 6500.0:
         return 4
-    elif(6500.0 < x and x < 7000.0):
+    elif 6500.0 < x < 7000.0:
         return 5
 
 def find_wire_pos(wirenum, layer):
@@ -120,7 +112,7 @@ def find_wire_pos(wirenum, layer):
 
 def find_wire_gcode(wirenum, layer):
     X, Y = find_wire_pos(wirenum, layer)
-    return "X"+str(int(round(X, 4)))+" Y"+str(int(round(Y, 4)))
+    return f"X{int(round(X, 4))} Y{int(round(Y, 4))}"
 
 # start with laser class
 class laser:
@@ -157,35 +149,29 @@ class laser:
         driver = webdriver.Chrome(options=chrome_options)
         driver.get(webpage_url)
         x_element = float(driver.execute_script(\
-                           'return document.querySelector("td#xPositionCell").textContent'\
-                          ).strip())
+                               'return document.querySelector("td#xPositionCell").textContent'\
+                              ).strip())
         xd_element = float(driver.execute_script(\
-                            'return document.querySelector("td#xDesiredPosition").textContent'\
-                          ).strip())
+                                'return document.querySelector("td#xDesiredPosition").textContent'\
+                              ).strip())
 
         y_element = float(driver.execute_script(\
-                           'return document.querySelector("td#yPositionCell").textContent'\
-                          ).strip())
+                               'return document.querySelector("td#yPositionCell").textContent'\
+                              ).strip())
         yd_element = float(driver.execute_script(\
-                           'return document.querySelector("td#yDesiredPosition").textContent'\
-                           ).strip())
+                               'return document.querySelector("td#yDesiredPosition").textContent'\
+                               ).strip())
 
-        if (not(x_element == xd_element) or not(y_element == yd_element)):
-            return True
-        else:
-            return False
+        return x_element != xd_element or y_element != yd_element
 
     def move_to_wire(self, des_wire):
-        ini_wire = self.wirenum
         cmd = find_wire_gcode(des_wire, "V")
-        if(self.layer == "U" or self.layer == "V"):
+        if self.layer in ["U", "V"]:
             ini_zone = zone(self.pos_x)
             des_zone = zone(find_wire_pos(des_wire, self.layer)[0])
-            if(ini_zone == des_zone):
-                manual_g_code(cmd)
-            else:
-                manual_g_code("X"+str(round(self.pos_x,4))+" Y190")
-                manual_g_code(cmd)
+            if ini_zone != des_zone:
+                manual_g_code(f"X{str(round(self.pos_x, 4))} Y190")
+            manual_g_code(cmd)
         else:
             manual_g_code(some_cmd)
         self.wirenum = des_wire
@@ -198,10 +184,7 @@ webpage_url = 'http://192.168.137.1/Desktop/index.html'
 
 
 def get_chrome_path():
-    if platform.system() == 'Linux':
-        return '/usr/bin/google-chrome'  # Path to the Chrome executable on Linux
-    else:
-        return None
+    return '/usr/bin/google-chrome' if platform.system() == 'Linux' else None
 
 
 # Get the path to the Chrome executable
@@ -228,15 +211,10 @@ def extract_wirenum():
         # Use JavaScript to find the element by its path
         element_text = driver.execute_script(
             'return document.querySelector("#gCodeTable > tbody > tr.gCodeCurrentLine > td").textContent')
-        # Use regular expression to extract the number after "WIRE"
-        wire_number_match = re.search(r'WIRE (\d+)', element_text)
-
-        if wire_number_match:
-            wire_number = wire_number_match.group(1)
-            return wire_number
-        else:
-            print("No wire number found in the line.")
-            return None
+        if wire_number_match := re.search(r'WIRE (\d+)', element_text):
+            return wire_number_match[1]
+        print("No wire number found in the line.")
+        return None
     finally:
         # Close the webdriver
         driver.quit()

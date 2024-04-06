@@ -6,7 +6,6 @@ from datetime import datetime
 import matplotlib.pyplot as plt
 import tensorflow as tf
 from maestro import Controller
-from time import sleep
 import json
 import sys
 import tty
@@ -86,9 +85,6 @@ def detect_sound(audio_signal, threshold):
 
 def move_servo_to_wire(wire_number):
     print(f"Moving servo to wire number {wire_number}...")
-    # Insert code here to move the servo to the specified wire number
-    # Example:
-    pass
 
 
 def pluck_string(controller: Controller):
@@ -97,9 +93,8 @@ def pluck_string(controller: Controller):
     """
     try:
         controller.runScriptSub(0)  # move zip tie down
-    except:
+    except Exception:
         print("couldn't move servo")
-    pass
 
 
 def log_frequency_and_wire_number(frequency, confidence, wire_number, filename):
