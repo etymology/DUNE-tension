@@ -1,8 +1,12 @@
 import re
+import sys
 import json
+import jsonpickle
 import platform
 import time
 import os.path
+from types import SimpleNamespace
+
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
@@ -65,12 +69,14 @@ def make_config(APAstr):
 
         elif layer == "U":
             # Zone 1
-            Uz1 = make_config_comp(calx[0], caly[0], calwires[0], 0.0, 5.75, 150, 401)
+            Uz1 = make_config_comp(calx[0], caly[0], calwires[0], 0.0, 5.75, 150, 399)
 
-            # Zone 2
-            Uz2 = make_config_comp(2790, 2081.6, 552, 0.0, -5.75, 400, 551)
+            # Zone 2, not super sure about the numbers here
+            # Uz2 = make_config_comp(2790, (Uz1[401]["Y"]-5.75)+(2790-Uz1[401]["X"])*5.75/8, 552, 0.0, -5.75, 402, 551)
+            Uz2 = make_config_comp(2790, 2081.8, 552, 0.0, -5.75, 400, 551)
 
-            # Zone 4
+            # Zone 4, not super sure about the numbers here
+            # Uz4 = make_config_comp(5150, Uz2[551]["Y"]+(5150-Uz2[402]["X"])*5.75/8, 553, 0.0, 5.75, 553, 751)
             Uz4 = make_config_comp(5150, 392.7, 553, 0.0, 5.75, 553, 751)
 
             # Zone 5
@@ -84,8 +90,8 @@ def make_config(APAstr):
         apa_dict[layer] = layer_dict
         layer = input("Enter layer or quit (X, V, U, G, q): ")
 
-    with open(f"{APAstr}_cfg.json", "w") as out_file:
-        json.dump(apa_dict, out_file, indent = 6) 
+    with open(f"{APAstr}.json", "w") as out_file:
+        json.dump(apa_dict, out_file) 
 
 def zone(x):
     if (x < 2400.0):
@@ -97,39 +103,50 @@ def zone(x):
     elif 6500.0 < x < 7000.0:
         return 5
 
-def find_wire_pos(wirenum, layer):
-    # hard coded for now, will fix
-    f = open('Wood_cfg.json')
- 
-    # returns JSON object as 
-    # a dictionary
-    wire_dict = json.load(f)
-
-    # must be fixed, only works for Z1 vlayer now
+def find_wire_pos(wirenum, layer, cfg):
+    wire_dict = load(cfg)
     x = wire_dict[layer][str(wirenum)]["X"]
     y = wire_dict[layer][str(wirenum)]["Y"]
     return x, y
 
-def find_wire_gcode(wirenum, layer):
-    X, Y = find_wire_pos(wirenum, layer)
+def find_wire_gcode(wirenum, layer, cfg):
+    X, Y = find_wire_pos(wirenum, layer, cfg)
     return f"X{int(round(X, 4))} Y{int(round(Y, 4))}"
 
-# start with laser class
-class laser:
-    def __init__(self, layer, wirenum):
-        # Position Components, note: these do not auto update yet
+def load(save_name):
+    with open(f'{save_name}.json', 'r') as infile:
+        obj = json.load(infile)
+    return obj
+
+# start with apa class
+class apa(object):
+    def __init__(self, layer, cfg="Untitled_cfg", ini_wirenum=None):
+        # cfg used to determine locations of wires
+        if not os.path.isfile(f"{cfg}.json"):
+            self.cfg = make_config(cfg)
+            print(cfg)
+        else:
+            self.cfg = load(cfg)
+
+        # Position Components, note: these do not auto update
         driver = webdriver.Chrome(options=chrome_options)
         driver.get(webpage_url)
         time.sleep(1.0)
         self.pos_x = float(driver.execute_script(\
-                           'return document.querySelector("td#xPositionCell").textContent'\
-                          ).strip())
+                               'return document.querySelector("td#xPositionCell").textContent'\
+                              ).strip())
         self.pos_y = float(driver.execute_script(\
-                           'return document.querySelector("td#yPositionCell").textContent'\
-                          ).strip())
+                               'return document.querySelector("td#yPositionCell").textContent'\
+                              ).strip())
 
-        self.wirenum = wirenum
+        self.wirenum = ini_wirenum
         self.layer = layer
+
+# save the entire state of the apa object
+    def save_obj(self, save_name):
+        jsonObj = jsonpickle.encode(self)
+        with open(f'{save_name}.json', 'w') as outfile:
+            json.dump(jsonObj, outfile)
 
 # set attributes
     def set_pos(self):
@@ -168,7 +185,7 @@ class laser:
         cmd = find_wire_gcode(des_wire, "V")
         if self.layer in ["U", "V"]:
             ini_zone = zone(self.pos_x)
-            des_zone = zone(find_wire_pos(des_wire, self.layer)[0])
+            des_zone = zone(find_wire_pos(des_wire, self.layer, self.cfg)[0])
             if ini_zone != des_zone:
                 manual_g_code(f"X{str(round(self.pos_x, 4))} Y190")
             manual_g_code(cmd)
@@ -176,6 +193,13 @@ class laser:
             manual_g_code(some_cmd)
         self.wirenum = des_wire
         self.set_pos()
+
+# save the entire state of the apa object
+def load_obj(save_name):
+    with open(save_name) as jsonfile:
+        json_dict = json.load(jsonfile)
+
+    return json.loads(json_dict, object_hook=lambda d: SimpleNamespace(**d))
 
 # URL of the webpage
 webpage_url = 'http://192.168.137.1/Desktop/index.html'
@@ -194,10 +218,9 @@ chrome_path = get_chrome_path()
 chrome_options = webdriver.ChromeOptions()
 if chrome_path:
     chrome_options.binary_location = chrome_path
-chrome_options.add_argument("--start-fullscreen")
-# chrome_options.add_argument("--headless")
-# Initialize the Chrome webdriver with options
-# driver = webdriver.Chrome(options=chrome_options)
+# chrome_options.add_argument("--start-fullscreen")
+chrome_options.add_argument("--headless")
+chrome_options.add_argument("--window-size=1920,1080")
 
 # Function to extract the wire number
 
@@ -256,10 +279,14 @@ def manual_g_code(cmd):
         jog_button.click()
 
         time.sleep(2)
-        
-        element_enter = driver.find_element(By.XPATH, '//*[@id="manualGCode"]')
+        driver.execute_script("document.body.style.zoom='75%'")   
+        time.sleep(2)
+        element_enter = driver.find_element(By.XPATH, '//*[@id="manualGCode"]');
         element_enter.send_keys(cmd)
 
+        time.sleep(2)
+
+        # sys.exit()
         # Find the execute button by its ID
         ex_button = WebDriverWait(driver, 5).until(
             EC.element_to_be_clickable(
@@ -276,20 +303,10 @@ def manual_g_code(cmd):
 
 
 if __name__ == "__main__":
-    if not os.path.isfile("Wood_cfg.json"):
-        make_config("Wood")
-    print(find_wire_pos(242, "U"))
-#    manual_g_code("X2112 Y987.8")
-#    test = laser("V", 400)
-#    print(test.pos_x)
-#    print(test.pos_y)
-#    print(test.wirenum)
-#    print(test.layer)
-#    print(zone(test.pos_x))
-#
-#    test.move_to_wire(399)
-#    print(test.pos_x)
-#    print(test.pos_y)
-#    print(test.wirenum)
-#    print(test.layer)
-#    print(zone(test.pos_x))
+    # test = apa("V" , "Wood_cfg")
+    # test.save_obj("test")
+
+    test = load_obj("test.json")
+    print(test.pos_x)
+    print(test.pos_y)
+
