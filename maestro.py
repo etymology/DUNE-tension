@@ -1,6 +1,5 @@
 import serial
 from sys import version_info
-from time import sleep
 
 PY2 = version_info[0] == 2   #Running Python 2.x?
 
@@ -32,7 +31,10 @@ class Controller:
     
     def __init__(self,ttyStr='/dev/ttyACM0',device=0x0c):
         # Open the command port
-        self.usb = serial.Serial(ttyStr)
+        try:
+            self.usb = serial.Serial(ttyStr)
+        except serial.SerialException:
+            print("Couldn't find Maestro!")
         # Command lead-in and device number are sent for each Pololu serial command.
         self.PololuCmd = chr(0xaa) + chr(device)
         # Track target position for each servo. The function isMoving() will
@@ -88,11 +90,7 @@ class Controller:
         # if Max is defined and Target is above, force to Max
         if self.Maxs[chan] > 0 and target > self.Maxs[chan]:
             target = self.Maxs[chan]
-        #    
-        lsb = target & 0x7f #7 bits for least significant byte
-        msb = (target >> 7) & 0x7f #shift 7 and take next 7 bits for msb
-        cmd = chr(0x04) + chr(chan) + chr(lsb) + chr(msb)
-        self.sendCmd(cmd)
+        self.send(self._make_command(target, 0x04, chan))
         # Record Target value
         self.Targets[chan] = target
         
@@ -102,20 +100,19 @@ class Controller:
     # of 1 will take 1 minute, and a speed of 60 would take 1 second.
     # Speed of 0 is unrestricted.
     def setSpeed(self, chan, speed):
-        lsb = speed & 0x7f #7 bits for least significant byte
-        msb = (speed >> 7) & 0x7f #shift 7 and take next 7 bits for msb
-        cmd = chr(0x07) + chr(chan) + chr(lsb) + chr(msb)
-        self.sendCmd(cmd)
+        self.sendCmd(self._make_command(speed, 0x07, chan))
 
     # Set acceleration of channel
     # This provide soft starts and finishes when servo moves to target position.
     # Valid values are from 0 to 255. 0=unrestricted, 1 is slowest start.
     # A value of 1 will take the servo about 3s to move between 1ms to 2ms range.
     def setAccel(self, chan, accel):
-        lsb = accel & 0x7f #7 bits for least significant byte
-        msb = (accel >> 7) & 0x7f #shift 7 and take next 7 bits for msb
-        cmd = chr(0x09) + chr(chan) + chr(lsb) + chr(msb)
-        self.sendCmd(cmd)
+        self.sendCmd(self._make_command(accel, 0x09, chan))
+
+    def _make_command(self, message, preface, chan):
+        lsb = message & 127
+        msb = message >> 7 & 127
+        return chr(preface) + chr(chan) + chr(lsb) + chr(msb)
     
     # Get the current position of the device on the specified channel
     # The result is returned in a measure of quarter-microseconds, which mirrors
@@ -139,10 +136,7 @@ class Controller:
     # channel, then the target can never be reached, so it will appear to always be
     # moving to the target.  
     def isMoving(self, chan):
-        if self.Targets[chan] > 0:
-            if self.getPosition(chan) != self.Targets[chan]:
-                return True
-        return False
+        return self.Targets[chan] > 0 and self.getPosition(chan) != self.Targets[chan]
     
     # Have all servo outputs reached their targets? This is useful only if Speed and/or
     # Acceleration have been set on one or more of the channels. Returns True or False.
@@ -150,10 +144,7 @@ class Controller:
     def getMovingState(self):
         cmd = chr(0x13)
         self.sendCmd(cmd)
-        if self.usb.read() == chr(0):
-            return False
-        else:
-            return True
+        return self.usb.read() != chr(0)
 
     # Run a Maestro Script subroutine in the currently active script. Scripts can
     # have multiple subroutines, which get numbered sequentially from 0 on up. Code your
