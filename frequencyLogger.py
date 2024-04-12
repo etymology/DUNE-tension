@@ -3,52 +3,49 @@ import crepe
 import numpy as np
 import csv
 from datetime import datetime
+from datetime import timedelta
 import matplotlib.pyplot as plt
 import tensorflow as tf
 from maestro import Controller
-import json
+from time import sleep
+from gCodeDriver import APA
 import sys
 import tty
 import termios
 
-SETTINGS_FILE = "settings.json"
 # Suppress TensorFlow messages except for errors
 tf.get_logger().setLevel('ERROR')
 
 
-def load_settings():
-    try:
-        with open(SETTINGS_FILE, 'r') as file:
-            return json.load(file)
-    except FileNotFoundError:
-        return {}
+class APA_frequencyTest(APA):
+    def __init__(self, layer, selected_device, recording_duration, cfg="Untitled_cfg", ini_wirenum=None):
+        current_apa.__init__(self, layer, cfg, ini_wirenum)
+        self.selected_device = selected_device
+        self.recording_duration = 0.0
+
+    def set_recording_duration(self):
+        try:
+            duration = float(input("Enter recording duration in seconds: "))
+            if duration <= 0:
+                raise ValueError(
+                    "Recording duration must be a positive number.")
+            self.recording_duration = duration
+        except ValueError as e:
+            print("Invalid input:", e)
 
 
-def save_settings(settings):
-    with open(SETTINGS_FILE, 'w') as file:
-        json.dump(settings, file)
-
-
-def update_settings(key, value):
-    settings = load_settings()
-    settings[key] = value
-    save_settings(settings)
-
-
-def list_audio_devices():
+def find_audio_devices():
     devices = sd.query_devices()
     print("Available audio devices:")
     for i, device in enumerate(devices):
         print(f"{i + 1}. {device['name']}")
-    return devices
 
-
-def select_audio_device(devices):
     while True:
         try:
             choice = int(
                 input("Enter the number of the audio device you want to use: "))
             if 1 <= choice <= len(devices):
+                print(devices[choice - 1])
                 return devices[choice - 1]
             else:
                 print("Invalid choice. Please enter a number within the range.")
@@ -80,11 +77,7 @@ def record_audio(sr, duration):
 
 def detect_sound(audio_signal, threshold):
     # Detect sound based on energy threshold
-    return np.average(np.abs(audio_signal)) >= threshold
-
-
-def move_servo_to_wire(wire_number):
-    print(f"Moving servo to wire number {wire_number}...")
+    return np.mean(audio_signal) >= threshold
 
 
 def pluck_string(controller: Controller):
@@ -101,17 +94,6 @@ def log_frequency_and_wire_number(frequency, confidence, wire_number, filename):
     with open(filename, mode='a', newline='') as file:
         writer = csv.writer(file)
         writer.writerow([wire_number, confidence, frequency])
-
-
-def set_recording_duration():
-    try:
-        duration = float(input("Enter recording duration in seconds: "))
-        if duration <= 0:
-            raise ValueError("Recording duration must be a positive number.")
-        return duration
-    except ValueError as e:
-        print("Invalid input:", e)
-        return None
 
 
 def plot_waveform_and_fft(audio_signal, sr, fundamental_freq, fundamental_confidence):
@@ -141,7 +123,7 @@ def plot_waveform_and_fft(audio_signal, sr, fundamental_freq, fundamental_confid
 
     plt.title('FFT')
     plt.xlabel('Frequency (Hz)')
-    plt.ylabel('Amplitude')
+    plt.ylabel('Magnitude')
     plt.xlim(0, 3000)
     plt.legend()
 
@@ -164,17 +146,8 @@ def getch():
 
 
 if __name__ == "__main__":
-    settings = load_settings()
-
-    # Load the most recent audio device and wire number
-    devices = list_audio_devices()
-    selected_device = settings.get('selected_device', 0)
-    recording_duration = settings.get('recording_duration', 0.5)
-    # Get current wire number from settings
-    current_wire_number = settings.get('current_wire_number', 0)
-    noiseThreshold = 0.05  # Adjust the threshold as needed
-
-    # Generate CSV filename with timestamp
+    current_apa = APA_frequencyTest("V", find_audio_devices(), 5.0, "Wood_cfg")
+    noiseThreshold = 0.01  # Adjust the threshold as needed
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     csv_filename = f"frequency_log_{timestamp}.csv"
 
@@ -182,72 +155,76 @@ if __name__ == "__main__":
     maestro6 = Controller()
 
     print(
-        f"\nStarting with wire number {current_wire_number} and device {selected_device['name']}")
+        f"\nStarting with wire number {current_apa.wirenum} and device {current_apa.selected_device['name']}")
 
     while True:
         print("\nPress 'd' to display available sound devices, 'r' to pluck the string and record audio, 'w' to move servo to a wire number, '+' or '-' to move up or down, 'm' to set recording duration, 'q' to quit.")
         key = getch().lower()
 
         if key == 'd':  # 'd' key pressed
-            devices = list_audio_devices()
-            selected_device = select_audio_device(devices)
-            update_settings('selected_device', selected_device)
-            print(f"Selected audio device: {selected_device['name']}")
+            current_apa.selected_device = find_audio_devices()
+            print(
+                f"Selected audio device: {current_apa.selected_device['name']}")
 
         elif key == 'r':  # 'r' key pressed
             pluck_string(maestro6)
             print("\nWaiting for audio... (press r to override)")
             while True:
-                key = getch().lower()
+                sleep(0.1)
                 audio_signal = record_audio(
-                    int(selected_device['default_samplerate']), .1)
-                if detect_sound(audio_signal, noiseThreshold) or key == "r":
+                    int(current_apa.selected_device['default_samplerate']), 0.1)
+
+                plt.title("trigger check")
+                plt.plot(audio_signal)
+                plt.show()
+
+                if detect_sound(audio_signal, noiseThreshold):
                     print("Recording...")
-                    audio_signal = record_audio(
-                        int(selected_device['default_samplerate']), recording_duration)
+                    audio_signal = record_audio(int(
+                        current_apa.selected_device['default_samplerate']), current_apa.recording_duration)
                     break  # Start recording when sound is detected
-            audio_signal = record_audio(
-                int(selected_device['default_samplerate']), recording_duration)
-            fundamental_freq, fundamental_confidence = get_pitch_from_audio(
-                audio_signal, int(selected_device['default_samplerate']))
-            print(
-                f"Fundamental Frequency: {fundamental_freq} Hz, Confidence: {fundamental_confidence}")
-            plot_waveform_and_fft(audio_signal, int(
-                selected_device['default_samplerate']), fundamental_freq, fundamental_confidence)
-            log_prompt = input(
-                f"Do you want to log the frequency? [wire number {current_wire_number}](y/n): ")
-            if log_prompt.lower() == 'y':
-                log_frequency_and_wire_number(
-                    fundamental_freq, fundamental_confidence, current_wire_number, csv_filename)
-                print("Frequency logged.")
-            elif log_prompt.lower() == 'n':
-                print("Frequency not logged.")
-            plt.close()
+                elif datetime.now() > start_time + timedelta(seconds=30):
+                    print("No sound detected. Quitting.")
+                    audio_signal = np.array([])
+                    break
+            print(audio_signal)
+
+            if (audio_signal.size > 0):
+                print("In side not eq none")
+                audio_signal = record_audio(int(
+                    current_apa.selected_device['default_samplerate']), current_apa.recording_duration)
+                fundamental_freq, fundamental_confidence = get_pitch_from_audio(
+                    audio_signal, int(current_apa.selected_device['default_samplerate']))
+                print(
+                    f"Fundamental Frequency: {fundamental_freq} Hz, Confidence: {fundamental_confidence}")
+                plot_waveform_and_fft(audio_signal, int(
+                    current_apa.selected_device['default_samplerate']), fundamental_freq, fundamental_confidence)
+                log_prompt = input(
+                    f"Do you want to log the frequency? [wire number {current_apa.wirenum}](y/n): ")
+                if log_prompt.lower() == 'y':
+                    log_frequency_and_wire_number(
+                        fundamental_freq, fundamental_confidence, current_wire_number, csv_filename)
+                    print("Frequency logged.")
+                elif log_prompt.lower() == 'n':
+                    print("Frequency not logged.")
+                plt.close()
 
         elif key == 'w':  # 'w' key pressed
             wire_number = int(input("Enter the wire number: "))
-            move_servo_to_wire(wire_number)
-            current_wire_number = wire_number
-            # Update current wire number in settings
-            update_settings('current_wire_number', current_wire_number)
-            print(f"Robot moved to wire number {wire_number}.")
+            current_apa.move_to_wire(wire_number)
+            print(f"Robot moved to wire number {current_apa.wirenum}.")
 
         elif key == '=':  # 'u' key pressed
-            move_servo_to_wire(current_wire_number+1)
-            current_wire_number = current_wire_number+1
-            # Update current wire number in settings
-            update_settings('current_wire_number', current_wire_number)
-            print(f"Robot moved up one wire to {current_wire_number}.")
+            # move_servo_to_wire(current_wire_number+1)
+            current_apa.move_to_wire(current_apa.wirenum+1)
+            print(f"Robot moved up one wire to {current_apa.wirenum}.")
 
         elif key == '-':  # 'd' key pressed
-            move_servo_to_wire(current_wire_number-1)
-            current_wire_number = current_wire_number-1
-            print(f"Robot moved up one wire to {current_wire_number}.")
+            current_apa.move_to_wire(current_apa.wirenum-1)
+            print(f"Robot moved up one wire to {current_apa.wirenum}.")
 
         elif key == 'm':  # 'm' key pressed
-            duration = set_recording_duration()
-            if duration is not None:
-                recording_duration = duration
+            current_apa.set_recording_duration()
 
         elif key == 'q':  # 'q' key pressed
             print("Quitting...")
