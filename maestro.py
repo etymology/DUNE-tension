@@ -1,12 +1,12 @@
 import serial
 from sys import version_info
 
-PY2 = version_info[0] == 2   #Running Python 2.x?
+PY2 = version_info[0] == 2  # Running Python 2.x?
 
 #
-#---------------------------
+# ---------------------------
 # Maestro Servo Controller
-#---------------------------
+# ---------------------------
 #
 # Support for the Pololu Maestro line of servo controllers
 #
@@ -16,6 +16,8 @@ PY2 = version_info[0] == 2   #Running Python 2.x?
 # These functions provide access to many of the Maestro's capabilities using the
 # Pololu serial protocol
 #
+
+
 class Controller:
     # When connected via USB, the Maestro creates two virtual serial ports
     # /dev/ttyACM0 for commands and /dev/ttyACM1 for communications.
@@ -28,13 +30,13 @@ class Controller:
     # assumes.  If two or more controllers are connected to different serial
     # ports, or you are using a Windows OS, you can provide the tty port.  For
     # example, '/dev/ttyACM2' or for Windows, something like 'COM3'.
-    
-    def __init__(self,ttyStr='/dev/ttyACM0',device=0x0c):
+
+    def __init__(self, ttyStr='/dev/ttyACM0', device=0x0c):
         # Open the command port
         try:
             self.usb = serial.Serial(ttyStr)
-        except serial.SerialException:
-            print("Couldn't find Maestro!")
+        except Exception:
+            print("\nWarning: no servo controller found!!!")
         # Command lead-in and device number are sent for each Pololu serial command.
         self.PololuCmd = chr(0xaa) + chr(device)
         # Track target position for each servo. The function isMoving() will
@@ -44,7 +46,7 @@ class Controller:
         # Servo minimum and maximum targets can be restricted to protect components.
         self.Mins = [0] * 24
         self.Maxs = [0] * 24
-        
+
     # Cleanup by closing USB serial port
     def close(self):
         self.usb.close()
@@ -55,7 +57,7 @@ class Controller:
         if PY2:
             self.usb.write(cmdStr)
         else:
-            self.usb.write(bytes(cmdStr,'latin-1'))
+            self.usb.write(bytes(cmdStr, 'latin-1'))
 
     # Set channels min and max value range.  Use this as a safety to protect
     # from accidentally moving outside known safe parameters. A setting of 0
@@ -75,7 +77,7 @@ class Controller:
     # Return Maximum channel range value
     def getMax(self, chan):
         return self.Maxs[chan]
-        
+
     # Set channel to a specified target value.  Servo will begin moving based
     # on Speed and Acceleration parameters previously set.
     # Target values will be constrained within Min and Max range, if set.
@@ -90,10 +92,10 @@ class Controller:
         # if Max is defined and Target is above, force to Max
         if self.Maxs[chan] > 0 and target > self.Maxs[chan]:
             target = self.Maxs[chan]
-        self.send(self._make_command(target, 0x04, chan))
+        self.sendCmd(self._make_command(target, 0x04, chan))
         # Record Target value
         self.Targets[chan] = target
-        
+
     # Set speed of channel
     # Speed is measured as 0.25microseconds/10milliseconds
     # For the standard 1ms pulse width change to move a servo between extremes, a speed
@@ -134,7 +136,7 @@ class Controller:
     #
     # ***Note if target position goes outside of Maestro's allowable range for the
     # channel, then the target can never be reached, so it will appear to always be
-    # moving to the target.  
+    # moving to the target.
     def isMoving(self, chan):
         return self.Targets[chan] > 0 and self.getPosition(chan) != self.Targets[chan]
     

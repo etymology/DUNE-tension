@@ -20,7 +20,6 @@ def make_config_comp(calx, caly, calwire, delx, dely, minwirenum, maxwirenum):
         for wire in range(minwirenum, maxwirenum + 1)
     }
 
-
 def make_config(APAstr):
     layer = None
     apa_dict = {}
@@ -97,10 +96,8 @@ def make_config(APAstr):
         apa_dict[layer] = layer_dict
         layer = input("Enter layer or quit (X, V, U, G, q): ")
 
-    out_file = open(APAstr+".json", "w")
-    json.dump(apa_dict, out_file)
-    out_file.close()
-
+    with open(f"{APAstr}.json", "w") as out_file:
+        json.dump(apa_dict, out_file) 
 
 def zone(x):
     if (x < 2400.0):
