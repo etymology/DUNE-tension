@@ -96,8 +96,10 @@ def make_config(APAstr):
         apa_dict[layer] = layer_dict
         layer = input("Enter layer or quit (X, V, U, G, q): ")
 
-    with open(f"{APAstr}.json", "w") as out_file:
-        json.dump(apa_dict, out_file) 
+    out_file = open(APAstr+".json", "w")
+    json.dump(apa_dict, out_file)
+    out_file.close()
+
 
 def zone(x):
     if (x < 2400.0):

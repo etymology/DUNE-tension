@@ -35,8 +35,8 @@ class Controller:
         # Open the command port
         try:
             self.usb = serial.Serial(ttyStr)
-        except Exception:
-            print("\nWarning: no servo controller found!!!")
+        except serial.SerialException:
+            print("Couldn't find Maestro!")
         # Command lead-in and device number are sent for each Pololu serial command.
         self.PololuCmd = chr(0xaa) + chr(device)
         # Track target position for each servo. The function isMoving() will
@@ -92,7 +92,7 @@ class Controller:
         # if Max is defined and Target is above, force to Max
         if self.Maxs[chan] > 0 and target > self.Maxs[chan]:
             target = self.Maxs[chan]
-        self.sendCmd(self._make_command(target, 0x04, chan))
+        self.send(self._make_command(target, 0x04, chan))
         # Record Target value
         self.Targets[chan] = target
 
