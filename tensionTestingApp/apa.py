@@ -2,6 +2,7 @@ import json
 from typing import Dict, List, Tuple
 
 ZONE_MIDDLES_X = {1: 1600, 2: 2800, 4: 5200, 5: 6400}
+
 FIRST_WIRE_NUMBER = 5
 LAST_WIRE_NUMBER = 1150
 LAST_WIRE_NUMBER_IN_ZONE = {1: 400, 2: 551, 4: 751, 5: LAST_WIRE_NUMBER}
@@ -103,7 +104,7 @@ class APA:
 
     def handle_horizontal_layers(self, layer: str, first_wire_coordinates: Tuple[float, float]):
         """
-        Handle calibration for layers with fixed y-values across all wires.
+        Handle calibration for layers with fixed x-values across all wires.
 
         Args:
             layer (str): The layer being calibrated.
