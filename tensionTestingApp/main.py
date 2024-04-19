@@ -38,8 +38,9 @@ class TensionTestingApp:
             audio_data, self.audio_processor.samplerate, frequency, confidence)
 
     def handle_goto_wire(self):
-        wire_number = int(input("Enter the wire number to go to: "))
-        target_x, target_y = self.apa.get_plucking_point(wire_number)
+        wire_number = input("Enter the wire number to go to: ")
+        curr_layer = self.config_manager.load_config()['current_layer']
+        target_x, target_y = self.apa.get_plucking_point(wire_number, curr_layer)
         current_x, current_y = self.tensiometer.get_xy()
 
         # Determine the current and target zones
@@ -80,6 +81,8 @@ class TensionTestingApp:
         self.config_manager.update_config(key, value)
 
     def handle_quit(self):
+        print("Saving config file.")
+        self.config_manager.save_config()
         self.tensiometer.__exit__(None, None, None)
         print("Exiting the application.")
         exit()

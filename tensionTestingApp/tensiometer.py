@@ -28,7 +28,9 @@ class Tensiometer:
     """
 
     def __init__(self):
+        # self driver set to None for remote testing
         self.driver = None
+        # self.init_driver()
         self.servo_controller = Controller()
 
     def init_driver(self):
@@ -76,3 +78,8 @@ class Tensiometer:
 
     def pluck_string(self):
         self.servo_controller.runScriptSub(MAESTRO_SUBSCRIPTS['pluck_string'])
+
+    def close_driver(self):
+        """Close the browser driver."""
+        if self.driver:
+            self.driver.quit()

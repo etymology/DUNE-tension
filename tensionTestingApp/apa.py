@@ -1,12 +1,32 @@
 import json
 from typing import Dict, List, Tuple
 
-ZONE_MIDDLES_X = {1: 1600, 2: 2800, 4: 5200, 5: 6400}
+####### APA PARAMETERS #######
+## HORIZONTAL APA PARAMS ##
+HORI_LAYER_X = 6400
+HORI_DELTA_Y = 4.7916667
 
-FIRST_WIRE_NUMBER = 5
-LAST_WIRE_NUMBER = 1150
-LAST_WIRE_NUMBER_IN_ZONE = {1: 400, 2: 551, 4: 751, 5: LAST_WIRE_NUMBER}
-DIAGONAL_WIRE_PITCH = (8, 5.75)
+HORI_LAYER_MIN_WIRENUM = 1
+HORI_LAYER_MAX_WIRENUM = 480
+
+## DIAGONAL APA PARAMS ##
+DIAG_DELTA_X = 2.72455392
+DIAG_DELTA_Y = 3.79161
+DELTA_VERTICAL_ONLY = 5.75
+
+DIAG_LAYER_MIN_WIRENUM = 8
+DIAG_LAYER_MAX_WIRENUM = 1146
+
+DIAG_LAYER_Z1_COMP1_MAX_WIRENUM = 218
+DIAG_LAYER_Z1_COMP2_MAX_WIRENUM = 399
+DIAG_LAYER_Z2_MAX_WIRENUM = 551
+DIAG_LAYER_Z4_MAX_WIRENUM = 751
+DIAG_LAYER_Z5_COMP2_MAX_WIRENUM = 991
+
+PITCH_RATIO = 5.75/8.0
+
+Z2_X = 2800
+Z4_X = 5150
 
 class APA:
     def __init__(self, name: str):
@@ -66,13 +86,110 @@ class APA:
         layer = self.get_layer_name(layer)
         if not self.confirm_overwrite(layer):
             return
-        
         if layer in ['X', 'G']:
-            self.handle_horizontal_layers(layer, first_wire_coordinates)
+            self.handle_hori_layer(layer, first_wire_coordinates, last_wire_coordinates)
         elif layer in ['V', 'U']:
-            self.handle_diagonal_layers(layer, first_wire_coordinates, last_wire_coordinates)
+            self.handle_diag_layer(layer, first_wire_coordinates, last_wire_coordinates)
 
         self.save_calibration_to_json()
+
+    def handle_diag_layer(self, layer, first_wire_coordinates: Tuple[float, float], last_wire_coordinates: Tuple[float, float]):
+        """
+        Handle calibration for V layer.
+
+        Args:
+            first_wire_coordinates (tuple): Starting coordinates for the diagonal calibration.
+            last_wire_coordinates (tuple): Ending coordinates for the diagonal calibration.
+        """
+        if not first_wire_coordinates:
+            first_wire_coordinates = self.get_coordinates_input(f"Enter initial coordinates for the {DIAG_LAYER_MIN_WIRENUM}th wire of the \"{layer}\" layer (comma-separated): ")
+        if not last_wire_coordinates:
+            last_wire_coordinates = self.get_coordinates_input(f"Enter coordinates for the last wire of the \"{layer}\" layer (comma-separated): ")
+
+        incr_bool = -1 if layer == 'U' else 1
+
+        # Zone 1, broken into two components
+        z1_comp1 = self.make_config_comp(first_wire_coordinates[0],first_wire_coordinates[1], 
+                                     DIAG_LAYER_MIN_WIRENUM,incr_bool*DIAG_DELTA_X,-incr_bool*DIAG_DELTA_Y, 
+                                     DIAG_LAYER_MIN_WIRENUM,DIAG_LAYER_Z1_COMP1_MAX_WIRENUM)
+
+        z1_comp2 = self.make_config_comp(z1_comp1[DIAG_LAYER_Z1_COMP1_MAX_WIRENUM]["X"], 
+                                     z1_comp1[DIAG_LAYER_Z1_COMP1_MAX_WIRENUM]["Y"], 
+                                     DIAG_LAYER_Z1_COMP1_MAX_WIRENUM, 
+                                     0.0, -incr_bool*DELTA_VERTICAL_ONLY, 
+                                     DIAG_LAYER_Z1_COMP1_MAX_WIRENUM+1, 
+                                     DIAG_LAYER_Z1_COMP2_MAX_WIRENUM)
+        z1 = z1_comp1 | z1_comp2
+
+        # Zone 2
+        z2 = self.make_config_comp(Z2_X, (z1[DIAG_LAYER_Z1_COMP2_MAX_WIRENUM]["Y"]-DELTA_VERTICAL_ONLY)\
+                                      +(Z2_X-z1[DIAG_LAYER_Z1_COMP2_MAX_WIRENUM]["X"])*PITCH_RATIO, 
+                                       DIAG_LAYER_Z1_COMP2_MAX_WIRENUM+1, 
+                                      0.0, -incr_bool*DELTA_VERTICAL_ONLY, 
+                                      DIAG_LAYER_Z1_COMP2_MAX_WIRENUM+1, 
+                                      DIAG_LAYER_Z2_MAX_WIRENUM)
+
+        # Zone 4
+        z4 = self.make_config_comp(Z4_X, z2[DIAG_LAYER_Z2_MAX_WIRENUM]["Y"]\
+                                     +(Z4_X-z2[DIAG_LAYER_Z2_MAX_WIRENUM]["X"])*PITCH_RATIO, 
+                                     DIAG_LAYER_Z2_MAX_WIRENUM, 
+                                     0.0, -incr_bool*DELTA_VERTICAL_ONLY, 
+                                     DIAG_LAYER_Z2_MAX_WIRENUM+1, 
+                                     DIAG_LAYER_Z4_MAX_WIRENUM)
+
+        # Zone 5
+        z5_comp1 = self.make_config_comp(last_wire_coordinates[0],last_wire_coordinates[1], 
+                                     DIAG_LAYER_MAX_WIRENUM,incr_bool*DIAG_DELTA_X,-incr_bool*DIAG_DELTA_Y, 
+                                     DIAG_LAYER_Z5_COMP2_MAX_WIRENUM+1,DIAG_LAYER_MAX_WIRENUM)
+
+        z5_comp2 = self.make_config_comp(z5_comp1[DIAG_LAYER_Z5_COMP2_MAX_WIRENUM+1]["X"], 
+                                     z5_comp1[DIAG_LAYER_Z5_COMP2_MAX_WIRENUM+1]["Y"], 
+                                     DIAG_LAYER_Z5_COMP2_MAX_WIRENUM+1, 
+                                     0.0, -DELTA_VERTICAL_ONLY, 
+                                     DIAG_LAYER_Z4_MAX_WIRENUM+1,DIAG_LAYER_Z5_COMP2_MAX_WIRENUM)
+        z5 = z5_comp1 | z5_comp2
+
+        self.calibration[layer] = z1 | z2 | z4 | z5
+
+    def handle_hori_layer(self, layer, first_wire_coordinates: Tuple[float, float]):
+        """
+        Handle calibration for horizontal layer.
+
+        Args:
+            first_wire_coordinates (tuple): Coordinates (x, y) of the first wire.
+        """
+        y_value = first_wire_coordinates[1] if first_wire_coordinates \
+                  else self.get_float_input("Enter the Y value for the lowest wire on the compensator (fixed) side: ")
+
+        self.calibration[layer] = self.make_config_comp(HORI_LAYER_X, y_value, HORI_LAYER_MAX_WIRENUM, 
+                                      0, -HORI_DELTA_Y, 
+                                      HORI_LAYER_MIN_WIRENUM, HORI_LAYER_MAX_WIRENUM)
+        print(HORI_LAYER_MIN_WIRENUM)
+        print(HORI_LAYER_MAX_WIRENUM)
+        print(self.calibration["G"][1])
+        print(self.calibration["G"][480])
+
+    def make_config_comp(self, calx, caly, calwire, delx, dely, minwirenum, maxwirenum):
+        """
+        Produce a dictionary for some component of the calibration dict. Here
+        a component is defined as some segment of consecutively numbered wires
+        with equal wire spacing.
+
+        Args:
+            calx (float): X component of the calibration point 
+            caly (float): X component of the calibration point 
+            calwire (int): wirenumber of the calibration point 
+            delx (float): change in x between wires in the component 
+            dely (float): change in y between wires in the component
+            minwirenum (float): lowest wire number in the component 
+            maxwirenunm (float): highest wire number in the component 
+
+        Returns:
+            dict: dictionary for some component of the layer
+        """
+        return {wire: {"X": calx + (wire - calwire) * delx,
+                       "Y": caly + (wire - calwire) * dely}
+               for wire in range(minwirenum, maxwirenum + 1)}
 
     def get_layer_name(self, layer: str) -> str:
         """
@@ -101,33 +218,6 @@ class APA:
         if self.calibration.get(layer):
             return input(f"Do you really want to overwrite the existing calibration for layer \"{layer}\"? (y/n)").strip().upper() == "Y"
         return True
-
-    def handle_horizontal_layers(self, layer: str, first_wire_coordinates: Tuple[float, float]):
-        """
-        Handle calibration for layers with fixed x-values across all wires.
-
-        Args:
-            layer (str): The layer being calibrated.
-            first_wire_coordinates (tuple): Coordinates (x, y) of the first wire.
-        """
-        y_value = first_wire_coordinates[1] if first_wire_coordinates else self.get_float_input("Enter the Y value for the lowest wire on the compensator(fixed) side: ")
-        self.calibration[layer] = [(ZONE_MIDDLES_X[5], y_value + i * 2300 / 480) for i in range(480)]
-
-    def handle_diagonal_layers(self, layer: str, first_wire_coordinates: Tuple[float, float], last_wire_coordinates: Tuple[float, float]):
-        """
-        Handle calibration for layers that require diagonal alignment of wires.
-
-        Args:
-            layer (str): The layer being calibrated.
-            first_wire_coordinates (tuple): Starting coordinates for the diagonal calibration.
-            last_wire_coordinates (tuple): Ending coordinates for the diagonal calibration.
-        """
-        if not first_wire_coordinates:
-            first_wire_coordinates = self.get_coordinates_input(f"Enter initial coordinates for the {FIRST_WIRE_NUMBER}th wire of the \"{layer}\" layer (comma-separated): ")
-        if not last_wire_coordinates:
-            last_wire_coordinates = self.get_coordinates_input(f"Enter coordinates for the last wire of the \"{layer}\" layer (comma-separated): ")
-        
-        self.calibration[layer] = self.calculate_uv_layer_coordinates(layer, first_wire_coordinates, last_wire_coordinates)
 
     def get_float_input(self, prompt: str) -> float:
         """
@@ -164,118 +254,17 @@ class APA:
                     print("Invalid input. Please enter valid floating-point numbers.")
             print("Invalid input. Please enter two values separated by a comma.")
 
-    @staticmethod
-    def calculate_uv_layer_coordinates(layer_name, first_wire_coordinates, last_wire_coordinates):
+    def get_plucking_point(self, wire_number, layer):
         """
-        Calculate the calibration coordinates for the specified 'U' or 'V' layer using a combination of 
-        diagonal and vertical movements.
+        Using a wire_number input, return x and y for the location to pluck the corresponding wire
 
-        This method handles the complex calibration logic that includes two main movements in zones 1 and 5:
-        a diagonal movement followed by a vertical movement. The calibration logic also processes a straight
-        vertical movement in zones 2 and 4. This method adjusts movements based on the layer specified, 
-        reflecting the mirror differences between the 'U' and 'V' layers.
+        Args: 
+            wire_number (int): The wire number of plucking point.
 
-        Args:
-            layer_name (str): The layer being calibrated, must be either 'U' or 'V'.
-            first_wire_coordinates (Tuple[float, float]): The (x, y) coordinates of the first wire to start the calibration.
-            last_wire_coordinates (Tuple[float, float]): The (x, y) coordinates of the last wire to end the calibration.
-
-        Returns:
-            Dict[int, Tuple[float, float]]: A dictionary where keys are wire numbers and values are tuples of (x, y) 
-            coordinates representing the calculated calibration points for each wire.
-
-        Raises:
-            AssertionError: If the layer name is not 'U' or 'V'.
-
-        Example:
-            >>> calculate_uv_layer_coordinates('V', (100, 200), (150, 300))
-            {5: (100, 200), 6: (104, 197.5), ...}
+        Returns: 
+            Tuple[float, float]: The coordinates of the plucking point for wire_number input 
         """
-        def process_diagonal_movement(x, y, wire_number, boundary_x, increment=True):
-            step = 1 if increment else -1
-            coordinates = {}
-            while (x < boundary_x if increment else x > boundary_x):
-                coordinates[wire_number] = (x, y)
-                x += step * (DIAGONAL_WIRE_PITCH[0]/2)
-                y -= step * (DIAGONAL_WIRE_PITCH[1]/2)
-                wire_number += step
-            return coordinates
+        wire_loc = self.load_calibration_from_json()[layer][wire_number]
 
-        def process_vertical_movement(x, y, wire_number, last_wire_number, increment=True):
-            step = 1 if increment else -1
-            coordinates = {}
-            while wire_number <= last_wire_number if increment else wire_number >= last_wire_number:
-                coordinates[wire_number] = (x, y)
-                y -= step * DIAGONAL_WIRE_PITCH[1]
-                wire_number += step
-            return coordinates
-        
-        assert layer_name in ['U', 'V'], "Layer name must be 'U' or 'V'"
+        return wire_loc
 
-        # Initialize starting points
-        temp_x, temp_y, temp_wirenumber = first_wire_coordinates
-        calibration_data = {}
-
-        # Determine direction multipliers based on layer
-        if layer_name == 'V':
-            increment_initial = True
-            decrement_final = False
-        else:  # 'U' layer is the mirror of 'V'
-            increment_initial = False
-            decrement_final = True
-
-        # Zone 1: Two-part movement
-        # Part 1: Diagonal movement
-        diagonal_stop_x = ZONE_MIDDLES_X[1] if layer_name == 'V' else ZONE_MIDDLES_X[1] - \
-            DIAGONAL_WIRE_PITCH[0]/2
-        calibration_data.update(process_diagonal_movement(
-            temp_x, temp_y, temp_wirenumber, diagonal_stop_x, increment=increment_initial))
-
-        # Update starting point after diagonal movement
-        last_temp_wirenumber = max(calibration_data.keys(
-        )) if increment_initial else min(calibration_data.keys())
-        temp_x, temp_y = calibration_data[last_temp_wirenumber]
-
-        # Part 2: Vertical movement in Zone 1
-        calibration_data.update(process_vertical_movement(
-            temp_x, temp_y, last_temp_wirenumber + 1, LAST_WIRE_NUMBER_IN_ZONE[1], increment=increment_initial))
-
-        # Zone 2: Straight vertical movement
-        temp_x = ZONE_MIDDLES_X[2]
-        last_temp_wirenumber = LAST_WIRE_NUMBER_IN_ZONE[1] + 1
-        # continue from last y position
-        temp_y = calibration_data[last_temp_wirenumber - 1][1]
-        calibration_data.update(process_vertical_movement(
-            temp_x, temp_y, last_temp_wirenumber, LAST_WIRE_NUMBER_IN_ZONE[2], increment=increment_initial))
-
-        # Prepare coordinates for Zones 5 and 4 from the corner downwards or upwards
-        temp_x, temp_y, temp_wirenumber = last_wire_coordinates
-
-        # Zone 5: Two-part movement
-        # Part 1: Diagonal movement in Zone 5
-        diagonal_stop_x = ZONE_MIDDLES_X[5] if layer_name == 'V' else ZONE_MIDDLES_X[5] + \
-            DIAGONAL_WIRE_PITCH[0]/2
-        calibration_data.update(process_diagonal_movement(
-            temp_x, temp_y, temp_wirenumber, diagonal_stop_x, increment=decrement_final))
-
-        # Update starting point after diagonal movement
-        last_temp_wirenumber = min(calibration_data.keys(
-        )) if decrement_final else max(calibration_data.keys())
-        temp_x, temp_y = calibration_data[last_temp_wirenumber]
-
-        # Part 2: Vertical movement in Zone 5
-        last_temp_wirenumber += -1 if decrement_final else 1
-        calibration_data.update(process_vertical_movement(
-            temp_x, temp_y, last_temp_wirenumber, LAST_WIRE_NUMBER_IN_ZONE[5], increment=decrement_final))
-
-        # Zone 4: Straight vertical movement
-        temp_x = ZONE_MIDDLES_X[4]
-        last_temp_wirenumber = LAST_WIRE_NUMBER_IN_ZONE[5] + \
-            (-1 if decrement_final else 1)
-        # continue from last y position
-        temp_y = calibration_data[last_temp_wirenumber +
-                                    (1 if decrement_final else -1)][1]
-        calibration_data.update(process_vertical_movement(
-            temp_x, temp_y, last_temp_wirenumber, LAST_WIRE_NUMBER_IN_ZONE[4], increment=decrement_final))
-
-        return calibration_data
