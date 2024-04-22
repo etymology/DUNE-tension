@@ -7,12 +7,16 @@ class AudioProcessor:
         self.device_index = device_index
         self.samplerate = samplerate
 
+    def detect_sound(self, audio_signal, threshold):
+        # Detect sound based on energy threshold
+        return np.max(np.abs(audio_signal)) >= float(threshold)
+
     def record_audio(self, duration: float) -> np.ndarray:
         """Record audio from the microphone for a specified duration."""
-        with sd.InputStream(device=self.device_index, channels=1, samplerate=self.samplerate, dtype='float32') as stream:
+        with sd.InputStream(device=self.device_index, samplerate=self.samplerate, dtype='float32') as stream:
             frames = int(duration * self.samplerate)
             audio_data, _ = stream.read(frames)
-        return audio_data
+        return np.array(audio_data).flatten()
 
     def get_pitch_from_audio(self, audio_data: np.ndarray) -> tuple[float, float]:
         """Extract the pitch and confidence from the audio data."""

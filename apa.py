@@ -3,7 +3,9 @@ from typing import Dict, List, Tuple
 
 ####### APA PARAMETERS #######
 ## HORIZONTAL APA PARAMS ##
-HORI_LAYER_X = 6400
+# 1500 value is temporary
+HORI_LAYER_X = 1500
+# HORI_LAYER_X = 6400
 HORI_DELTA_Y = 4.7916667
 
 HORI_LAYER_MIN_WIRENUM = 1
@@ -87,7 +89,7 @@ class APA:
         if not self.confirm_overwrite(layer):
             return
         if layer in ['X', 'G']:
-            self.handle_hori_layer(layer, first_wire_coordinates, last_wire_coordinates)
+            self.handle_hori_layer(layer, first_wire_coordinates)
         elif layer in ['V', 'U']:
             self.handle_diag_layer(layer, first_wire_coordinates, last_wire_coordinates)
 
@@ -164,10 +166,6 @@ class APA:
         self.calibration[layer] = self.make_config_comp(HORI_LAYER_X, y_value, HORI_LAYER_MAX_WIRENUM, 
                                       0, -HORI_DELTA_Y, 
                                       HORI_LAYER_MIN_WIRENUM, HORI_LAYER_MAX_WIRENUM)
-        print(HORI_LAYER_MIN_WIRENUM)
-        print(HORI_LAYER_MAX_WIRENUM)
-        print(self.calibration["G"][1])
-        print(self.calibration["G"][480])
 
     def make_config_comp(self, calx, caly, calwire, delx, dely, minwirenum, maxwirenum):
         """
@@ -265,6 +263,6 @@ class APA:
             Tuple[float, float]: The coordinates of the plucking point for wire_number input 
         """
         wire_loc = self.load_calibration_from_json()[layer][wire_number]
-
+        print("wire_loc", wire_loc)
         return wire_loc
 

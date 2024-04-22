@@ -1,4 +1,5 @@
 from typing import Tuple
+import sys
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
@@ -29,8 +30,8 @@ class Tensiometer:
 
     def __init__(self):
         # self driver set to None for remote testing
-        self.driver = None
-        # self.init_driver()
+        # self.driver = None
+        self.init_driver()
         self.servo_controller = Controller()
 
     def init_driver(self):
