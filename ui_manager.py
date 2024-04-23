@@ -12,6 +12,8 @@ class UIManager:
         print("d - Display available sound devices")
         print("r - Record audio and analyze")
         print("w - Go to specific wire")
+        print("n - Go to next wire")
+        print("u - Go to previous wire")
         print("c - Calibrate")
         print("p - Change parameters")
         print("q - Quit the application")
@@ -33,7 +35,9 @@ class UIManager:
         actions = {
             'd': self.application.handle_select_device,
             'r': self.application.handle_record,
-            'w': self.application.handle_goto_wire,
+            'w': self.application.handle_goto_spec_wire,
+            'n': self.application.handle_goto_next_wire,
+            'u': self.application.handle_goto_prev_wire,
             'c': self.application.handle_calibration,
             'p': self.application.handle_change_variables,
             'q': self.application.handle_quit

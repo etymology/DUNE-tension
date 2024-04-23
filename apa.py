@@ -4,8 +4,7 @@ from typing import Dict, List, Tuple
 ####### APA PARAMETERS #######
 ## HORIZONTAL APA PARAMS ##
 # 1500 value is temporary
-HORI_LAYER_X = 1500
-# HORI_LAYER_X = 6400
+HORI_LAYER_X = 6400
 HORI_DELTA_Y = 4.7916667
 
 HORI_LAYER_MIN_WIRENUM = 1
