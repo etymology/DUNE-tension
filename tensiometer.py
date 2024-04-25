@@ -1,5 +1,6 @@
 from typing import Tuple
 import sys
+from time import sleep
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
@@ -64,6 +65,7 @@ class Tensiometer:
         return x != x_target or y != y_target
 
     def goto_xy(self, x, y):
+        sleep(1.0)
         jog_button = WebDriverWait(self.driver, 2).until(
             EC.element_to_be_clickable((By.XPATH, JOG_BUTTON_XPATH))
         )

@@ -1,3 +1,6 @@
+from scipy.fft import rfftfreq, fftfreq, rfft, fft
+from scipy.signal import find_peaks
+import matplotlib.pyplot as plt
 
 from config_manager import ConfigManager
 from device_manager import DeviceManager
@@ -44,23 +47,72 @@ class TensionTestingApp:
         self.tensiometer.pluck_string()
         print("\nListening...")
         start_time = datetime.now()
-        sleep(1.0)
+        sleep(1.2)
 
         while True:
+            # audio_data = self.audio_processor.record_audio(5.0)
             audio_data = self.audio_processor.record_audio(0.005)
+            # plt.plot(audio_data)
+            # plt.show()
             if self.audio_processor.detect_sound(audio_data, self.config_manager.config['noise_threshold']):
-                audio_signal = self.audio_processor.record_audio(0.1)
+                audio_signal = self.audio_processor.record_audio(0.3)
                 break
             elif datetime.now() > start_time + timedelta(seconds=10):
                 print("No sound detected. Quitting")
                 audio_signal = np.array([])
                 break
         if(audio_signal.size > 0):
-            # audio_signal = self.audio_processor.record_audio(0.1)
-            frequency, confidence = self.audio_processor.get_pitch_from_audio(audio_signal)
-            self.plotter.plot_waveform(audio_signal, self.audio_processor.samplerate)
-            self.plotter.plot_frequency_spectrum(audio_signal, self.audio_processor.samplerate, 
+            # crepe pitch detection
+            # frequency, confidence = self.audio_processor.get_pitch_from_audio(audio_signal)
+            # self.plotter.plot_waveform(audio_signal, self.audio_processor.samplerate)
+            # self.plotter.plot_frequency_spectrum(audio_signal, self.audio_processor.samplerate, 
                                                  frequency, confidence)
+            # np pitch detection
+            SampHz = self.audio_processor.samplerate
+            fOmega = np.abs(rfft(audio_signal))
+            Omega = rfftfreq(len(audio_signal), d=1/SampHz)
+            ind = np.argsort(Omega)
+            sortfOmega = fOmega[ind]
+            sortOmega = Omega[ind]
+
+            plt.title("audio amplitude")
+            plt.plot(audio_signal)
+            plt.show()
+
+            indPk, properties = find_peaks(sortfOmega)
+            fOmegaPk = sortfOmega[indPk]
+            OmegaPk = sortOmega[indPk]
+
+            globthresh = 0
+            oldfOmegaPk = fOmegaPk
+            fOmegaPk = fOmegaPk[oldfOmegaPk > globthresh]
+            OmegaPk = OmegaPk[oldfOmegaPk > globthresh]
+
+            plt.title("audio freq")
+            plt.plot(sortOmega, sortfOmega)
+            plt.scatter(OmegaPk, fOmegaPk, linestyle="None", color='red')
+            plt.xlim(0, 1000)
+            plt.xlabel("Hz")
+            plt.ylabel("f")
+            plt.show()
+
+            hsortind = np.flip(np.argsort(fOmegaPk))
+            hsortfOmegaPk = fOmegaPk[hsortind]
+            hsortOmegaPk = OmegaPk[hsortind]
+
+            if(len(hsortOmegaPk)>0):
+                for i in range(10):
+                    print(i, ": ")
+                    print("Peak Freq (Hz): ", hsortOmegaPk[i])
+                    print("Peak Height: ", hsortfOmegaPk[i])
+
+            if (len(OmegaPk)>0):
+                qualstr = input("Good point? (num): ")
+                if (qualstr.isnumeric()):
+                    qual = int(qualstr)
+                    frequency = hsortOmegaPk[qual]
+                    confidence = 1.0
+
             curr_wirenum = self.config_manager.config['current_wirenumber']
             log_prompt = input(f"Do you want to log the frequency? [wire number {curr_wirenum}](y/n): ")
             if log_prompt.lower() == 'y':
