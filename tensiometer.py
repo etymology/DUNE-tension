@@ -77,7 +77,7 @@ class Tensiometer:
         execute_button = WebDriverWait(self.driver, 5).until(
             EC.element_to_be_clickable((By.XPATH, EXECUTE_BUTTON_XPATH))
         )
-        execute_button.click()
+        # execute_button.click()
 
     def pluck_string(self):
         self.servo_controller.runScriptSub(MAESTRO_SUBSCRIPTS['pluck_string'])

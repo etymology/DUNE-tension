@@ -21,10 +21,11 @@ class ConfigManager:
         return {
             "current_apa": "Wood",
             "current_wirenumber": 0,
-            "current_layer": "V",
+            "current_layer": "X",
             "sound_device_index": 0,
             "device_samplerate": 44100,
-            "noise_threshold": 0.01
+            "noise_threshold": 0.05,
+            "sound_length": 10.0 
         }
 
     def save_config(self, config_data: Optional[Dict] = None):
