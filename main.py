@@ -74,7 +74,7 @@ class TensionTestingApp:
     def handle_goto_spec_wire(self):
         wire_number = input("Enter the wire number to go to: ")
         sleep(1.0)
-        curr_layer = self.config_manager.load_config()['current_layer']
+        curr_layer = self.config_manager.config['current_layer']
         wire_loc = self.apa.get_plucking_point(wire_number, curr_layer)
         target_x = wire_loc['X']
         target_y = wire_loc['Y']
@@ -113,9 +113,9 @@ class TensionTestingApp:
         self.config_manager.update_config('current_wirenumber', wire_number)
 
     def handle_goto_next_wire(self):
-        wire_number = str(int(self.config_manager.load_config()['current_wirenumber'])+1)
+        wire_number = str(int(self.config_manager.config['current_wirenumber'])+1)
         sleep(1.0)
-        curr_layer = self.config_manager.load_config()['current_layer']
+        curr_layer = self.config_manager.config['current_layer']
         wire_loc = self.apa.get_plucking_point(wire_number, curr_layer)
         target_x = wire_loc['X']
         target_y = wire_loc['Y']
@@ -154,9 +154,9 @@ class TensionTestingApp:
         self.config_manager.update_config('current_wirenumber', wire_number)
 
     def handle_goto_prev_wire(self):
-        wire_number = str(int(self.config_manager.load_config()['current_wirenumber'])-1)
+        wire_number = str(int(self.config_manager.config['current_wirenumber'])-1)
         sleep(1.0)
-        curr_layer = self.config_manager.load_config()['current_layer']
+        curr_layer = self.config_manager.config['current_layer']
         wire_loc = self.apa.get_plucking_point(wire_number, curr_layer)
         target_x = wire_loc['X']
         target_y = wire_loc['Y']

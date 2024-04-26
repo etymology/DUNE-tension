@@ -21,6 +21,7 @@ class AudioProcessor:
         with sd.InputStream(device=self.device_index, samplerate=self.samplerate, dtype='float32') as stream:
             frames = int(duration * self.samplerate)
             audio_data, _ = stream.read(frames)
+        sd.play(audio_data)
         return np.array(audio_data).flatten()
 
     def crepe_pitch(self, audio_data: np.ndarray) -> tuple[float, float]:
