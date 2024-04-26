@@ -71,127 +71,49 @@ class TensionTestingApp:
                 elif log_prompt.lower() == 'n':
                     print("Frequency not logged.")
 
-    def handle_goto_spec_wire(self):
+    def handle_goto_input_wire(self):
         wire_number = input("Enter the wire number to go to: ")
-        sleep(1.0)
-        curr_layer = self.config_manager.config['current_layer']
-        wire_loc = self.apa.get_plucking_point(wire_number, curr_layer)
-        target_x = wire_loc['X']
-        target_y = wire_loc['Y']
-        current_x, current_y = self.tensiometer.get_xy()
-
-        # Determine the current and target zones
-        current_zone = sum(
-            current_x > boundary for boundary in ZONE_BOUNDARIES)
-        target_zone = sum(target_x > boundary for boundary in ZONE_BOUNDARIES)
-
-        if current_zone != target_zone:
-            # Move to y=0 if not already there to ensure a clear path horizontally across zones
-            if current_y != 0:
-                print("Moving to y=0 to avoid collision...")
-                self.tensiometer.goto_xy(current_x, 0)
-                current_y = 0
-
-            # If moving to a higher zone, move to the nearest boundary to the right; if lower, to the left
-            if target_zone > current_zone:
-                next_boundary_x = min(
-                    boundary for boundary in ZONE_BOUNDARIES if boundary > current_x)
-            else:
-                next_boundary_x = max(
-                    boundary for boundary in ZONE_BOUNDARIES if boundary < current_x)
-
-            print(f"Moving along x to boundary at x={next_boundary_x}...")
-            self.tensiometer.goto_xy(next_boundary_x, 0)
-
-        # Move to the final x, y coordinates
-        print(f"Moving to final position x={target_x}, y={target_y}...")
-        self.tensiometer.goto_xy(target_x, target_y)
-        print(
-            f"Arrived at wire number {wire_number} at x={target_x}, y={target_y}.")
-
-        # Update config
-        self.config_manager.update_config('current_wirenumber', wire_number)
+        self.goto_wire(wire_number)
 
     def handle_goto_next_wire(self):
-        wire_number = str(int(self.config_manager.config['current_wirenumber'])+1)
-        sleep(1.0)
-        curr_layer = self.config_manager.config['current_layer']
-        wire_loc = self.apa.get_plucking_point(wire_number, curr_layer)
-        target_x = wire_loc['X']
-        target_y = wire_loc['Y']
-        current_x, current_y = self.tensiometer.get_xy()
-
-        # Determine the current and target zones
-        current_zone = sum(
-            current_x > boundary for boundary in ZONE_BOUNDARIES)
-        target_zone = sum(target_x > boundary for boundary in ZONE_BOUNDARIES)
-
-        if current_zone != target_zone:
-            # Move to y=0 if not already there to ensure a clear path horizontally across zones
-            if current_y != 0:
-                print("Moving to y=0 to avoid collision...")
-                self.tensiometer.goto_xy(current_x, 0)
-                current_y = 0
-
-            # If moving to a higher zone, move to the nearest boundary to the right; if lower, to the left
-            if target_zone > current_zone:
-                next_boundary_x = min(
-                    boundary for boundary in ZONE_BOUNDARIES if boundary > current_x)
-            else:
-                next_boundary_x = max(
-                    boundary for boundary in ZONE_BOUNDARIES if boundary < current_x)
-
-            print(f"Moving along x to boundary at x={next_boundary_x}...")
-            self.tensiometer.goto_xy(next_boundary_x, 0)
-
-        # Move to the final x, y coordinates
-        print(f"Moving to final position x={target_x}, y={target_y}...")
-        self.tensiometer.goto_xy(target_x, target_y)
-        print(
-            f"Arrived at wire number {wire_number} at x={target_x}, y={target_y}.")
-
-        # Update config
-        self.config_manager.update_config('current_wirenumber', wire_number)
+        wire_number = str(int(self.config_manager.load_config()['current_wirenumber'])+1)
+        self.goto_wire(wire_number)
 
     def handle_goto_prev_wire(self):
-        wire_number = str(int(self.config_manager.config['current_wirenumber'])-1)
+        wire_number = str(int(self.config_manager.load_config()['current_wirenumber'])-1)
+        self.goto_wire(wire_number)
+
+    def goto_wire(self, wire_number):
         sleep(1.0)
-        curr_layer = self.config_manager.config['current_layer']
+        curr_layer = self.config_manager.load_config()['current_layer']
         wire_loc = self.apa.get_plucking_point(wire_number, curr_layer)
         target_x = wire_loc['X']
         target_y = wire_loc['Y']
         current_x, current_y = self.tensiometer.get_xy()
-
-        # Determine the current and target zones
-        current_zone = sum(
-            current_x > boundary for boundary in ZONE_BOUNDARIES)
+        current_zone = sum(current_x > boundary for boundary in ZONE_BOUNDARIES)
         target_zone = sum(target_x > boundary for boundary in ZONE_BOUNDARIES)
-
         if current_zone != target_zone:
-            # Move to y=0 if not already there to ensure a clear path horizontally across zones
             if current_y != 0:
                 print("Moving to y=0 to avoid collision...")
                 self.tensiometer.goto_xy(current_x, 0)
                 current_y = 0
-
-            # If moving to a higher zone, move to the nearest boundary to the right; if lower, to the left
             if target_zone > current_zone:
                 next_boundary_x = min(
-                    boundary for boundary in ZONE_BOUNDARIES if boundary > current_x)
+                    boundary
+                    for boundary in ZONE_BOUNDARIES
+                    if boundary > current_x
+                )
             else:
                 next_boundary_x = max(
-                    boundary for boundary in ZONE_BOUNDARIES if boundary < current_x)
-
+                    boundary
+                    for boundary in ZONE_BOUNDARIES
+                    if boundary < current_x
+                )
             print(f"Moving along x to boundary at x={next_boundary_x}...")
             self.tensiometer.goto_xy(next_boundary_x, 0)
-
-        # Move to the final x, y coordinates
         print(f"Moving to final position x={target_x}, y={target_y}...")
         self.tensiometer.goto_xy(target_x, target_y)
-        print(
-            f"Arrived at wire number {wire_number} at x={target_x}, y={target_y}.")
-
-        # Update config
+        print(f"Arrived at wire number {wire_number} at x={target_x}, y={target_y}.")
         self.config_manager.update_config('current_wirenumber', wire_number)
 
     def handle_calibration(self):

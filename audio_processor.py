@@ -1,6 +1,6 @@
 import numpy as np
-from scipy.fft import rfftfreq, fftfreq, rfft, fft
-from scipy.signal import find_peaks, ShortTimeFFT
+from scipy.fft import rfftfreq, rfft
+from scipy.signal import find_peaks
 from scipy.interpolate import interp1d
 import matplotlib.pyplot as plt
 
@@ -95,7 +95,47 @@ class AudioProcessor:
 
         return frequency, confidence
 
-    def detect_noise_threshold(self, audio_data: np.ndarray, threshold: float) -> bool:
-        """Check if the maximum amplitude in the audio exceeds a specified threshold."""
-        max_amplitude = np.max(np.abs(audio_data))
-        return max_amplitude >= threshold
+
+    def get_pitch_from_audio_fft(self, audio_data: np.ndarray) -> float:
+        """Extract the pitch from the audio data using FFT and return the frequency of the first nonzero peak."""
+        # Perform a Fast Fourier Transform to get the frequency spectrum
+        spectrum = np.fft.fft(audio_data)
+        # Compute the magnitude of the spectrum
+        magnitudes = np.abs(spectrum)
+        # Get the frequency axis for the spectrum
+        frequency = np.fft.fftfreq(len(audio_data), 1 / self.samplerate)
+
+        # Define a threshold to find the first significant peak
+        threshold = magnitudes.mean() * 1.5  # You might need to adjust this threshold based on your needs
+
+        # Find the first peak above the threshold
+        peaks = np.where(magnitudes > threshold)[0]  # Find indices where magnitude exceeds threshold
+        return frequency[peaks[0]] if peaks.size > 0 else 0.0
+
+if __name__ == "__main__":
+    from plotter import Plotter
+    from config_manager import ConfigManager
+    from device_manager import DeviceManager
+    # tensiometer = Tensiometer()
+    config_manager = ConfigManager()
+    device_manager = DeviceManager(config_manager.config)
+    plotter = Plotter()
+    audio_processor = AudioProcessor(device_index=0, samplerate=48000)
+
+    device_manager.select_audio_device()
+    def record_plot_log():
+        audio_signal = audio_processor.record_audio(.5)
+        # frequency, confidence = audio_processor.get_pitch_from_audio(audio_signal)
+        # print(f"Detected pitch: {frequency:.2f} Hz with confidence: {confidence:.2f}")
+        # plotter.plot_audio(audio_signal, audio_processor.samplerate, frequency, confidence)
+        frequency = audio_processor.get_pitch_from_audio_fft(audio_signal)
+        confidence = 0.0
+        print(f"Detected pitch: {frequency:.2f} Hz with FFT.")
+        plotter.plot_audio(audio_signal, audio_processor.samplerate, frequency, confidence)
+        
+    while True:
+        # tensiometer.pluck_string()
+        print("\nListening...")
+        record_plot_log()
+        input("Press Enter to continue...")
+
