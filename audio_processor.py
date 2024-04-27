@@ -96,7 +96,7 @@ class AudioProcessor:
         return frequency, confidence
 
 
-    def get_pitch_from_audio_fft(self, audio_data: np.ndarray) -> float:
+    def get_pitch_from_audio_fft(self, audio_data: np.ndarray) -> list:
         """Extract the pitch from the audio data using FFT and return the frequency of the first nonzero peak."""
         # Perform a Fast Fourier Transform to get the frequency spectrum
         spectrum = np.fft.fft(audio_data)
@@ -108,9 +108,9 @@ class AudioProcessor:
         # Define a threshold to find the first significant peak
         threshold = magnitudes.mean() * 1.5  # You might need to adjust this threshold based on your needs
 
-        # Find the first peak above the threshold
-        peaks = np.where(magnitudes > threshold)[0]  # Find indices where magnitude exceeds threshold
-        return frequency[peaks[0]] if peaks.size > 0 else 0.0
+        peaks = np.where(magnitudes > threshold)  # Find indices where magnitude exceeds threshold
+
+        return [frequency[peak] for peak in peaks]
 
 if __name__ == "__main__":
     from plotter import Plotter

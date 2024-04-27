@@ -7,6 +7,7 @@ import csv
 from time import sleep
 from audio_processor import AudioProcessor
 from plotter import Plotter
+from typing import Iterable, Any
 from ui_manager import UIManager
 from apa import APA
 from tensiometer import Tensiometer
@@ -28,10 +29,10 @@ class TensionTestingApp:
     def run(self):
         self.ui_manager.run()
 
-    def log_frequency_and_wire_number(self, frequency, confidence, wire_number, filename):
+    def log_frequency_and_wire_number(self, *args, filename="Output.csv"):
         with open(filename, mode='a', newline='') as file:
             writer = csv.writer(file)
-            writer.writerow([wire_number, confidence, frequency])
+            writer.writerow(args)
 
     # Additional methods to handle different functionalities
     def handle_select_device(self):
@@ -43,8 +44,32 @@ class TensionTestingApp:
         self.tensiometer.pluck_string()
         print("\nListening...")
         start_time = datetime.now()
-        sleep(1.2)
+        while True:
+            audio_data = self.audio_processor.record_audio(0.005)
+            if self.audio_processor.detect_sound(audio_data, self.config_manager.config['noise_threshold']):
+                audio_signal = self.audio_processor.record_audio(float(self.config_manager.config['sound_length']))
+                break
+            elif datetime.now() > start_time + timedelta(seconds=10):
+                print("Timed out! No sound detected. Quitting.")
+                audio_signal = np.array([])
+        if(audio_signal.size > 0):
+            frequency, confidence = self.audio_processor.crepe_pitch(audio_signal)
+            self.plotter.plot_audio(audio_signal, self.audio_processor.samplerate, frequency, confidence)
+            frequency, confidence = self.audio_processor.get_pitch_from_audio_fft(audio_signal)
+            print(f"Frequency: {frequency} Hz, Confidence: {confidence}")
+            if frequency != 0.0:
+                curr_wirenum = self.config_manager.config['current_wirenumber']
+                log_prompt = input(f"Do you want to log the frequency? [wire number {curr_wirenum}](y/n): ")
+                if log_prompt.lower() == 'y':
+                    self.log_frequency_and_wire_number([frequency, confidence, curr_wirenum], "Output.csv")
+                    print("Frequency logged.")
+                elif log_prompt.lower() == 'n':
+                    print("Frequency not logged.")
 
+
+    def auto_log_frequency(self, output_file="Output.csv"):
+        self.tensiometer.pluck_string()
+        start_time = datetime.now()
         while True:
             audio_data = self.audio_processor.record_audio(0.005)
             if self.audio_processor.detect_sound(audio_data, self.config_manager.config['noise_threshold']):
@@ -55,21 +80,10 @@ class TensionTestingApp:
                 audio_signal = np.array([])
                 break
         if(audio_signal.size > 0):
-            # frequency, confidence = self.audio_processor.crepe_pitch(audio_signal)
-            # self.plotter.plot_waveform(audio_signal, self.audio_processor.samplerate)
-            # self.plotter.plot_frequency_spectrum(audio_signal, self.audio_processor.samplerate, 
-            #                                      frequency, confidence)
-
-            frequency, confidence = self.audio_processor.scipy_pitch(audio_signal, 
-                                                                     float(self.config_manager.config['noise_threshold']))
-            if frequency != 0.0:
-                curr_wirenum = self.config_manager.config['current_wirenumber']
-                log_prompt = input(f"Do you want to log the frequency? [wire number {curr_wirenum}](y/n): ")
-                if log_prompt.lower() == 'y':
-                    self.log_frequency_and_wire_number(frequency, confidence, curr_wirenum, "Output.csv")
-                    print("Frequency logged.")
-                elif log_prompt.lower() == 'n':
-                    print("Frequency not logged.")
+            fft_peaks = self.audio_processor.get_pitch_from_audio_fft(audio_signal)
+            curr_wirenum = self.config_manager.config['current_wirenumber']
+            self.log_frequency_and_wire_number(fft_peaks, curr_wirenum, filename=output_filef)
+            print(f"Frequency logged for wire number {curr_wirenum}.")  
 
     def handle_goto_input_wire(self):
         wire_number = input("Enter the wire number to go to: ")
@@ -83,7 +97,7 @@ class TensionTestingApp:
         wire_number = str(int(self.config_manager.load_config()['current_wirenumber'])-1)
         self.goto_wire(wire_number)
 
-    def goto_wire(self, wire_number):
+    def goto_wire(self, wire_number: int):
         sleep(1.0)
         curr_layer = self.config_manager.load_config()['current_layer']
         wire_loc = self.apa.get_plucking_point(wire_number, curr_layer)
