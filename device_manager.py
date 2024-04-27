@@ -2,10 +2,13 @@ import sounddevice as sd
 from typing import Tuple
 from maestro import Controller
 
+USB_SOUND_CARD_NAME = "USB PnP Sound Device" #: Audio (hw:1,0)"
+
 class DeviceManager:
     def __init__(self, config):
-        self.sound_device_index = config.get('sound_device_index', 0)
-        self.device_samplerate = config.get('device_samplerate', 44100)
+        device_info = sd.query_devices()
+        selected_device_index = next(index for index, d in enumerate(device_info) if USB_SOUND_CARD_NAME in d['name'])
+        self.device_samplerate = device_info[selected_device_index]['default_samplerate'] if selected_device_index is not None else 44100
         self.servo_controller = Controller()
         self.init_audio_devices()
 

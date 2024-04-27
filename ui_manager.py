@@ -1,9 +1,11 @@
 import sys
 import termios
 import tty
+from app import TensionTestingApp
+
 
 class UIManager:
-    def __init__(self, application):
+    def __init__(self, application: TensionTestingApp):
         self.application = application
 
     def display_menu(self):
@@ -34,8 +36,8 @@ class UIManager:
         """Process the user's choice and call the corresponding method in the application."""
         actions = {
             'd': self.application.handle_select_device,
-            'r': self.application.handle_record,
-            'w': self.application.handle_goto_spec_wire,
+            'r': self.application.handle_manual_record,
+            'w': self.application.handle_goto_input_wire,
             'n': self.application.handle_goto_next_wire,
             'u': self.application.handle_goto_prev_wire,
             'c': self.application.handle_calibration,
