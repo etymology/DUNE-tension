@@ -1,4 +1,4 @@
-from typing import Tuple
+from time import sleep
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
@@ -28,7 +28,9 @@ class Tensiometer:
     """
 
     def __init__(self):
-        self.driver = None
+        # self driver set to None for remote testing
+        # self.driver = None
+        self.init_driver()
         self.servo_controller = Controller()
 
     def init_driver(self):
@@ -61,6 +63,7 @@ class Tensiometer:
         return x != x_target or y != y_target
 
     def goto_xy(self, x, y):
+        sleep(1.0)
         jog_button = WebDriverWait(self.driver, 2).until(
             EC.element_to_be_clickable((By.XPATH, JOG_BUTTON_XPATH))
         )
@@ -76,3 +79,8 @@ class Tensiometer:
 
     def pluck_string(self):
         self.servo_controller.runScriptSub(MAESTRO_SUBSCRIPTS['pluck_string'])
+
+    def close_driver(self):
+        """Close the browser driver."""
+        if self.driver:
+            self.driver.quit()

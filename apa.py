@@ -1,212 +1,267 @@
 import json
-import os
 from typing import Dict, List, Tuple
 
-"""
-These are the default X values the middle of four of the five "zones" or columns between ribs. These
-values only need to be approximately in the middle of the ribs to achieve a sensible measurement.
-Zone 1 is headmost, zone 5 footmost. Only 1,2,4,5 are used
-"""
-ZONE_MIDDLES_X = {1: 1600, 2: 2800, 4: 5200, 5: 6400}
-FIRST_WIRE_NUMBER = 5
-LAST_WIRE_NUMBER = 1150
-LAST_WIRE_NUMBER_IN_ZONE = {1: 400, 2: 551,
-                            4: 751, 5: LAST_WIRE_NUMBER}
-DIAGONAL_WIRE_PITCH = (8, 5.75)
+####### APA PARAMETERS #######
+## HORIZONTAL APA PARAMS ##
+# 1500 value is temporary
+HORI_LAYER_X = 6400
+HORI_DELTA_Y = 4.7916667
 
+HORI_LAYER_MIN_WIRENUM = 1
+HORI_LAYER_MAX_WIRENUM = 480
+
+## DIAGONAL APA PARAMS ##
+DIAG_DELTA_X = 2.72455392
+DIAG_DELTA_Y = 3.79161
+DELTA_VERTICAL_ONLY = 5.75
+
+DIAG_LAYER_MIN_WIRENUM = 8
+DIAG_LAYER_MAX_WIRENUM = 1146
+
+DIAG_LAYER_Z1_COMP1_MAX_WIRENUM = 218
+DIAG_LAYER_Z1_COMP2_MAX_WIRENUM = 399
+DIAG_LAYER_Z2_MAX_WIRENUM = 551
+DIAG_LAYER_Z4_MAX_WIRENUM = 751
+DIAG_LAYER_Z5_COMP2_MAX_WIRENUM = 991
+
+PITCH_RATIO = 5.75/8.0
+
+Z2_X = 2800
+Z4_X = 5150
 
 class APA:
     def __init__(self, name: str):
         """
-        Initializes an instance an APA with a given name. APA's have an
-        associated calibration file called f"{name}_tension_calibration.json"
-        and a functions which load, and write calibrations. A calibration is
-        of the form APA.getPluckingPoint(layer:str, wire_number:int) -> Tuple[Float,Float]
+        Initialize an APA instance with a specified name.
 
         Args:
-            name (str): The name to assign to the instance.
+            name (str): The name of the APA, which determines the calibration file name.
 
-        Returns:
-            None
-
-        Examples:
-            >>> instance = APA("Wood")
+        Attributes:
+            name (str): Name of the APA.
+            calibration (dict): Loaded calibration data from the JSON file.
         """
         self.name = name
-        self.calibration: Dict[str, List[Tuple[float, float]]]
-        self.load_calibration_from_json()
+        self.calibration = self.load_calibration_from_json()
 
-    def calibration_file_path(self):
-        return f"APAcalibrationFiles/{self.name}_tension_calibration.json"
-
-    def load_calibration_from_json(self):
+    def calibration_file_path(self) -> str:
         """
-        Loads calibration data from a JSON file associated with the APA instance.
-
-        Args:
-            self: The APA instance to load calibration data for.
+        Generate the file path for the calibration file based on the APA name.
 
         Returns:
-            None
+            str: The file path for the APA's calibration data.
         """
+        return f"APAcalibrationFiles/{self.name}_tension_calibration.json"
 
-        filename = self.calibration_file_path()
-        if os.path.exists(filename):
-            with open(filename, 'r') as file:
-                self.calibration = json.load(file)
-        else:
-            print(
-                f"No calibration file found for APA {self.name}. Using blank calibration.")
-            self.calibration = {"X": [], "V": [], "U": [], "G": []}
+    def load_calibration_from_json(self) -> Dict[str, List[Tuple[float, float]]]:
+        """
+        Load calibration data from a JSON file, handling the case where the file does not exist.
+
+        Returns:
+            dict: A dictionary containing the calibration data for different layers.
+                  Returns a default dictionary with empty lists if the file is not found.
+        """
+        try:
+            with open(self.calibration_file_path(), 'r') as file:
+                return json.load(file)
+        except FileNotFoundError:
+            print(f"No calibration file found for APA {self.name}. Using blank calibration.")
+            return {"X": [], "V": [], "U": [], "G": []}
 
     def save_calibration_to_json(self):
         """
-        Saves the calibration data of the APA instance to a JSON file.
-
-        Args:
-            self: The APA instance to save calibration data for.
-
-        Returns:
-            None
+        Save the current calibration data to a JSON file.
         """
-
-        filename = self.calibration_file_path()
-        with open(filename, 'w') as file:
+        with open(self.calibration_file_path(), 'w') as file:
             json.dump(self.calibration, file)
 
     def calibrate(self, layer="", first_wire_coordinates=None, last_wire_coordinates=None):
         """
-        QUESTION: should the this function ask the user to move to the wire, or ask to type in a value?
-
-        Prompts the user for initial calibration data based on the layer provided.
-        OR, takes layer as input.
+        Facilitate the calibration process for a specified layer of the APA.
 
         Args:
-            self: The APA instance to prompt calibration for.
-            layer (str, optional): The layer for which calibration is prompted. Defaults to "".
-
-        Returns:
-            None
+            layer (str, optional): The layer to calibrate ('X', 'V', 'U', or 'G').
+            first_wire_coordinates (tuple, optional): Coordinates (x, y) for the first wire in the calibration process.
+            last_wire_coordinates (tuple, optional): Coordinates (x, y) for the last wire in the calibration process.
         """
-
-        def get_float_input(prompt):
-            while True:
-                try:
-                    return float(input(prompt))
-                except ValueError:
-                    print("Invalid input. Please enter a valid floating-point number.")
-
-        def get_coordinates_input(prompt):
-            while True:
-                coordinates = input(prompt).split(',')
-                if len(coordinates) != 2:
-                    print(
-                        "Invalid input. Please enter two values separated by a comma.")
-                else:
-                    try:
-                        return tuple(map(float, coordinates))
-                    except ValueError:
-                        print(
-                            "Invalid input. Please enter valid floating-point numbers.")
-
-        layer_name = layer.upper() if layer else input(
-            "Enter layer (X, V, U, or G): ").upper()
-
-        if layer_name not in ["X", "V", "U", "G"]:
-            print("Invalid layer name (not X, V, U or G)")
+        layer = self.get_layer_name(layer)
+        if not self.confirm_overwrite(layer):
             return
-        else:
-            self.load_calibration_from_json()
-
-            if self.calibration[layer_name]:
-                overwrite = input(
-                    f"Do you really want to overwrite the existing calibration for layer \"{layer_name}\"? (y/n)").upper()
-                if overwrite != "Y":
-                    return
-
-            if layer_name in ['X', 'G']:
-                if first_wire_coordinates is None:
-                    y_value = get_float_input(
-                        "Enter the Y value for the lowest wire on the compensator(fixed) side: ")
-                else:
-                    y_value = first_wire_coordinates[1]
-                self.calibration[layer_name] = [
-                    (ZONE_MIDDLES_X[5], y_value + i * 2300 / 480) for i in range(480)]
-
-            elif layer_name in ['V', 'U']:
-                if first_wire_coordinates is None:
-                    first_wire_coordinates = get_coordinates_input(
-                        f"Enter initial coordinates for the {FIRST_WIRE_NUMBER}th wire of the \"{layer_name}\" layer (from the LSB/head corner, the first over empty space) (comma-separated): ")
-                if last_wire_coordinates is None:
-                    last_wire_coordinates = get_coordinates_input(
-                        f"Enter coordinates for the last wire of the \"{layer_name}\" layer (comma-separated): ")
-
-                if layer_name == 'V':
-                    temp_x, temp_y, temp_wirenumber = first_wire_coordinates[
-                        0], first_wire_coordinates[1], FIRST_WIRE_NUMBER
-
-                    # ZONE 1
-                    # DIAGONAL movement in +x,-y until middle of zone1
-                    while temp_x < ZONE_MIDDLES_X[1]:
-                        self.calibration[layer_name][temp_wirenumber] = (
-                            temp_x, temp_y)
-                        temp_x += DIAGONAL_WIRE_PITCH[0]/2
-                        temp_y -= DIAGONAL_WIRE_PITCH[1]/2
-                        temp_wirenumber += 1
-
-                    # Vertical movement in -y until end of zone1
-                    while temp_wirenumber <= LAST_WIRE_NUMBER_IN_ZONE[1]:
-                        self.calibration[layer_name][temp_wirenumber] = (
-                            temp_x, temp_y)
-                        temp_y -= DIAGONAL_WIRE_PITCH[1]
-                        temp_wirenumber += 1
-
-                    # ZONE 2
-                    # ONLY VERTICAL (0,-y)
-                    temp_x = ZONE_MIDDLES_X[2]
-                    # Up diagonally along the last wire in Zone 1, then down one y wire pitch
-                    temp_y += (temp_x-ZONE_MIDDLES_X[1])*DIAGONAL_WIRE_PITCH[1] / \
-                        DIAGONAL_WIRE_PITCH[0]-DIAGONAL_WIRE_PITCH[1]
-                    temp_wirenumber = LAST_WIRE_NUMBER_IN_ZONE[1]+1
-                    while temp_wirenumber <= LAST_WIRE_NUMBER_IN_ZONE[2]:
-                        self.calibration[layer_name][temp_wirenumber] = (
-                            temp_x, temp_y)
-                        temp_y -= DIAGONAL_WIRE_PITCH[1]
-                        temp_wirenumber += 1
-
-                    # Now we calibrate from the foot/HSB corner, first zone 5 the zone 4. We count downwards this time.
-                    temp_x = last_wire_coordinates[0]
-                    temp_y = last_wire_coordinates[1]
-                    temp_wirenumber = LAST_WIRE_NUMBER
-                    # ZONE 5
-                    # DIAGONAL movement in -x,+y until middle of zone5
-                    while temp_x > ZONE_MIDDLES_X[5]:
-                        self.calibration[layer_name][temp_wirenumber] = (
-                            temp_x, temp_y)
-                        temp_x -= DIAGONAL_WIRE_PITCH[0]/2
-                        temp_y += DIAGONAL_WIRE_PITCH[1]/2
-                        temp_wirenumber -= 1
-
-                    # Vertical movement in +y until end of zone1
-                    while temp_wirenumber >= LAST_WIRE_NUMBER_IN_ZONE[5]:
-                        self.calibration[layer_name][temp_wirenumber] = (
-                            temp_x, temp_y)
-                        temp_y += DIAGONAL_WIRE_PITCH[1]
-                        temp_wirenumber -= 1
-
-                    # ZONE 4
-                    # ONLY VERTICAL (0,+y)
-                    temp_x = ZONE_MIDDLES_X[4]
-                    # Down diagonally along the last wire in Zone 5, then up one y wire pitch
-                    temp_y += (temp_x-ZONE_MIDDLES_X[5])*DIAGONAL_WIRE_PITCH[1] / \
-                        DIAGONAL_WIRE_PITCH[0]+DIAGONAL_WIRE_PITCH[1]
-                    temp_wirenumber = LAST_WIRE_NUMBER_IN_ZONE[5]+1
-                    while temp_wirenumber > LAST_WIRE_NUMBER_IN_ZONE[2]:
-                        self.calibration[layer_name][temp_wirenumber] = (
-                            temp_x, temp_y)
-                        temp_y += DIAGONAL_WIRE_PITCH[1]
-                        temp_wirenumber -= 1
-                else:
-                    print("U layer behavior not yet defined")
+        if layer in ['X', 'G']:
+            self.handle_hori_layer(layer, first_wire_coordinates)
+        elif layer in ['V', 'U']:
+            self.handle_diag_layer(layer, first_wire_coordinates, last_wire_coordinates)
 
         self.save_calibration_to_json()
+
+    def handle_diag_layer(self, layer, first_wire_coordinates: Tuple[float, float], last_wire_coordinates: Tuple[float, float]):
+        """
+        Handle calibration for V layer.
+
+        Args:
+            first_wire_coordinates (tuple): Starting coordinates for the diagonal calibration.
+            last_wire_coordinates (tuple): Ending coordinates for the diagonal calibration.
+        """
+        if not first_wire_coordinates:
+            first_wire_coordinates = self.get_coordinates_input(f"Enter initial coordinates for the {DIAG_LAYER_MIN_WIRENUM}th wire of the \"{layer}\" layer (comma-separated): ")
+        if not last_wire_coordinates:
+            last_wire_coordinates = self.get_coordinates_input(f"Enter coordinates for the last wire of the \"{layer}\" layer (comma-separated): ")
+
+        incr_bool = -1 if layer == 'U' else 1
+
+        # Zone 1, broken into two components
+        z1_comp1 = self.make_config_comp(first_wire_coordinates[0],first_wire_coordinates[1], 
+                                     DIAG_LAYER_MIN_WIRENUM,incr_bool*DIAG_DELTA_X,-incr_bool*DIAG_DELTA_Y, 
+                                     DIAG_LAYER_MIN_WIRENUM,DIAG_LAYER_Z1_COMP1_MAX_WIRENUM)
+
+        z1_comp2 = self.make_config_comp(z1_comp1[DIAG_LAYER_Z1_COMP1_MAX_WIRENUM]["X"], 
+                                     z1_comp1[DIAG_LAYER_Z1_COMP1_MAX_WIRENUM]["Y"], 
+                                     DIAG_LAYER_Z1_COMP1_MAX_WIRENUM, 
+                                     0.0, -incr_bool*DELTA_VERTICAL_ONLY, 
+                                     DIAG_LAYER_Z1_COMP1_MAX_WIRENUM+1, 
+                                     DIAG_LAYER_Z1_COMP2_MAX_WIRENUM)
+        z1 = z1_comp1 | z1_comp2
+
+        # Zone 2
+        z2 = self.make_config_comp(Z2_X, (z1[DIAG_LAYER_Z1_COMP2_MAX_WIRENUM]["Y"]-DELTA_VERTICAL_ONLY)\
+                                      +(Z2_X-z1[DIAG_LAYER_Z1_COMP2_MAX_WIRENUM]["X"])*PITCH_RATIO, 
+                                       DIAG_LAYER_Z1_COMP2_MAX_WIRENUM+1, 
+                                      0.0, -incr_bool*DELTA_VERTICAL_ONLY, 
+                                      DIAG_LAYER_Z1_COMP2_MAX_WIRENUM+1, 
+                                      DIAG_LAYER_Z2_MAX_WIRENUM)
+
+        # Zone 4
+        z4 = self.make_config_comp(Z4_X, z2[DIAG_LAYER_Z2_MAX_WIRENUM]["Y"]\
+                                     +(Z4_X-z2[DIAG_LAYER_Z2_MAX_WIRENUM]["X"])*PITCH_RATIO, 
+                                     DIAG_LAYER_Z2_MAX_WIRENUM, 
+                                     0.0, -incr_bool*DELTA_VERTICAL_ONLY, 
+                                     DIAG_LAYER_Z2_MAX_WIRENUM+1, 
+                                     DIAG_LAYER_Z4_MAX_WIRENUM)
+
+        # Zone 5
+        z5_comp1 = self.make_config_comp(last_wire_coordinates[0],last_wire_coordinates[1], 
+                                     DIAG_LAYER_MAX_WIRENUM,incr_bool*DIAG_DELTA_X,-incr_bool*DIAG_DELTA_Y, 
+                                     DIAG_LAYER_Z5_COMP2_MAX_WIRENUM+1,DIAG_LAYER_MAX_WIRENUM)
+
+        z5_comp2 = self.make_config_comp(z5_comp1[DIAG_LAYER_Z5_COMP2_MAX_WIRENUM+1]["X"], 
+                                     z5_comp1[DIAG_LAYER_Z5_COMP2_MAX_WIRENUM+1]["Y"], 
+                                     DIAG_LAYER_Z5_COMP2_MAX_WIRENUM+1, 
+                                     0.0, -DELTA_VERTICAL_ONLY, 
+                                     DIAG_LAYER_Z4_MAX_WIRENUM+1,DIAG_LAYER_Z5_COMP2_MAX_WIRENUM)
+        z5 = z5_comp1 | z5_comp2
+
+        self.calibration[layer] = z1 | z2 | z4 | z5
+
+    def handle_hori_layer(self, layer, first_wire_coordinates: Tuple[float, float]):
+        """
+        Handle calibration for horizontal layer.
+
+        Args:
+            first_wire_coordinates (tuple): Coordinates (x, y) of the first wire.
+        """
+        y_value = first_wire_coordinates[1] if first_wire_coordinates \
+                  else self.get_float_input("Enter the Y value for the lowest wire on the compensator (fixed) side: ")
+
+        self.calibration[layer] = self.make_config_comp(HORI_LAYER_X, y_value, HORI_LAYER_MAX_WIRENUM, 
+                                      0, -HORI_DELTA_Y, 
+                                      HORI_LAYER_MIN_WIRENUM, HORI_LAYER_MAX_WIRENUM)
+
+    def make_config_comp(self, calx, caly, calwire, delx, dely, minwirenum, maxwirenum):
+        """
+        Produce a dictionary for some component of the calibration dict. Here
+        a component is defined as some segment of consecutively numbered wires
+        with equal wire spacing.
+
+        Args:
+            calx (float): X component of the calibration point 
+            caly (float): X component of the calibration point 
+            calwire (int): wirenumber of the calibration point 
+            delx (float): change in x between wires in the component 
+            dely (float): change in y between wires in the component
+            minwirenum (float): lowest wire number in the component 
+            maxwirenunm (float): highest wire number in the component 
+
+        Returns:
+            dict: dictionary for some component of the layer
+        """
+        return {wire: {"X": calx + (wire - calwire) * delx,
+                       "Y": caly + (wire - calwire) * dely}
+               for wire in range(minwirenum, maxwirenum + 1)}
+
+    def get_layer_name(self, layer: str) -> str:
+        """
+        Ensure the layer name is valid and return it in uppercase.
+
+        Args:
+            layer (str): The layer name input by the user or passed as an argument.
+
+        Returns:
+            str: The validated and normalized layer name.
+        """
+        layer = layer.upper() or input("Enter layer (X, V, U, or G): ").upper()
+        assert layer in ["X", "V", "U", "G"], "Invalid layer name"
+        return layer
+
+    def confirm_overwrite(self, layer: str) -> bool:
+        """
+        Confirm whether the user wants to overwrite existing calibration data.
+
+        Args:
+            layer (str): The layer for which calibration might be overwritten.
+
+        Returns:
+            bool: True if the user confirms overwrite, False otherwise.
+        """
+        if self.calibration.get(layer):
+            return input(f"Do you really want to overwrite the existing calibration for layer \"{layer}\"? (y/n)").strip().upper() == "Y"
+        return True
+
+    def get_float_input(self, prompt: str) -> float:
+        """
+        Get a floating-point input from the user with error handling.
+
+        Args:
+            prompt (str): The prompt to display to the user.
+
+        Returns:
+            float: The user-entered floating-point number.
+        """
+        while True:
+            try:
+                return float(input(prompt))
+            except ValueError:
+                print("Invalid input. Please enter a valid floating-point number.")
+
+    def get_coordinates_input(self, prompt: str):
+        """
+        Prompt the user to enter two float values separated by a comma, and return them as a tuple.
+
+        Args:
+            prompt (str): The input prompt provided to the user.
+
+        Returns:
+            Tuple[float, float]: The coordinates entered by the user.
+        """
+        while True:
+            coordinates = input(prompt).split(',')
+            if len(coordinates) == 2:
+                try:
+                    return tuple(map(float, coordinates))
+                except ValueError:
+                    print("Invalid input. Please enter valid floating-point numbers.")
+            print("Invalid input. Please enter two values separated by a comma.")
+
+    def get_plucking_point(self, wire_number, layer):
+        """
+        Using a wire_number input, return x and y for the location to pluck the corresponding wire
+
+        Args: 
+            wire_number (int): The wire number of plucking point.
+
+        Returns: 
+            Tuple[float, float]: The coordinates of the plucking point for wire_number input 
+        """
+        wire_loc = self.load_calibration_from_json()[layer][int(wire_number)]
+        print("wire_loc", wire_loc)
+        return wire_loc
+
