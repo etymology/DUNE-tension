@@ -1,28 +1,35 @@
 import requests
-from time_decorator import timer
 from maestro import Controller
 
 TENSION_SERVER_URL = 'http://192.168.137.1:5000'
 
 IDLE_MOVE_TYPE = 0
 IDLE_STATE = 1
-XY_MOVE_TYPE = 3
+XY_MOVE_TYPE = 2
+XY_STATE = 3
+
+def wiggle_generator():
+    i = 0  # Start with the first element index
+    while True:  # This makes it an infinite generator
+        # Calculate value using the formula derived
+        yield (-1)**(i // 2 + 1) * (i // 2 + 1) * 0.1
+        i += 1
 
 
-@timer
 def read_tag(tag_name, base_url=TENSION_SERVER_URL):
     """ Function to read the value of a given tag from the server. """
     try:
         response = requests.get(f"{base_url}/tags/{tag_name}")
         if response.status_code == 200:
-            return response.json()
+            # Tags are a dictionary keyed by name, value is the second element in the list
+            return response.json()[tag_name][1]
         else:
             return {'error': response.json().get('error', 'Unknown error')}
     except requests.exceptions.RequestException as e:
         return {'error': str(e)}
 
 
-@timer
+
 def write_tag(tag_name, value, base_url=TENSION_SERVER_URL):
     """ Function to write a value to a given tag on the server. """
     try:
@@ -36,59 +43,71 @@ def write_tag(tag_name, value, base_url=TENSION_SERVER_URL):
         return {'error': str(e)}
 
 
-def get_position() -> tuple[float, float]:
-    """ Get the current position of the tensioning system. """
-    x = read_tag("X_axis.ActualPosition")
-    y = read_tag("Y_axis.ActualPosition")
-    return x, y
+class Tensiometer:
+    def __init__(self):
+        self.maestro = Controller()
 
+    def __exit__(self):
+        self.maestro.close()
 
-def get_state() -> int:
-    """ Get the current state of the tensioning system. """
-    state = read_tag("STATE")
-    return state
+    def pluck_string(self):
+        if not self.maestro.faulted:
+            self.maestro.runScriptSub(0)
+        else:
+            print("Maestro is faulted. Cannot pluck the string.")
 
+    @staticmethod
+    def get_xy() -> tuple[float, float]:
+        """ Get the current position of the tensioning system. """
+        x = read_tag("X_axis.ActualPosition")
+        y = read_tag("Y_axis.ActualPosition")
+        return x, y
 
-def wait_until_idle():
-    """ Wait until the tensioning system is in the idle state. """
-    while get_state() != IDLE_STATE:
-        pass
+    @staticmethod
+    def get_state() -> dict[str, list]:
+        """ Get the current state of the tensioning system. """
+        state = read_tag("STATE")
+        return state
 
+    @staticmethod
+    def wait_until_state_movetype(target_state: int, target_move_type: int):
+        """ Wait until the tensioning system is in the idle state. """
+        while read_tag("STATE") != target_state and read_tag("MOVE_TYPE") != target_move_type:
+            pass
+        while read_tag("STATE") != IDLE_STATE and read_tag("MOVE_TYPE") != IDLE_MOVE_TYPE:
+            pass
 
-def get_movetype() -> int:
-    """ Get the current move type of the tensioning system. """
-    movetype = read_tag("MOVE_TYPE")
-    return movetype
+    @staticmethod
+    def get_movetype() -> int:
+        """ Get the current move type of the tensioning system. """
+        movetype = read_tag("MOVE_TYPE")
+        return movetype
 
+    def goto_xy(self, x_target: float, y_target: float):
+        if self.get_state() == IDLE_STATE and self.get_movetype() == IDLE_MOVE_TYPE:
+            """ Move the winder to a given position. """
+            write_tag("X_POSITION", x_target)
+            write_tag("Y_POSITION", y_target)
+            write_tag("MOVE_TYPE", XY_MOVE_TYPE)
+            self.wait_until_state_movetype(XY_STATE,XY_MOVE_TYPE)
+        else:
+            print("Cannot move the system while it is in motion.")
 
-def goto_position(x: float, y: float):
-    state = get_state()
-    movetype = get_movetype()
-    if state == IDLE_STATE and movetype == IDLE_MOVE_TYPE:
-        """ Move the tensioning system to a given position. """
-        set_x_result = write_tag("X_POSITION", x)
-        set_y_result = write_tag("Y_POSITION", y)
-        set_movetype_result = write_tag(
-            TENSION_SERVER_URL, "MOVE_TYPE", XY_MOVE_TYPE)
-        return set_x_result, set_y_result, set_movetype_result
-    else:
-        print("Cannot move the system while it is in motion.")
-
-
-def pluck_string():
-    maestro = Controller()
-    maestro.runScriptSub(0)
+    def increment(self, increment_x, increment_y):
+        x, y = self.get_xy()
+        self.goto_xy(x+increment_x, y+increment_y)
 
 
 if __name__ == "__main__":
-    starting_x, starting_y = get_position()
-    print(f"Current position: x={starting_x}, y={starting_y}")
-    print("Moving to position x+5, y+5...")
-    goto_position(starting_x + 5, starting_y + 5)
-    print("Waiting for the system to become idle...")
-    wait_until_idle()
-    print("returning to starting position...")
-    goto_position(starting_x, starting_y)
-    wait_until_idle()
-    pluck_string()
-    print("Done!")
+    t = Tensiometer()
+    starting_x, starting_y = t.get_xy()
+    movetype = t.get_movetype()
+    state = t.get_state()
+    print(
+        f"Current position: x={starting_x}, y={starting_y}\nstate={state}, movetype={movetype}")
+
+    wg = wiggle_generator()  # Create an instance of the generator
+    for _ in range(12):  # Get the first 10 elements
+        t.goto_xy(0,starting_y+next(wg))
+        
+

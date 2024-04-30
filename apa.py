@@ -261,7 +261,7 @@ class APA:
         Returns: 
             Tuple[float, float]: The coordinates of the plucking point for wire_number input 
         """
-        wire_loc = self.load_calibration_from_json()[layer][wire_number]
+        wire_loc = self.load_calibration_from_json()[layer][int(wire_number)]
         print("wire_loc", wire_loc)
         return wire_loc
 

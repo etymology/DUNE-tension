@@ -9,7 +9,7 @@ from audio_processor import AudioProcessor
 from plotter import Plotter
 from ui_manager import UIManager
 from apa import APA
-from tensiometer import Tensiometer
+from tension_client import Tensiometer
 
 ZONE_BOUNDARIES = [2200, 3400, 4600, 5800]  # These are example values
 
@@ -49,15 +49,15 @@ class TensionTestingApp:
                 audio_signal = self.audio_processor.record_audio(
                     float(self.config_manager.config['sound_length']))
                 break
-            elif datetime.now() > start_time + timedelta(seconds=10):
+            elif datetime.now() > start_time + timedelta(seconds=2):
                 print("Timed out! No sound detected. Quitting.")
                 audio_signal = np.array([])
         if (audio_signal.size > 0):
-            frequency, confidence = self.audio_processor.crepe_pitch(
+            frequency, confidence = self.audio_processor.get_pitch_crepe(
                 audio_signal)
             self.plotter.plot_audio(
                 audio_signal, self.audio_processor.samplerate, frequency, confidence)
-            frequency, confidence = self.audio_processor.get_pitch_from_audio_fft(
+            frequency, confidence = self.audio_processor.get_pitch_fft(
                 audio_signal)
             print(f"Frequency: {frequency} Hz, Confidence: {confidence}")
             if frequency != 0.0:
@@ -71,26 +71,21 @@ class TensionTestingApp:
                 elif log_prompt.lower() == 'n':
                     print("Frequency not logged.")
 
-    def auto_log_frequency(self, output_file="Output.csv"):
+
+
+    def handle_auto_record_log(self):
         self.tensiometer.pluck_string()
-        start_time = datetime.now()
-        while True:
-            audio_data = self.audio_processor.record_audio(0.005)
-            if self.audio_processor.detect_sound(audio_data, self.config_manager.config['noise_threshold']):
-                audio_signal = self.audio_processor.record_audio(
-                    float(self.config_manager.config['sound_length']))
-                break
-            elif datetime.now() > start_time + timedelta(seconds=10):
-                print("No sound detected. Quitting")
-                audio_signal = np.array([])
-                break
-        if (audio_signal.size > 0):
-            fft_peaks = self.audio_processor.get_pitch_from_audio_fft(
-                audio_signal)
+        audio_signal = self.audio_processor.record_audio(1)
+
+        frequency, confidence = self.audio_processor.get_pitch_crepe(audio_signal)
+        if confidence > .9:
             curr_wirenum = self.config_manager.config['current_wirenumber']
             self.log_frequency_and_wire_number(
-                fft_peaks, curr_wirenum, filename=output_file)
-            print(f"Frequency logged for wire number {curr_wirenum}.")
+                frequency, curr_wirenum, filename=f"{self.apa.name}.csv")
+            print(f"Fruency {frequency} Hz with confidence {confidence} logged for wire number {curr_wirenum}.")
+        else:
+            print("Frequency not logged due to low confidence.")
+        return None
 
     def handle_goto_input_wire(self):
         wire_number = input("Enter the wire number to go to: ")
