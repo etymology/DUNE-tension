@@ -1,5 +1,6 @@
 import serial
 from sys import version_info
+import platform
 
 PY2 = version_info[0] == 2  # Running Python 2.x?
 
@@ -32,18 +33,23 @@ class Controller:
     # example, '/dev/ttyACM2' or for Windows, something like 'COM3'.
 
     def __init__(self, ttyStr='/dev/ttyACM0', device=0x0c):
+        # Determine the appropriate port based on the operating system
+        if platform.system() == 'Windows':
+            ttyStr = 'COM3'
         # Open the command port
         try:
             self.usb = serial.Serial(ttyStr)
             self.faulted = False
         except serial.SerialException:
-            print("Couldn't find Maestro! Try sudo chmod 666 /dev/ttyACM0.")
+            if ttyStr == 'COM3':
+                print("Couldn't find Maestro on COM3! Check the connection or device manager.")
+            else:
+                print("Couldn't find Maestro! Try sudo chmod 666 /dev/ttyACM0.")
             self.faulted = True
+
         # Command lead-in and device number are sent for each Pololu serial command.
         self.PololuCmd = chr(0xaa) + chr(device)
-        # Track target position for each servo. The function isMoving() will
-        # use the Target vs Current servo position to determine if movement is
-        # occuring.  Upto 24 servos on a Maestro, (0-23). Targets start at 0.
+        # Track target position for each servo. Targets start at 0 for up to 24 servos.
         self.Targets = [0] * 24
         # Servo minimum and maximum targets can be restricted to protect components.
         self.Mins = [0] * 24
