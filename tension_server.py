@@ -6,6 +6,7 @@ SERVER_PORT = 5000
 
 app = Flask(__name__)
 
+TEST_SERVER = False
 
 @app.route('/tags/<tag_name>', methods=['GET'])
 def read_tag(tag_name):
@@ -23,10 +24,12 @@ def write_tag(tag_name):
     value = request.json.get('value')
     if value is None:
         return jsonify({'error': 'No value provided'}), 400
-
-    comm.write(tag_name, value)
+    if not TEST_SERVER:
+        comm.write((tag_name, value))
     return jsonify({tag_name: value})
 
-
-with logix_driver.LogixDriver(PLC_IP_ADDRESS) as comm:
-    app.run(debug=True, port=SERVER_PORT)
+if __name__ == '__main__':
+    if TEST_SERVER:
+        print("Running in test mode. No tag writing allowed.\n")
+    with logix_driver.LogixDriver(PLC_IP_ADDRESS) as comm:
+        app.run(debug=True, port=SERVER_PORT, host='0.0.0.0')
