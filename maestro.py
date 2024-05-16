@@ -35,8 +35,10 @@ class Controller:
         # Open the command port
         try:
             self.usb = serial.Serial(ttyStr)
+            self.faulted = False
         except serial.SerialException:
             print("Couldn't find Maestro! Try sudo chmod 666 /dev/ttyACM0.")
+            self.faulted = True
         # Command lead-in and device number are sent for each Pololu serial command.
         self.PololuCmd = chr(0xaa) + chr(device)
         # Track target position for each servo. The function isMoving() will
