@@ -44,7 +44,7 @@ class Controller:
             if ttyStr == 'COM3':
                 print("Couldn't find Maestro on COM3! Check the connection or device manager.")
             else:
-                print("Couldn't find Maestro! Try sudo chmod 666 /dev/ttyACM0.")
+                print("Couldn't find Maestro! Check the connection or port.")
             self.faulted = True
 
         # Command lead-in and device number are sent for each Pololu serial command.
@@ -59,7 +59,7 @@ class Controller:
     def close(self):
         self.usb.close()
 
-    # Send a Pololu command out the serial port
+    # Send a Pololu command out the serial pnoort
     def sendCmd(self, cmd):
         cmdStr = self.PololuCmd + cmd
         if PY2:
@@ -172,12 +172,11 @@ class Controller:
 
 
 if __name__ == "__main__":
-    maestro = Controller()
+    from time import sleep
+    controller = Controller()
     while True:
+        controller.runScriptSub(0)
+        sleep(.8)
+        controller.runScriptSub(1)
+        sleep(.8)
 
-        key = input()
-        if key == "":
-            maestro.runScriptSub(0)
-        if key == "q":
-            maestro.close()
-            break
