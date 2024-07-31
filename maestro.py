@@ -1,5 +1,6 @@
 import serial
 from sys import version_info
+import platform
 
 PY2 = version_info[0] == 2  # Running Python 2.x?
 
@@ -31,19 +32,26 @@ class Controller:
     # ports, or you are using a Windows OS, you can provide the tty port.  For
     # example, '/dev/ttyACM2' or for Windows, something like 'COM3'.
 
-    def __init__(self, ttyStr='/dev/ttyACM0', device=0x0c):
+    def __init__(self, ttyStr="/dev/ttyACM0", device=0x0C):
+        # Determine the appropriate port based on the operating system
+        if platform.system() == "Windows":
+            ttyStr = "COM3"
         # Open the command port
         try:
             self.usb = serial.Serial(ttyStr)
             self.faulted = False
         except serial.SerialException:
-            print("Couldn't find Maestro! Try sudo chmod 666 /dev/ttyACM0.")
+            if ttyStr == "COM3":
+                print(
+                    "Couldn't find Maestro on COM3! Check the connection or device manager."
+                )
+            else:
+                print("Couldn't find Maestro! Check the connection or port.")
             self.faulted = True
+
         # Command lead-in and device number are sent for each Pololu serial command.
-        self.PololuCmd = chr(0xaa) + chr(device)
-        # Track target position for each servo. The function isMoving() will
-        # use the Target vs Current servo position to determine if movement is
-        # occuring.  Upto 24 servos on a Maestro, (0-23). Targets start at 0.
+        self.PololuCmd = chr(0xAA) + chr(device)
+        # Track target position for each servo. Targets start at 0 for up to 24 servos.
         self.Targets = [0] * 24
         # Servo minimum and maximum targets can be restricted to protect components.
         self.Mins = [0] * 24
@@ -53,13 +61,13 @@ class Controller:
     def close(self):
         self.usb.close()
 
-    # Send a Pololu command out the serial port
+    # Send a Pololu command out the serial pnoort
     def sendCmd(self, cmd):
         cmdStr = self.PololuCmd + cmd
         if PY2:
             self.usb.write(cmdStr)
         else:
-            self.usb.write(bytes(cmdStr, 'latin-1'))
+            self.usb.write(bytes(cmdStr, "latin-1"))
 
     # Set channels min and max value range.  Use this as a safety to protect
     # from accidentally moving outside known safe parameters. A setting of 0
@@ -101,7 +109,7 @@ class Controller:
     # Set speed of channel
     # Speed is measured as 0.25microseconds/10milliseconds
     # For the standard 1ms pulse width change to move a servo between extremes, a speed
-    # of 1 will take 1 minute, and a speed of 60 would take 1 second.
+    # of 1 will take 1 minute, and a X6500.0 Y205.8speed of 60 would take 1 second.
     # Speed of 0 is unrestricted.
     def setSpeed(self, chan, speed):
         self.sendCmd(self._make_command(speed, 0x07, chan))
@@ -117,7 +125,7 @@ class Controller:
         lsb = message & 127
         msb = message >> 7 & 127
         return chr(preface) + chr(chan) + chr(lsb) + chr(msb)
-    
+
     # Get the current position of the device on the specified channel
     # The result is returned in a measure of quarter-microseconds, which mirrors
     # the Target parameter of setTarget.
@@ -141,7 +149,7 @@ class Controller:
     # moving to the target.
     def isMoving(self, chan):
         return self.Targets[chan] > 0 and self.getPosition(chan) != self.Targets[chan]
-    
+
     # Have all servo outputs reached their targets? This is useful only if Speed and/or
     # Acceleration have been set on one or more of the channels. Returns True or False.
     # Not available with Micro Maestro.
@@ -166,12 +174,11 @@ class Controller:
 
 
 if __name__ == "__main__":
-    maestro = Controller()
-    while True:
+    from time import sleep
 
-        key = input()
-        if key == "":
-            maestro.runScriptSub(0)
-        if key == "q":
-            maestro.close()
-            break
+    controller = Controller()
+    while True:
+        controller.runScriptSub(0)
+        sleep(0.8)
+        controller.runScriptSub(1)
+        sleep(0.8)
