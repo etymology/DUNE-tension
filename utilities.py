@@ -4,7 +4,8 @@ import csv
 import random
 import time
 import pandas as pd
-from typing import Tuple
+import numpy as np
+from scipy.stats import gaussian_kde
 
 G_LENGTH = 1.285  # replace with real value for the XG layer
 X_LENGTH = 1.285  # replace with real value for the X layer
@@ -49,14 +50,13 @@ def length_lookup(layer: str, wire_number: int, zone: int, taped=False):
     try:
         value = spreadsheet.at[wire_number, str(zone)]
         if taped:
-            return (value - 16)/1000
-        return value/1000
+            return (value - 16) / 1000
+        return value / 1000
     except KeyError:
         return None
 
 
-def tension_lookup(
-    length, frequency: float):
+def tension_lookup(length, frequency: float):
     tension = (2 * length * frequency) ** 2 * WIRE_DENSITY
     return tension
 
@@ -142,11 +142,33 @@ def get_wiggle_generator(wiggle_type, wire_y, wiggle_step=0.2):
         return stepwise_wiggle(wire_y, wiggle_step)
 
 
+def calculate_kde_max(sample):
+    """
+    Calculate the maximum value of the kernel density estimation (KDE) for a given sample.
+
+    Parameters:
+    sample (array-like): An array of sample data.
+
+    Returns:
+    float: The maximum value of the KDE.
+    """
+    # Perform KDE on the sample
+    kde_sample = gaussian_kde(sample)
+
+    # Define a range of values for which to calculate the KDE
+    x_range = np.linspace(min(sample), max(sample), 1000)
+    kde_sample_values = kde_sample(x_range)
+
+    # Find and return the maximum of the KDE
+    max_kde_sample_value = x_range[np.argmax(kde_sample_values)]
+    return max_kde_sample_value
+
+
 if __name__ == "__main__":
     # Test the wiggle generator
     wire_y = 0
     wg = get_wiggle_generator("gaussian", wire_y)
     for _ in range(10):
         print(next(wg))
-    for x in range(23,100):
+    for x in range(23, 100):
         print(length_lookup("V", x, 1))

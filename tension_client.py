@@ -9,9 +9,18 @@ from audioProcessing import (
     # get_pitch_naive_fft,
     # get_pitch_autocorrelation,
 )
-from utilities import log_frequency_data, zone_lookup, tension_lookup, length_lookup
+
+from utilities import (
+    log_frequency_data,
+    zone_lookup,
+    tension_lookup,
+    length_lookup,
+    calculate_kde_max,
+)
 
 AnalysisFuncType = Callable[[np.ndarray, int], Tuple[float, float]]
+
+max_tension = 20  # I assume that at this tension the wire will break
 
 
 # @timeit
@@ -28,10 +37,12 @@ def analyze_wire(
     start_time = time.time()
     wires = []
     good_wire_count = 0
+    length = length_lookup(layer, wire_number, zone_lookup(wire_x))
+
     while good_wire_count <= t.tries_per_wire:
-        # t.goto_xy(wire_x, wire_y)
-        # t.servo_toggle()
-        # time.sleep(t.delay_after_plucking)
+        t.goto_xy(wire_x, wire_y)
+        t.servo_toggle()
+        time.sleep(t.delay_after_plucking)
         audio_signal = t.record_audio_normalize(t.record_duration, plot=False)
         if t.save_audio:
             save_audio_data(
@@ -44,23 +55,22 @@ def analyze_wire(
                 for method, func in analysis_methods.items()
             }
             for method, (frequency, confidence) in analysis.items():
-                length = length_lookup(layer, wire_number, zone_lookup(wire_x))
-                if length < 150:
-                    tension_min = 0.0258 * length + 0.232
-                else:
-                    tension_min = 4
+                tension_min = max(0.0258 * length + 0.232, 4)
                 tension = tension_lookup(
                     length=length,
                     frequency=frequency,
                 )
-                tension_pass = tension < 8.5 and tension > tension_min
+                tension_pass = tension < max_tension and tension > tension_min
                 if not tension_pass:
-                    tension_2 = tension_lookup(
+                    tension_harmonic = tension_lookup(
                         length=length,
                         frequency=frequency / 2,
                     )
-                    if tension_2 < 8.5 and tension_2 > tension_min:
-                        tension = tension_2
+                    if (
+                        tension_harmonic < max_tension
+                        and tension_harmonic > tension_min
+                    ):
+                        tension = tension_harmonic
                         frequency = frequency / 2
                         tension_pass = True
                 if tension_pass and confidence > t.confidence_threshold:
@@ -115,14 +125,19 @@ def analyze_wire(
             "time_to_finish": round(time_to_finish, 2),
             "measured_at": time_at_finish,
         }
-    time_to_finish = time.time() - start_time
-    time_at_finish = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+
+
     result = max(tensionPassingWires, key=lambda x: x.get("confidence", float("-inf")))
-    result["frequency"] = np.average([d["frequency"] for d in tensionPassingWires])
-    result["tension"] = np.average([d["tension"] for d in tensionPassingWires])
+    result["frequency"] = calculate_kde_max(
+        [d["frequency"] for d in tensionPassingWires]
+    )
+    result["tension"] = tension_lookup(length=length, frequency=result["frequency"])
     result["confidence"] = np.average([d["confidence"] for d in tensionPassingWires])
     result["x"] = np.average([d["x"] for d in tensionPassingWires])
     result["y"] = np.average([d["y"] for d in tensionPassingWires])
+
+    time_to_finish = time.time() - start_time
+    time_at_finish = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     result["time_to_finish"] = round(time_to_finish, 2)
     result["time_at_finish"] = time_at_finish
     print(
@@ -193,35 +208,20 @@ def measure_sequential(
 if __name__ == "__main__":
     t = Tensiometer(
         apa_name="US_APA3",
-        tries_per_wire=5,
+        tries_per_wire=1000,
         wiggle_step=0.3,
         wiggle_type="gaussian",
-        confidence_threshold=0.5,
+        confidence_threshold=0.0,
         delay_after_plucking=0.0,
         record_duration=0.1,
         save_audio=False,
     )
     measure_sequential(
         t,
-        initial_wire_number=400,
-        final_wire_number=401,
-        direction="horizontal",
+        initial_wire_number=8,
+        final_wire_number=400,
+        direction="vertical",
         side="B",
-        layer="V",
+        layer="U",
         use_relative_position=True,
     )
-    # recheck_wires = [109, 120, 121, 124, 129, 133, 161, 162, 164, 166, 173, 176, 177, 179]
-    # side = "B"
-    # layer = "X"
-    # logfilename = f"data/frequency_data_{t.apa_name}_{layer}.csv"  # {initial_wire_number}-{final_wire_number}_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.csv"
-
-    # for wire in [466]:  # range(113,481):
-    #     wire_data = analyze_wire(
-    #         t, layer, side, wire, 6400, 191.1 + (wire - 1) * (2300 / 480)
-    #     )
-    #     log_frequency_data(wire_data, logfilename)
-
-
-# TODO: create a LUT for the wires and their positions and a function to measure from LUT
-# TODO: fix sequential measurement to move in the right direction when final_wire_number < initial_wire_number
-# TODO:
