@@ -1,6 +1,7 @@
 import serial
 from sys import version_info
 import platform
+from serial.tools import list_ports  # Importing list_ports directly
 
 PY2 = version_info[0] == 2  # Running Python 2.x?
 
@@ -32,21 +33,33 @@ class Controller:
     # ports, or you are using a Windows OS, you can provide the tty port.  For
     # example, '/dev/ttyACM2' or for Windows, something like 'COM3'.
 
-    def __init__(self, ttyStr="/dev/ttyACM0", device=0x0C):
+    def __init__(self, ttyStr="/dev/ttyACM1", device=0x0C):
+        self.faulted = False
+        self.usb = None
+        
         # Determine the appropriate port based on the operating system
         if platform.system() == "Windows":
             ttyStr = "COM3"
+        
+        # Search for the Micro Maestro 6-Servo Controller
+        ports = list_ports.comports()
+        maestro_port = None
+        
+        for port in ports:
+            if "Micro Maestro 6-Servo Controller" in port.description:
+                maestro_port = port.device
+                break
+        
+        if maestro_port is not None:
+            ttyStr = maestro_port
+        
         # Open the command port
         try:
             self.usb = serial.Serial(ttyStr)
             self.faulted = False
+            print(f"Connected to Micro Maestro on {ttyStr}")
         except serial.SerialException:
-            if ttyStr == "COM3":
-                print(
-                    "Couldn't find Maestro on COM3! Check the connection or device manager."
-                )
-            else:
-                print("Couldn't find Maestro! Check the connection or port.")
+            print(f"Couldn't find Micro Maestro on {ttyStr}! Check the connection or port.")
             self.faulted = True
 
         # Command lead-in and device number are sent for each Pololu serial command.
@@ -179,6 +192,6 @@ if __name__ == "__main__":
     controller = Controller()
     while True:
         controller.runScriptSub(0)
-        sleep(0.8)
-        controller.runScriptSub(1)
-        sleep(0.8)
+        print("Running script subroutine 0")
+        sleep(0.4)
+

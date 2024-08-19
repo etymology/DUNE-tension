@@ -7,14 +7,20 @@ import pandas as pd
 import numpy as np
 from scipy.stats import gaussian_kde
 
-G_LENGTH = 1.285  # replace with real value for the XG layer
-X_LENGTH = 1.285  # replace with real value for the X layer
+G_LENGTH = 1.285
+X_LENGTH = 1.273
 WIRE_DENSITY = 0.000152
+MAX_TENSION = 10.0
+COMB_SPACING = 1190
+Y_MIN = 199
+Y_MAX = 2400  # replace with real values for the y bounds
 
 
 # replace with real values for the comb positions
 def zone_lookup(x: float):
-    if x < 2230:
+    if x < 1040:
+        return 0
+    elif x < 2230:
         return 1
     elif x < 3420:
         return 2
@@ -22,12 +28,26 @@ def zone_lookup(x: float):
         return 3
     elif x < 5770:
         return 4
-    else:
+    elif x < 7030:
         return 5
+    else:
+        return 6
+
+
+def zone_x_target(zone: int):
+    return [1635, 2825, 4015, 5185, 6365][zone - 1]
+
+
+def distance_to_zone_middle(x):
+    return abs(x - zone_x_target(zone_lookup(x)))
+
+
+def y_in_bounds(y: float):
+    return y > Y_MIN and y < Y_MAX
 
 
 def length_lookup(layer: str, wire_number: int, zone: int, taped=False):
-    file_path = f"wires/{layer}_LUT.csv"
+    file_path = f"wire_lengths/{layer}_LUT.csv"
 
     if layer not in ["U", "V", "X", "G"]:
         raise ValueError("Invalid layer. Must be 'U', 'V', 'X', or 'G'")
@@ -61,7 +81,7 @@ def tension_lookup(length, frequency: float):
     return tension
 
 
-def log_frequency_data(data, filename):
+def log_data(data, filename):
     """
     Log data into a CSV file.
 
@@ -100,15 +120,52 @@ def log_frequency_data(data, filename):
         print(f"An unexpected error occurred: {e}")
 
 
-def load_csv_to_dict(file_path):
-    data = {}
-    with open(file_path, mode="r", newline="") as file:
-        reader = csv.DictReader(file)
-        first_column = reader.fieldnames[0]
-        for row in reader:
-            key = int(row.pop(first_column))
-            data[key] = {k: float(v) for k, v in row.items()}
-    return data
+def get_wire_coordinates(apa_name, layer, side, n):
+    file_path = f"data/wireLUTs/{apa_name}_{layer}_{side}.csv"
+
+    try:
+        # Read the CSV file
+        df = pd.read_csv(file_path)
+
+        # Check if wire_number column exists
+        if "wire_number" not in df.columns:
+            raise ValueError("The column 'wire_number' does not exist in the file.")
+
+        # Find the row with the given wire_number
+        row = df[df["wire_number"] == n]
+
+        # Check if the row is found
+        if row.empty:
+            return None, None
+
+        # Get the values of x and y
+        x_value = row["x"].values[0]
+        y_value = row["y"].values[0]
+
+        return x_value, y_value
+
+    except FileNotFoundError:
+        print(f"File {file_path} not found.")
+        return None, None
+    except Exception as e:
+        print(f"An error occurred: {e}")
+        return None, None
+
+
+def load_wire_LUT(apa_name, layer):
+    csv_file_path = f"data/wireLUTs/{apa_name}_{layer}.csv"
+    wire_data = {}
+
+    with open(csv_file_path, mode="r") as file:
+        csv_reader = csv.DictReader(file)
+
+        for row in csv_reader:
+            wire_number = row["wire_number"]
+            x = float(row["x"])
+            y = float(row["y"])
+            wire_data[wire_number] = {"x": x, "y": y}
+
+    return wire_data
 
 
 def timeit(func):
@@ -162,6 +219,10 @@ def calculate_kde_max(sample):
     # Find and return the maximum of the KDE
     max_kde_sample_value = x_range[np.argmax(kde_sample_values)]
     return max_kde_sample_value
+
+
+def tension_pass(tension, length):
+    return tension > min(0.0258 * length + 0.232, 4) and tension < MAX_TENSION
 
 
 if __name__ == "__main__":

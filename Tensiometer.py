@@ -2,10 +2,11 @@
 import requests
 from maestro import Controller
 import sounddevice as sd
-from datetime import datetime, timedelta
 import numpy as np
 import matplotlib.pyplot as plt
 import utilities
+import threading
+import time
 
 IDLE_MOVE_TYPE = 0
 IDLE_STATE = 1
@@ -18,42 +19,49 @@ class Tensiometer:
         self,
         apa_name="",
         tension_server_url="http://192.168.137.1:5000",
-        ttyStr="/dev/ttyACM0",
+        ttyStr="/dev/ttyACM1",
         sound_card_name="USB PnP Sound Device",
-        tries_per_wire=20,
+        samples_per_wire=10,
         record_duration=0.1,
-        confidence_threshold=0.8,
-        max_frequency=3000,
-        delay_after_plucking=0.1,
+        confidence_threshold=0.5,
+        delay_after_plucking=0.2,
         wiggle_type="gaussian",
-        wiggle_step=0.1,
-        save_audio=False,
+        wiggle_step=0.2,
+        save_audio=True,
+        timeout=10,
+        use_servo=False,
+        use_wiggle=False,
     ):
         """
         Initialize the controller, audio devices, and check web server connectivity more concisely.
         """
         self.apa_name = apa_name
         self.tension_server_url = tension_server_url
-        self.tries_per_wire = tries_per_wire
+        self.samples_per_wire = samples_per_wire
         self.record_duration = record_duration
         self.confidence_threshold = confidence_threshold
-        self.max_frequency = max_frequency
         self.delay_after_plucking = delay_after_plucking
         self.wiggle_type = wiggle_type
         self.wiggle_step = wiggle_step
         self.save_audio = save_audio
+        self.timeout = timeout
+        self.stop_servo_event = threading.Event()
+        self.stop_wiggle_event = threading.Event()
+        self.use_servo = use_servo
+        self.use_wiggle = use_wiggle
 
         if wiggle_type == "gaussian":
             self.wiggle = utilities.gaussian_wiggle
         else:
             self.wiggle = utilities.stepwise_wiggle
-        try:
-            self.maestro = Controller(ttyStr=ttyStr)
-            self.servo_state = 0
-            self.maestro.runScriptSub(1)
-        except Exception as e:
-            print(f"Failed to initialize Maestro controller: {e}")
-            exit(1)
+        if use_servo:
+            try:
+                self.maestro = Controller(ttyStr)
+                self.servo_state = 0
+                self.maestro.runScriptSub(1)
+            except Exception as e:
+                print(f"Failed to initialize Maestro controller: {e}")
+                exit(1)
 
         try:
             device_info = sd.query_devices()
@@ -66,7 +74,7 @@ class Tensiometer:
                 None,
             )
             if self.sound_device_index is not None:
-                self.samplerate = device_info[self.sound_device_index][
+                self.sample_rate = device_info[self.sound_device_index][
                     "default_samplerate"
                 ]
                 print(f"Using USB PnP Sound Device (hw:{self.sound_device_index},0)")
@@ -114,36 +122,20 @@ class Tensiometer:
         """Get the current state of the tensioning system."""
         return self.read_tag("STATE")
 
-    def enter_and_exit_state_movetype(self, target_state: int, target_move_type: int):
-        """Wait until the tensioning system is in the idle state."""
-        while (
-            self.read_tag("STATE") != target_state
-            and self.read_tag("MOVE_TYPE") != target_move_type
-        ):
-            pass
-        while (
-            self.read_tag("STATE") != IDLE_STATE
-            and self.read_tag("MOVE_TYPE") != IDLE_MOVE_TYPE
-        ):
-            pass
-
     def get_movetype(self) -> int:
         """Get the current move type of the tensioning system."""
         movetype = self.read_tag("MOVE_TYPE")
         return movetype
 
-    def goto_xy(self, x_target: float, y_target: float):
+    def goto_xy(self, x_target: float, y_target: float,speed= 50):
         """Move the winder to a given position."""
-        current_x, current_y = self.get_xy()
+        # current_x, current_y = self.get_xy()
         if x_target < 0 or x_target > 7174 or y_target < 0 or y_target > 2680:
-            print("Target out of bounds. Please enter a valid position.")
+            print(
+                f"Motion target {x_target},{y_target} out of bounds. Please enter a valid position."
+            )
             return False
 
-        current_x, current_y = self.get_xy()
-        if abs(current_x - x_target) > 1000 and current_y > 50:
-            self.goto_xy(current_x, 0)
-            self.goto_xy(x_target, 0)
-            self.goto_xy(x_target, y_target)
         self.write_tag("MOVE_TYPE", IDLE_MOVE_TYPE)
         self.write_tag("STATE", IDLE_STATE)
         self.write_tag("X_POSITION", x_target)
@@ -154,56 +146,32 @@ class Tensiometer:
             current_x, current_y = self.get_xy()
         return True
 
-        # TODO: Add a timeout to prevent infinite loops, and return False if the timeout is reached.
-        # TODO: Prevent moves across combs
-        # TODO: Prevent moves outside of the valid range
-        # TODO: IS this the right way to check if the move is done?
-
     def increment(self, increment_x, increment_y):
         x, y = self.get_xy()
         self.goto_xy(x + increment_x, y + increment_y)
 
-    def detect_sound(self, audio_signal, threshold):
-        # Detect sound based on energy threshold
-        return np.max(np.abs(audio_signal)) >= float(threshold)
+    def wiggle_loop(self):
+        x,y = self.get_xy()
+        while not self.stop_wiggle_event.is_set():
+            self.goto_xy(x,y+self.wiggle_step)
+            self.goto_xy(x, y-self.wiggle_step)
 
-    def record_audio(self, duration: float):
-        """Record audio for a given duration using the selected audio device."""
-        with sd.InputStream(
-            device=self.sound_device_index,
-            channels=1,
-            samplerate=self.samplerate,
-            dtype="float32",
-        ) as stream:
-            audio_data = stream.read(int(duration * self.samplerate))[0]
-        return audio_data.flatten()
-
-    def record_audio_trigger(self, sound_length: float, noise_threshold=0.01):
-        start_time = datetime.now()
-        while True:
-            audio_data = self.record_audio(0.005)
-            if self.detect_sound(audio_data, noise_threshold):
-                recorded_audio = self.record_audio(sound_length)
-                return recorded_audio
-            elif datetime.now() > start_time + timedelta(seconds=0.5):
-                print("No sound detected. Timed out.")
-                return None
-
-    def record_audio_normalize(self, duration, plot=False):
+    def record_audio(self, duration, plot=False, normalize=True):
         """Record audio for a given duration and sample rate and normalize it to the range -1 to 1. Optionally plot the waveform."""
         try:
             audio_data = sd.rec(
-                int(duration * self.samplerate),
-                samplerate=self.samplerate,
+                int(duration * self.sample_rate),
+                samplerate=self.sample_rate,
                 channels=1,
                 dtype="float64",
             )
             sd.wait()  # Wait until recording is finished
             audio_data = audio_data.flatten()  # Flatten the audio data to a 1D array
             # Normalize the audio data to the range -1 to 1
-            max_val = np.max(np.abs(audio_data))
-            if max_val > 0:
-                audio_data = audio_data / max_val
+            if normalize:
+                max_val = np.max(np.abs(audio_data))
+                if max_val > 0:
+                    audio_data = audio_data / max_val
 
             # Plot the waveform if plot is True
             if plot:
@@ -228,6 +196,11 @@ class Tensiometer:
             self.servo_state = 0
             self.maestro.runScriptSub(1)
 
+    def servo_loop(self):
+        while not self.stop_servo_event.is_set():
+            self.maestro.runScriptSub(0)
+            time.sleep(0.4)
+
     def read_tag(self, tag_name):
         """
         Send a GET request to read the value of a PLC tag.
@@ -237,6 +210,7 @@ class Tensiometer:
         try:
             response = requests.get(url)
             if response.status_code == 200:
+                # print(response.json())
                 return response.json()[tag_name][1]
             else:
                 return {

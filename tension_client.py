@@ -4,23 +4,22 @@ from datetime import datetime
 from typing import Tuple, Callable, Dict
 from Tensiometer import Tensiometer
 from audioProcessing import (
-    save_audio_data,
+    save_wav,
     get_pitch_crepe,
     # get_pitch_naive_fft,
     # get_pitch_autocorrelation,
 )
-
 from utilities import (
-    log_frequency_data,
+    log_data,
     zone_lookup,
     tension_lookup,
     length_lookup,
     calculate_kde_max,
+    get_wire_coordinates,
+    tension_pass,
 )
 
 AnalysisFuncType = Callable[[np.ndarray, int], Tuple[float, float]]
-
-max_tension = 20  # I assume that at this tension the wire will break
 
 
 # @timeit
@@ -39,66 +38,53 @@ def analyze_wire(
     good_wire_count = 0
     length = length_lookup(layer, wire_number, zone_lookup(wire_x))
 
-    while good_wire_count <= t.tries_per_wire:
+    while good_wire_count <= t.samples_per_wire:
         t.goto_xy(wire_x, wire_y)
         t.servo_toggle()
         time.sleep(t.delay_after_plucking)
-        audio_signal = t.record_audio_normalize(t.record_duration, plot=False)
+        audio_sample = t.record_audio(t.record_duration, plot=False)
         if t.save_audio:
-            save_audio_data(
-                audio_signal,
-                f"audio/{layer}{side}{wire_number}_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.npz",
+            save_wav(
+                audio_sample=audio_sample,
+                filename=f"audio/{layer}{side}{wire_number}_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.wav",
+                sample_rate=t.sample_rate,
             )
-        if audio_signal is not None:
+        if audio_sample is not None:
             analysis = {
-                method: func(audio_signal, t.samplerate)
+                method: func(audio_sample, t.sample_rate)
                 for method, func in analysis_methods.items()
             }
             for method, (frequency, confidence) in analysis.items():
-                tension_min = max(0.0258 * length + 0.232, 4)
                 tension = tension_lookup(
                     length=length,
                     frequency=frequency,
                 )
-                tension_pass = tension < max_tension and tension > tension_min
-                if not tension_pass:
-                    tension_harmonic = tension_lookup(
-                        length=length,
-                        frequency=frequency / 2,
-                    )
-                    if (
-                        tension_harmonic < max_tension
-                        and tension_harmonic > tension_min
-                    ):
-                        tension = tension_harmonic
-                        frequency = frequency / 2
-                        tension_pass = True
-                if tension_pass and confidence > t.confidence_threshold:
+                if tension_pass(tension, length):
+                    tension_ok = True
+                elif tension_pass(tension / 4, length):
+                    tension = tension / 4
+                    tension_ok = True
+                else:
+                    tension_ok = False
+                if tension_ok and confidence > t.confidence_threshold:
                     good_wire_count += 1
-                time_to_finish = time.time() - start_time
-                time_at_finish = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
                 print(
                     f"length: {length}, tension: {tension}, frequency: {frequency}, confidence: {confidence}"
                 )
-                wire_data = {
-                    "layer": layer,
-                    "side": side,
-                    "wire_number": wire_number,
+                sample_analysis = {
                     "tension": tension,
-                    "tension_pass": tension_pass,
-                    "zone": zone_lookup(wire_x),
+                    "tension_pass": tension_ok,
                     "frequency": frequency,
                     "confidence": confidence,
                     "method": method,
-                    "x": round(wire_x, 1),
-                    "y": round(wire_y, 1),
-                    "Gcode": f"X{round(wire_x,1)} Y{round(wire_y,1)}",
-                    "tries": good_wire_count,
-                    "time_to_finish": round(time_to_finish, 2),
-                    "measured_at": time_at_finish,
+                    "x": wire_x,
+                    "y": wire_y,
                 }
-                wires.append(wire_data)
+                wires.append(sample_analysis)
         wire_y = next(wiggle_generator)
+
+    time_to_finish = time.time() - start_time
+    time_at_finish = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 
     tensionPassingWires = [
         d
@@ -106,45 +92,50 @@ def analyze_wire(
         if d.get("tension_pass", False)
         and d.get("confidence", 0) > t.confidence_threshold
     ]
-
+    result = {
+        "layer": layer,
+        "side": side,
+        "wire_number": wire_number,
+        "tension": 0,
+        "tension_pass": False,
+        "zone": zone_lookup(wire_x),
+        "frequency": 0,
+        "confidence": 0,
+        "method": method,
+        "x": round(wire_x, 1),
+        "y": round(wire_y, 1),
+        "Gcode": f"X{round(wire_x,1)} Y{round(wire_y,1)}",
+        "tries": 0,
+        "time_to_finish": round(time_to_finish, 2),
+        "measured_at": time_at_finish,
+    }
     if not tensionPassingWires:
-        return {
-            "layer": layer,
-            "side": side,
-            "wire_number": wire_number,
-            "tension": 0,
-            "tension_pass": False,
-            "zone": zone_lookup(wire_x),
-            "frequency": 0,
-            "confidence": 0,
-            "method": method,
-            "x": round(wire_x, 1),
-            "y": round(wire_y, 1),
-            "Gcode": f"X{round(wire_x,1)} Y{round(wire_y,1)}",
-            "tries": 0,
-            "time_to_finish": round(time_to_finish, 2),
-            "measured_at": time_at_finish,
-        }
+        return result
 
-
-    result = max(tensionPassingWires, key=lambda x: x.get("confidence", float("-inf")))
     result["frequency"] = calculate_kde_max(
         [d["frequency"] for d in tensionPassingWires]
     )
     result["tension"] = tension_lookup(length=length, frequency=result["frequency"])
     result["confidence"] = np.average([d["confidence"] for d in tensionPassingWires])
-    result["x"] = np.average([d["x"] for d in tensionPassingWires])
-    result["y"] = np.average([d["y"] for d in tensionPassingWires])
-
+    best_x, best_y = (
+        np.average([d["x"] for d in tensionPassingWires]),
+        np.average([d["y"] for d in tensionPassingWires]),
+    )
+    result["x"] = best_x
+    result["y"] = best_y
+    result["Gcode"] = f"X{round(result['x'],1)} Y{round(result['y'],1)}"
     time_to_finish = time.time() - start_time
     time_at_finish = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     result["time_to_finish"] = round(time_to_finish, 2)
     result["time_at_finish"] = time_at_finish
+    log_data(
+        {"wire_number": wire_number, "x": best_x, "y": best_y},
+        f"data/wireLUTs/{t.apa_name}_{layer}",
+    )
     print(
         f"Wire number {wire_number} has tension {result['tension']} frequency {result['frequency']} Hz with confidence {result['confidence']} using {result['method']}. \nTook {result['time_to_finish']} seconds to finish."
     )
     return result
-
 
 # @timeit
 def measure_sequential(
@@ -191,7 +182,7 @@ def measure_sequential(
     wire_number = initial_wire_number
     for wire_number in range(initial_wire_number, final_wire_number + 1, step):
         wire_data = analyze_wire(t, layer, side, wire_number, target_x, target_y)
-        log_frequency_data(wire_data, logfilename)
+        log_data(wire_data, logfilename)
         if wire_data["tension"] == 0:
             print(f"measurement failed for wire number {wire_number}.")
         if not wire_data["tension_pass"]:
@@ -204,21 +195,32 @@ def measure_sequential(
 
     print(f"Finished scanning from wire {initial_wire_number} to {final_wire_number}.")
 
+def measure_list(t: Tensiometer, wire_numbers_to_measure: list, layer: str, side: str):
+    for wire_number in wire_numbers_to_measure:
+        if get_wire_coordinates(t.apa_name, layer, side, wire_number) is not None:
+            wire_x, wire_y = get_wire_coordinates(t.apa_name, layer, side, wire_number)
+            wire_data = analyze_wire(t, layer, side, wire_number, wire_x, wire_y)
+            if wire_data["tension"] == 0:
+                print(f"measurement failed for wire number {wire_number}.")
+            if not wire_data["tension_pass"]:
+                print(f"Tension failed for wire number {wire_number}.")
+            log_data(wire_data, f"data/frequency_data_{t.apa_name}_{layer}.csv")
+            print(f"Finished scanning wire {wire_number}.")
 
 if __name__ == "__main__":
     t = Tensiometer(
         apa_name="US_APA3",
-        tries_per_wire=1000,
+        samples_per_wire=10,
         wiggle_step=0.3,
         wiggle_type="gaussian",
-        confidence_threshold=0.0,
-        delay_after_plucking=0.0,
-        record_duration=0.1,
+        confidence_threshold=0.5,
+        delay_after_plucking=0.2,
+        record_duration=0.2,
         save_audio=False,
     )
     measure_sequential(
         t,
-        initial_wire_number=8,
+        initial_wire_number=1146,
         final_wire_number=400,
         direction="vertical",
         side="B",
