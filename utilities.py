@@ -10,10 +10,12 @@ from scipy.stats import gaussian_kde
 G_LENGTH = 1.285
 X_LENGTH = 1.273
 WIRE_DENSITY = 0.000152
-MAX_TENSION = 10.0
+MAX_TENSION = 15.0
 COMB_SPACING = 1190
 Y_MIN = 199
 Y_MAX = 2400  # replace with real values for the y bounds
+X_MIN = 1000
+X_MAX = 7000  # replace with real values for the x bounds
 
 
 # replace with real values for the comb positions
@@ -39,12 +41,61 @@ def zone_x_target(zone: int):
 
 
 def distance_to_zone_middle(x):
+    ### returns the signed distance to the middle of the zone
     return abs(x - zone_x_target(zone_lookup(x)))
 
 
 def y_in_bounds(y: float):
     return y > Y_MIN and y < Y_MAX
 
+
+def next_wire_target(wire_x, wire_y, dx, dy, direction):
+    last_zone = 5 if direction == 1 else 1
+
+    if zone_lookup(wire_x) != last_zone and distance_to_zone_middle(
+        wire_x + dx * direction
+    ) < distance_to_zone_middle(
+        wire_x
+    ):  # if you're not in the middle of the zone, move horizontally towards it
+        return wire_x + dx * direction, wire_y
+
+    # Calculate the two possible positions
+    pos1_y = wire_y + dy * direction
+    pos1_x = wire_x
+
+    pos2_y = wire_y + dy *direction - COMB_SPACING * dy / dx*direction/abs(direction)
+    pos2_x = wire_x + COMB_SPACING * direction
+
+    pos_3_y = wire_y
+    pos_3_x = wire_x + dx * direction
+
+    # Initialize an empty list to store valid positions
+    valid_positions = []
+
+    # Check if pos1_y is within bounds and add it to the list if valid
+    if is_in_bounds(pos1_x, pos1_y):
+        valid_positions.append((pos1_x, pos1_y))
+
+    # Check if pos2_y is within bounds and add it to the list if valid
+    if is_in_bounds(pos2_x, pos2_y):
+        valid_positions.append((pos2_x, pos2_y))
+
+    if is_in_bounds(pos_3_x, pos_3_y):
+        valid_positions.append((pos_3_x, pos_3_y))
+        
+    # Choose the position with the least y value
+    if valid_positions:
+        if zone_lookup(wire_x) == last_zone:
+            target = valid_positions[0]
+        else:
+            target = min(valid_positions, key=lambda pos: pos[1])
+        return target
+    else:
+        return (wire_x + dx * direction, wire_y)  # No valid positions within bounds
+
+
+def is_in_bounds(x, y):
+    return X_MIN < x < X_MAX and Y_MIN < y < Y_MAX 
 
 def length_lookup(layer: str, wire_number: int, zone: int, taped=False):
     file_path = f"wire_lengths/{layer}_LUT.csv"

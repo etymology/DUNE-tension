@@ -14,15 +14,14 @@ from utilities import (
     length_lookup,
     calculate_kde_max,
     tension_pass,
-    y_in_bounds,
-    distance_to_zone_middle,
     get_wire_coordinates,
-    COMB_SPACING,
+    next_wire_target,
 )
+from random import gauss
 
-
-def collect_wire_data(t: Tensiometer, layer: str, side: str, wire_number: int):
-    wire_x, wire_y = t.get_xy()
+def collect_wire_data(
+    t: Tensiometer, layer: str, side: str, wire_number: int, wire_x, wire_y
+):
     t.stop_servo_event.clear()
     t.stop_wiggle_event.clear()
 
@@ -32,7 +31,7 @@ def collect_wire_data(t: Tensiometer, layer: str, side: str, wire_number: int):
         return servo_thread
 
     def start_wiggle_thread():
-        wiggle_thread = threading.Thread(target=t.wiggle_loop)
+        wiggle_thread = threading.Thread(target=t.wiggle_loop(wire_x, wire_y))
         wiggle_thread.start()
         return wiggle_thread
 
@@ -47,7 +46,10 @@ def collect_wire_data(t: Tensiometer, layer: str, side: str, wire_number: int):
     def analyze_sample(audio_sample):
         frequency, confidence = get_pitch_crepe(audio_sample, t.sample_rate)
         tension = tension_lookup(length=length, frequency=frequency)
-        tension_ok = tension_pass(tension, length)
+        if layer in ["X", "G"]:
+            tension_ok = tension > 4 and tension < 8.5
+        else:
+            tension_ok = tension_pass(tension, length)
         if not tension_ok and tension_pass(tension / 4, length):
             tension /= 4
             frequency /= 2
@@ -60,8 +62,10 @@ def collect_wire_data(t: Tensiometer, layer: str, side: str, wire_number: int):
         while (
             time.time() - start_time
         ) < t.timeout and good_wire_count <= t.samples_per_wire:
-            # x, y = t.get_xy()
-            audio_sample = t.record_audio(t.record_duration, plot=False)
+            t.set_xy_target(wire_x, gauss(wire_y,t.wiggle_step))
+            audio_sample = t.record_audio(
+                t.record_duration, plot=False, normalize=False
+            )
             save_audio_sample(audio_sample)
             if audio_sample is not None:
                 frequency, confidence, tension, tension_ok = analyze_sample(
@@ -122,7 +126,12 @@ def collect_wire_data(t: Tensiometer, layer: str, side: str, wire_number: int):
             result["y"] = round(np.average([d["y"] for d in passingWires]), 1)
             result["Gcode"] = f"X{round(result['x'],1)} Y{round(result['y'],1)}"
             log_data(
-                {"side":side,"wire_number": wire_number, "x": result["x"], "y": result["y"]},
+                {
+                    "side": side,
+                    "wire_number": wire_number,
+                    "x": result["x"],
+                    "y": result["y"],
+                },
                 f"data/wireLUTs/{t.apa_name}_{layer}.csv",
             )
         return result
@@ -135,6 +144,8 @@ def collect_wire_data(t: Tensiometer, layer: str, side: str, wire_number: int):
         servo_thread = start_servo_thread()
     if t.use_wiggle:
         wiggle_thread = start_wiggle_thread()
+    else:
+        t.goto_xy(wire_x, wire_y)
     wires = collect_samples(start_time, length)
     if t.use_servo:
         t.stop_servo_event.set()
@@ -184,46 +195,29 @@ def measure_sequential_across_combs(
 
     def measure_horizontal_layer():
         nonlocal wire_number
-        wire_x, wire_y = t.get_xy()
+        y = 189.958 + dy * (wire_number - 1)  # for testing (199.1, 1XB)
+
+        t.goto_xy(6300, y)
+
         while wire_number >= wire_min and wire_number <= wire_max:
-            t.goto_xy(wire_x, wire_y)
             wire_data = collect_wire_data(t, layer, side, wire_number)
             wire_number += direction
             if use_relative_position:
-                wire_x, wire_y = wire_data["x"], wire_data["y"]
-            wire_y += dy
+                y = wire_data["y"]
+            else:
+                x, y = t.get_xy()
+            y += dy
+            t.goto_xy(6300, y)
 
     def measure_diagonal_layer():
         nonlocal wire_number
         wire_x, wire_y = t.get_xy()  # for testing
-        first_zone, last_zone = (1,5) if direction == 1 else (5,1)
         while wire_number <= wire_max and wire_number >= wire_min:
-            wire_data = collect_wire_data(t, layer, side, wire_number)
+            wire_data = collect_wire_data(t, layer, side, wire_number, wire_x, wire_y)
             if use_relative_position:
                 wire_x, wire_y = wire_data["x"], wire_data["y"]
+            wire_x, wire_y = next_wire_target(wire_x, wire_y, dx, dy, direction)
             wire_number += direction
-            if (
-                zone_lookup(wire_x) == first_zone and distance_to_zone_middle(wire_x) > dx
-            ):  # if you're not in the middle of the zone, move horizontally towards it
-                wire_x += dx * direction
-            elif y_in_bounds(
-                wire_y + dy * direction
-            ):  # if you can't do that then move upwards
-                wire_y += dy * direction
-            elif (
-                y_in_bounds(wire_y + (1 - 1 / dx * COMB_SPACING) * dy*direction)
-                and zone_lookup(wire_x + COMB_SPACING * direction)
-                not in [
-                    0,
-                    6,
-                ]
-            ):  # if you can move diagonally to the next comb zone without going off the APA, do so
-                wire_y += (1 - 1 / dx * COMB_SPACING) * dy*direction
-                wire_x += COMB_SPACING * direction
-
-            else:  # if you can't move upwards, move horizontally
-                wire_x += dx * direction
-            t.goto_xy(wire_x, wire_y)
 
     if layer in ["X", "G"]:
         measure_horizontal_layer()
@@ -232,51 +226,62 @@ def measure_sequential_across_combs(
 
 
 def measure_LUT(t: Tensiometer, layer: str, side: str, wire_numbers_to_measure: list):
-    for wire_number in wire_numbers_to_measure:
-        wire_x, wire_y = get_wire_coordinates(t.apa_name, layer, side, wire_number)
-        if wire_x is not None and wire_y is not None:
-            t.goto_xy(wire_x, wire_y)
-            collect_wire_data(t, layer, side, wire_number)
-        else:
-            print(f"Wire {wire_number} not found in LUT.")
+    if layer in ["X", "G"]:
+        for wire_number in wire_numbers_to_measure:
+            collect_wire_data(
+                t,
+                layer,
+                side,
+                wire_number,
+                6300,
+                199.1 + 2300 / 480 * (wire_number - 1),
+            )
+    else:
+        for wire_number in wire_numbers_to_measure:
+            wire_x, wire_y = get_wire_coordinates(t.apa_name, layer, side, wire_number)
+            if wire_x is not None and wire_y is not None:
+                collect_wire_data(t, layer, side, wire_number, wire_x, wire_y)
+            else:
+                print(f"Wire {wire_number} not found in LUT.")
 
 
-def seek_wire(t: Tensiometer):
+def seek_wire(t: Tensiometer,layer,side,wire_number):
     x, y = t.get_xy()
     max_confidence = 0.0
     best_y = y
     i = 0.0
-    wiggle_step = 0.1
-    while i < 50:
-        t.goto_xy(x, y + (-1) ** (i // 2 + 1) * (i // 2 + 1) * wiggle_step)
-        audio_sample = t.record_audio(t.record_duration, plot=False)
-        _, confidence = get_pitch_crepe(audio_sample, t.sample_rate)
+    wiggle_step = 0.25
+    while i < 20:
+        wire_data = collect_wire_data(t, layer, side, wire_number,x,y + (-1) ** (i // 2 + 1) * (i // 2 + 1) * wiggle_step)
+        confidence = wire_data['confidence']
         if confidence > max_confidence:
             max_confidence = confidence
-            best_y = y + i
+            best_y = y + (-1) ** (i // 2 + 1) * (i // 2 + 1) * wiggle_step
         i += 1
+    print(f"Best y: {best_y}, confidence: {max_confidence}")
     t.goto_xy(x, best_y)
     return x, best_y
 
 
 if __name__ == "__main__":
     t = Tensiometer(
-        apa_name="US_APA3",
-        record_duration=0.1,
-        wiggle_step=0.1,
-        timeout=60,
-        samples_per_wire=5,
-        confidence_threshold=0.4,
+        apa_name="US_APA1",
+        record_duration=0.25,
+        wiggle_step=0.2,
+        timeout=10,
+        samples_per_wire=3,
+        confidence_threshold=0.5,
         use_wiggle=False,
-        save_audio=True
+        save_audio=True,
+        use_servo=False,
     )
-    # seek_wire(t)
+    # print(seek_wire(t, "V", "B", 400))
     measure_sequential_across_combs(
         t,
-        initial_wire_number=639,
-        direction=1,
-        side="A",
-        layer="U",
+        initial_wire_number=401,
+        direction=10,
+        side="B",
+        layer="V",
         use_relative_position=False,
     )
-    # measure_LUT(t, "U", "B", [536])
+    # measure_LUT(t, "V", "A", [749,7])

@@ -7,6 +7,7 @@ import matplotlib.pyplot as plt
 import utilities
 import threading
 import time
+from random import gauss
 
 IDLE_MOVE_TYPE = 0
 IDLE_STATE = 1
@@ -127,7 +128,7 @@ class Tensiometer:
         movetype = self.read_tag("MOVE_TYPE")
         return movetype
 
-    def goto_xy(self, x_target: float, y_target: float,speed= 50):
+    def goto_xy(self, x_target: float, y_target: float, speed=50):
         """Move the winder to a given position."""
         # current_x, current_y = self.get_xy()
         if x_target < 0 or x_target > 7174 or y_target < 0 or y_target > 2680:
@@ -142,21 +143,34 @@ class Tensiometer:
         self.write_tag("Y_POSITION", y_target)
         self.write_tag("MOVE_TYPE", XY_MOVE_TYPE)
         current_x, current_y = self.get_xy()
-        while (abs(current_x - x_target)) > 0.02 and (abs(current_y - y_target)) > 0.02:
+        while (abs(current_x - x_target)) > 0.1 and (abs(current_y - y_target)) > 0.1:
             current_x, current_y = self.get_xy()
         return True
+    
+    def set_xy_target(self, x_target: float, y_target: float):
+        """Move the winder to a given position."""
+        # current_x, current_y = self.get_xy()
+        if x_target < 0 or x_target > 7174 or y_target < 0 or y_target > 2680:
+            print(
+                f"Motion target {x_target},{y_target} out of bounds. Please enter a valid position."
+            )
+            return False
+
+        self.write_tag("MOVE_TYPE", IDLE_MOVE_TYPE)
+        self.write_tag("STATE", IDLE_STATE)
+        self.write_tag("X_POSITION", x_target)
+        self.write_tag("Y_POSITION", y_target)
+        self.write_tag("MOVE_TYPE", XY_MOVE_TYPE)
 
     def increment(self, increment_x, increment_y):
         x, y = self.get_xy()
         self.goto_xy(x + increment_x, y + increment_y)
 
-    def wiggle_loop(self):
-        x,y = self.get_xy()
+    def wiggle_loop(self, x, y):
         while not self.stop_wiggle_event.is_set():
-            self.goto_xy(x,y+self.wiggle_step)
-            self.goto_xy(x, y-self.wiggle_step)
+            self.goto_xy(x, gauss(y, self.wiggle_step))
 
-    def record_audio(self, duration, plot=False, normalize=True):
+    def record_audio(self, duration, plot=False, normalize=False):
         """Record audio for a given duration and sample rate and normalize it to the range -1 to 1. Optionally plot the waveform."""
         try:
             audio_data = sd.rec(
