@@ -12,28 +12,29 @@ X_LENGTH = 1.273
 WIRE_DENSITY = 0.000152
 MAX_TENSION = 15.0
 COMB_SPACING = 1190
-Y_MIN = 199
+Y_MIN = 220
 Y_MAX = 2400  # replace with real values for the y bounds
 X_MIN = 1000
 X_MAX = 7000  # replace with real values for the x bounds
+comb_positions = [1030, 2230, 3420, 4590, 5770, 7030]
 
 
 # replace with real values for the comb positions
-def zone_lookup(x: float):
-    if x < 1040:
-        return 0
-    elif x < 2230:
-        return 1
-    elif x < 3420:
-        return 2
-    elif x < 4590:
-        return 3
-    elif x < 5770:
-        return 4
-    elif x < 7030:
-        return 5
-    else:
-        return 6
+def zone_lookup(
+    x,
+):
+    # Loop through the list to find the first value greater than x
+    for i, pos in enumerate(comb_positions):
+        if pos > x:
+            return i
+    # If no value greater than x, return None
+    return None
+
+
+# Test the function with an example input
+zone_lookup(
+    3500
+)  # Expected to return the index 3 (since 4590 is the first value greater than 3500)
 
 
 def zone_x_target(zone: int):
@@ -45,57 +46,59 @@ def distance_to_zone_middle(x):
     return abs(x - zone_x_target(zone_lookup(x)))
 
 
-def y_in_bounds(y: float):
-    return y > Y_MIN and y < Y_MAX
+# def y_in_bounds(y: float):
+#     return y > Y_MIN and y < Y_MAX
 
 
 def next_wire_target(wire_x, wire_y, dx, dy, direction):
-    last_zone = 5 if direction == 1 else 1
-
-    if zone_lookup(wire_x) != last_zone and distance_to_zone_middle(
-        wire_x + dx * direction
-    ) < distance_to_zone_middle(
-        wire_x
-    ):  # if you're not in the middle of the zone, move horizontally towards it
-        return wire_x + dx * direction, wire_y
-
+    print(f"wire_x, wire_y: {wire_x}, {wire_y}")
+    print(f"dx, dy: {dx}, {dy}")
     # Calculate the two possible positions
     pos1_y = wire_y + dy * direction
     pos1_x = wire_x
 
-    pos2_y = wire_y + dy *direction - COMB_SPACING * dy / dx*direction/abs(direction)
-    pos2_x = wire_x + COMB_SPACING * direction
+    # pos2_y = Y_MIN + 50 + dy * direction
+    # pos2_x = (wire_y - (Y_MIN + 50)) / dy * dx * direction + wire_x
 
-    pos_3_y = wire_y
-    pos_3_x = wire_x + dx * direction
+    # pos3_y = wire_y - 300 * dy / dx*direction + dy
+    # pos3_x = wire_x + 300 * direction
 
     # Initialize an empty list to store valid positions
     valid_positions = []
 
-    # Check if pos1_y is within bounds and add it to the list if valid
+    # print(f"pos1: {pos1_x}, {pos1_y}")
+    # print("pos2: ", pos2_x, pos2_y)
+    # # print("pos3: ", pos3_x, pos3_y)
+    # # Check if pos1_y is within bounds and add it to the list if valid
     if is_in_bounds(pos1_x, pos1_y):
         valid_positions.append((pos1_x, pos1_y))
 
-    # Check if pos2_y is within bounds and add it to the list if valid
-    if is_in_bounds(pos2_x, pos2_y):
-        valid_positions.append((pos2_x, pos2_y))
+    # # Check if pos2_y is within bounds and add it to the list if valid
+    # if is_in_bounds(pos2_x, pos2_y):
+    #     valid_positions.append((pos2_x, pos2_y))
 
-    if is_in_bounds(pos_3_x, pos_3_y):
-        valid_positions.append((pos_3_x, pos_3_y))
-        
+    # # Check if pos2_y is within bounds and add it to the list if valid
+    # # if is_in_bounds(pos3_x, pos3_y):
+    # #     valid_positions.append((pos3_x, pos3_y))
+
     # Choose the position with the least y value
     if valid_positions:
-        if zone_lookup(wire_x) == last_zone:
-            target = valid_positions[0]
-        else:
-            target = min(valid_positions, key=lambda pos: pos[1])
-        return target
+        return valid_positions[0] #min(valid_positions, key=lambda pos: pos[1])
     else:
-        return (wire_x + dx * direction, wire_y)  # No valid positions within bounds
+        return wire_x + dx * direction, wire_y
+
+
+def not_close_to_comb(x, tolerance=100):
+    # Check if x is within +/- 100 of any number in comb_positions
+    for pos in comb_positions:
+        if abs(pos - x) <= tolerance:
+            return False
+    return True
 
 
 def is_in_bounds(x, y):
-    return X_MIN < x < X_MAX and Y_MIN < y < Y_MAX 
+    return X_MIN < x < X_MAX and Y_MIN < y < Y_MAX and not_close_to_comb(x)
+
 
 def length_lookup(layer: str, wire_number: int, zone: int, taped=False):
     file_path = f"wire_lengths/{layer}_LUT.csv"

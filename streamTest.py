@@ -5,12 +5,12 @@ import time
 from Tensiometer import Tensiometer  # Import the Tensiometer class
 
 # Set constants (as defined by user)
-LARGE_BUFFER_SIZE = 2**12  # Larger buffer size to capture low-frequency signals
+BUFFER_SIZE = 2**12  # Larger buffer size to capture low-frequency signals
 CHANNELS = 1  # Mono audio
 RATE = 44100  # Sample rate in Hz
 DEVICE_NAME = "USB PnP Sound Device"  # Name of the device to search for
 PITCH_METHOD = "yin"  # Using 'yin' for pitch detection
-HOP_SIZE = LARGE_BUFFER_SIZE // 2  # Increase hop size proportionally to buffer size
+HOP_SIZE = BUFFER_SIZE // 2  # Increase hop size proportionally to buffer size
 PITCH_PERIOD = 0.1  # Pitch output every 0.1 seconds
 SILENCE_THRESHOLD = -60  # Silence threshold in dB
 GAIN = 3.0  # Gain factor to amplify the signal (2.0 = 2x amplification)
@@ -41,10 +41,10 @@ stream = p.open(format=pyaudio.paFloat32,
                 rate=RATE,
                 input=True,
                 input_device_index=device_index,
-                frames_per_buffer=LARGE_BUFFER_SIZE)
+                frames_per_buffer=BUFFER_SIZE)
 
 # Initialize aubio pitch detection with larger buffer size
-pitch_o = aubio.pitch(PITCH_METHOD, LARGE_BUFFER_SIZE, HOP_SIZE, RATE)
+pitch_o = aubio.pitch(PITCH_METHOD, BUFFER_SIZE, HOP_SIZE, RATE)
 pitch_o.set_unit("Hz")
 pitch_o.set_silence(SILENCE_THRESHOLD)  # Set silence threshold
 
@@ -69,7 +69,7 @@ def check_pitch_stability(pitch_buffer, tolerance=0.05):
 try:
     while True:
         # Read from the audio stream
-        audio_buffer = stream.read(LARGE_BUFFER_SIZE, exception_on_overflow=False)
+        audio_buffer = stream.read(BUFFER_SIZE, exception_on_overflow=False)
         signal = np.frombuffer(audio_buffer, dtype=np.float32)
 
         # Amplify the signal

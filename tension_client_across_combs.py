@@ -19,6 +19,7 @@ from utilities import (
 )
 from random import gauss
 
+
 def collect_wire_data(
     t: Tensiometer, layer: str, side: str, wire_number: int, wire_x, wire_y
 ):
@@ -62,7 +63,7 @@ def collect_wire_data(
         while (
             time.time() - start_time
         ) < t.timeout and good_wire_count <= t.samples_per_wire:
-            t.set_xy_target(wire_x, gauss(wire_y,t.wiggle_step))
+            t.set_xy_target(wire_x, gauss(wire_y, t.wiggle_step))
             audio_sample = t.record_audio(
                 t.record_duration, plot=False, normalize=False
             )
@@ -245,15 +246,22 @@ def measure_LUT(t: Tensiometer, layer: str, side: str, wire_numbers_to_measure: 
                 print(f"Wire {wire_number} not found in LUT.")
 
 
-def seek_wire(t: Tensiometer,layer,side,wire_number):
+def seek_wire(t: Tensiometer, layer, side, wire_number):
     x, y = t.get_xy()
     max_confidence = 0.0
     best_y = y
     i = 0.0
     wiggle_step = 0.25
     while i < 20:
-        wire_data = collect_wire_data(t, layer, side, wire_number,x,y + (-1) ** (i // 2 + 1) * (i // 2 + 1) * wiggle_step)
-        confidence = wire_data['confidence']
+        wire_data = collect_wire_data(
+            t,
+            layer,
+            side,
+            wire_number,
+            x,
+            y + (-1) ** (i // 2 + 1) * (i // 2 + 1) * wiggle_step,
+        )
+        confidence = wire_data["confidence"]
         if confidence > max_confidence:
             max_confidence = confidence
             best_y = y + (-1) ** (i // 2 + 1) * (i // 2 + 1) * wiggle_step
@@ -266,11 +274,11 @@ def seek_wire(t: Tensiometer,layer,side,wire_number):
 if __name__ == "__main__":
     t = Tensiometer(
         apa_name="US_APA1",
-        record_duration=0.25,
+        record_duration=0.2,
         wiggle_step=0.2,
-        timeout=10,
+        timeout=30,
         samples_per_wire=3,
-        confidence_threshold=0.5,
+        confidence_threshold=0.7,
         use_wiggle=False,
         save_audio=True,
         use_servo=False,
@@ -278,10 +286,10 @@ if __name__ == "__main__":
     # print(seek_wire(t, "V", "B", 400))
     measure_sequential_across_combs(
         t,
-        initial_wire_number=401,
-        direction=10,
+        initial_wire_number=8,
+        direction=1,
         side="B",
-        layer="V",
+        layer="U",
         use_relative_position=False,
     )
     # measure_LUT(t, "V", "A", [749,7])
