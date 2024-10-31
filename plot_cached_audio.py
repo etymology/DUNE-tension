@@ -98,63 +98,62 @@ with open("results.csv", "w", newline="") as csvfile:
                         autocorr = autocorr[
                             autocorr.size // 2 :
                         ]  # Keep only the second half
-                        if crepe_confidence > 0:
-                            # Create a plot with three subplots
-                            fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(10, 12))
+                        # Create a plot with three subplots
+                        fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(10, 12))
 
-                            # Plot the time domain signal
-                            ax1.plot(array)
-                            ax1.set_title(f"Time Domain of {npz_file} - {array_name}")
-                            ax1.set_xlabel("Sample Index")
-                            ax1.set_ylabel("Amplitude")
+                        # Plot the time domain signal
+                        ax1.plot(array)
+                        ax1.set_title(f"Time Domain of {npz_file} - {array_name}")
+                        ax1.set_xlabel("Sample Index")
+                        ax1.set_ylabel("Amplitude")
 
-                            # Plot the positive frequencies of the FFT result up to 10000 Hz
-                            ax2.plot(positive_freqs, positive_magnitudes)
-                            ax2.set_title(
-                                f"Positive Frequency Domain of {npz_file} - {array_name}"
+                        # Plot the positive frequencies of the FFT result up to 10000 Hz
+                        ax2.plot(positive_freqs, positive_magnitudes)
+                        ax2.set_title(
+                            f"Positive Frequency Domain of {npz_file} - {array_name}"
+                        )
+                        ax2.set_xlabel("Frequency (Hz)")
+                        ax2.set_ylabel("Magnitude")
+                        ax2.set_xscale(
+                            "log"
+                        )  # Set the x-axis to a logarithmic scale
+
+                        # Add vertical lines and labels for the detected frequencies
+                        if autocorr_frequency <= 5000:
+                            ax2.axvline(
+                                x=autocorr_frequency, color="r", linestyle="--"
                             )
-                            ax2.set_xlabel("Frequency (Hz)")
-                            ax2.set_ylabel("Magnitude")
-                            ax2.set_xscale(
-                                "log"
-                            )  # Set the x-axis to a logarithmic scale
-
-                            # Add vertical lines and labels for the detected frequencies
-                            if autocorr_frequency <= 5000:
-                                ax2.axvline(
-                                    x=autocorr_frequency, color="r", linestyle="--"
-                                )
-                                ax2.text(
-                                    autocorr_frequency,
-                                    max(positive_magnitudes) / 2,
-                                    f"{autocorr_frequency:.2f} Hz\nConf: {autocorr_confidence:.2f}",
-                                    color="r",
-                                    ha="center",
-                                )
-                            if crepe_frequency <= 5000:
-                                ax2.axvline(
-                                    x=crepe_frequency, color="g", linestyle="--"
-                                )
-                                ax2.text(
-                                    crepe_frequency,
-                                    max(positive_magnitudes) / 2,
-                                    f"{crepe_frequency:.2f} Hz\nConf: {crepe_confidence:.2f}",
-                                    color="g",
-                                    ha="center",
-                                )
-
-                            # Plot the autocorrelation function
-                            ax3.plot(autocorr)
-                            ax3.set_title(
-                                f"Autocorrelation Function of {npz_file} - {array_name}"
+                            ax2.text(
+                                autocorr_frequency,
+                                max(positive_magnitudes) / 2,
+                                f"{autocorr_frequency:.2f} Hz\nConf: {autocorr_confidence:.2f}",
+                                color="r",
+                                ha="center",
                             )
-                            ax3.set_xlabel("Lag")
-                            ax3.set_ylabel("Autocorrelation")
+                        if crepe_frequency <= 5000:
+                            ax2.axvline(
+                                x=crepe_frequency, color="g", linestyle="--"
+                            )
+                            ax2.text(
+                                crepe_frequency,
+                                max(positive_magnitudes) / 2,
+                                f"{crepe_frequency:.2f} Hz\nConf: {crepe_confidence:.2f}",
+                                color="g",
+                                ha="center",
+                            )
 
-                            # Save the figure
-                            plt.tight_layout()
-                            plt.savefig(filename)
-                            plt.close(fig)  # Close the figure to avoid display issues
+                        # Plot the autocorrelation function
+                        ax3.plot(autocorr)
+                        ax3.set_title(
+                            f"Autocorrelation Function of {npz_file} - {array_name}"
+                        )
+                        ax3.set_xlabel("Lag")
+                        ax3.set_ylabel("Autocorrelation")
+
+                        # Save the figure
+                        plt.tight_layout()
+                        plt.savefig(filename)
+                        plt.show(fig)  # Close the figure to avoid display issues
 
             except Exception as e:
                 print(f"Error processing array {array_name} in file {npz_file}: {e}")

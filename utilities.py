@@ -10,7 +10,7 @@ from scipy.stats import gaussian_kde
 G_LENGTH = 1.285
 X_LENGTH = 1.273
 WIRE_DENSITY = 0.000152
-MAX_TENSION = 15.0
+MAX_TENSION = 8.5
 COMB_SPACING = 1190
 Y_MIN = 220
 Y_MAX = 2400  # replace with real values for the y bounds
@@ -276,6 +276,8 @@ def calculate_kde_max(sample):
 
 
 def tension_pass(tension, length):
+    return tension > 4 and tension < MAX_TENSION
+
     return tension > min(0.0258 * length + 0.232, 4) and tension < MAX_TENSION
 
 

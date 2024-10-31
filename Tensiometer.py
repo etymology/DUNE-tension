@@ -21,7 +21,7 @@ class Tensiometer:
         apa_name="",
         tension_server_url="http://192.168.137.1:5000",
         ttyStr="/dev/ttyACM1",
-        sound_card_name="USB PnP Sound Device",
+        sound_card_name="sof",
         samples_per_wire=10,
         record_duration=0.1,
         confidence_threshold=0.5,
@@ -32,6 +32,7 @@ class Tensiometer:
         timeout=10,
         use_servo=False,
         use_wiggle=False,
+        initial_wire_height = 190
     ):
         """
         Initialize the controller, audio devices, and check web server connectivity more concisely.
@@ -50,6 +51,7 @@ class Tensiometer:
         self.stop_wiggle_event = threading.Event()
         self.use_servo = use_servo
         self.use_wiggle = use_wiggle
+        self.initial_wire_height = initial_wire_height
 
         if wiggle_type == "gaussian":
             self.wiggle = utilities.gaussian_wiggle
