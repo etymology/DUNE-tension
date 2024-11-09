@@ -3,7 +3,6 @@ import numpy as np
 from datetime import datetime
 from Tensiometer import Tensiometer
 from audioProcessing import (
-    save_wav,
     get_pitch_crepe,
 )
 import threading
@@ -18,7 +17,6 @@ from utilities import (
     next_wire_target,
 )
 from random import gauss
-import sounddevice as sd
 
 
 def collect_wire_data(
@@ -181,6 +179,7 @@ def measure_sequential_across_combs(
     direction: int = 1,
     use_relative_position: bool = False,
 ):
+    
     # direction = 1 for increasing wire number, -1 for decreasing wire number
 
     if layer in ["X", "G"]:
@@ -190,9 +189,12 @@ def measure_sequential_across_combs(
             wire_max = 481
     else:
         dx, dy = 8.0, 5.75
-        wire_min, wire_max = 8, 1151
+        wire_min, wire_max = 4, 1151
         if (layer == "U" and side == "A") or (layer == "V" and side == "B"):
             dy = -5.75
+
+    dx *= direction
+    dy *= direction
 
     wire_number = initial_wire_number
 
@@ -217,7 +219,7 @@ def measure_sequential_across_combs(
             wire_data = collect_wire_data(t, layer, side, wire_number, wire_x, wire_y)
             if use_relative_position:
                 wire_x, wire_y = wire_data["x"], wire_data["y"]
-            wire_x, wire_y = next_wire_target(wire_x, wire_y, dx, dy, direction)
+            wire_x, wire_y = next_wire_target(wire_x, wire_y, dx, dy)
             wire_number += direction
 
     if layer in ["X", "G"]:
@@ -280,19 +282,17 @@ if __name__ == "__main__":
         samples_per_wire=1,
         confidence_threshold=0.5,
         use_wiggle=False,
-        save_audio=True,
-        use_servo=False,
-        initial_wire_height = 194.1
+        save_audio=False,
     )
-    current_layer = "X"
+    current_layer = "V"
     current_side = "B"
     
     measure_sequential_across_combs(
         t,
-        initial_wire_number=100,
-        direction=1,
+        initial_wire_number=1146,
+        direction=-1,
         side=current_side,
         layer=current_layer,
-        use_relative_position=False,
     )
-    # measure_LUT(t, current_layer, current_side, [480,])
+
+    measure_LUT(t, current_layer, current_side, [538,730,943])

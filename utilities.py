@@ -50,42 +50,44 @@ def distance_to_zone_middle(x):
 #     return y > Y_MIN and y < Y_MAX
 
 
-def next_wire_target(wire_x, wire_y, dx, dy, direction):
+def next_wire_target(wire_x, wire_y, dx, dy):
     print(f"wire_x, wire_y: {wire_x}, {wire_y}")
     print(f"dx, dy: {dx}, {dy}")
+
     # Calculate the two possible positions
-    pos1_y = wire_y + dy * direction
+    pos1_y = wire_y + dy
     pos1_x = wire_x
 
-    # pos2_y = Y_MIN + 50 + dy * direction
-    # pos2_x = (wire_y - (Y_MIN + 50)) / dy * dx * direction + wire_x
+    pos2_y = Y_MIN + 50 + dy
+    pos2_x = (wire_y - (Y_MIN + 50)) / dy * dx + wire_x
 
-    # pos3_y = wire_y - 300 * dy / dx*direction + dy
-    # pos3_x = wire_x + 300 * direction
+    pos3_y = wire_y - 300 * dy / dx + dy
+    pos3_x = wire_x + 300
 
     # Initialize an empty list to store valid positions
     valid_positions = []
 
-    # print(f"pos1: {pos1_x}, {pos1_y}")
-    # print("pos2: ", pos2_x, pos2_y)
-    # # print("pos3: ", pos3_x, pos3_y)
-    # # Check if pos1_y is within bounds and add it to the list if valid
+    print(f"pos1: {pos1_x}, {pos1_y}")
+    print("pos2: ", pos2_x, pos2_y)
+    print("pos3: ", pos3_x, pos3_y)
+    # # # Check if pos1_y is within bounds and add it to the list if valid
+    # # Check if pos2_y is within bounds and add it to the list if valid
+    if is_in_bounds(pos3_x, pos3_y):
+        valid_positions.append((pos3_x, pos3_y))
+
+    if is_in_bounds(pos2_x, pos2_y):
+        valid_positions.append((pos2_x, pos2_y))
+
     if is_in_bounds(pos1_x, pos1_y):
         valid_positions.append((pos1_x, pos1_y))
 
-    # # Check if pos2_y is within bounds and add it to the list if valid
-    # if is_in_bounds(pos2_x, pos2_y):
-    #     valid_positions.append((pos2_x, pos2_y))
-
-    # # Check if pos2_y is within bounds and add it to the list if valid
-    # # if is_in_bounds(pos3_x, pos3_y):
-    # #     valid_positions.append((pos3_x, pos3_y))
+    # Check if pos2_y is within bounds and add it to the list if valid
 
     # Choose the position with the least y value
     if valid_positions:
-        return valid_positions[0] #min(valid_positions, key=lambda pos: pos[1])
+        return valid_positions[0]  # min(valid_positions, key=lambda pos: pos[1])
     else:
-        return wire_x + dx * direction, wire_y
+        return wire_x + dx, wire_y
 
 
 def not_close_to_comb(x, tolerance=100):
