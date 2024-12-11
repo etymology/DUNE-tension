@@ -2,7 +2,6 @@ from datetime import datetime
 import os
 import csv
 import random
-import time
 import pandas as pd
 import numpy as np
 from scipy.stats import gaussian_kde
@@ -13,9 +12,9 @@ WIRE_DENSITY = 0.000152
 MAX_TENSION = 8.5
 COMB_SPACING = 1190
 Y_MIN = 220
-Y_MAX = 2400  # replace with real values for the y bounds
+Y_MAX = 2420
 X_MIN = 1000
-X_MAX = 7000  # replace with real values for the x bounds
+X_MAX = 7000
 comb_positions = [1030, 2230, 3420, 4590, 5770, 7030]
 
 
@@ -64,28 +63,33 @@ def next_wire_target(wire_x, wire_y, dx, dy):
     pos3_y = wire_y - 300 * dy / dx + dy
     pos3_x = wire_x + 300
 
+    pos4_y = wire_y
+    pos4_x = wire_x + dx
     # Initialize an empty list to store valid positions
     valid_positions = []
 
-    print(f"pos1: {pos1_x}, {pos1_y}")
-    print("pos2: ", pos2_x, pos2_y)
-    print("pos3: ", pos3_x, pos3_y)
+    # print(f"pos1: {pos1_x}, {pos1_y}")
+    # print("pos2: ", pos2_x, pos2_y)
+    # print("pos3: ", pos3_x, pos3_y)
+    # print("pos4: ", pos4_x, pos4_y)
     # # # Check if pos1_y is within bounds and add it to the list if valid
     # # Check if pos2_y is within bounds and add it to the list if valid
-    if is_in_bounds(pos3_x, pos3_y):
-        valid_positions.append((pos3_x, pos3_y))
+    if is_in_bounds(pos1_x, pos1_y):
+        valid_positions.append((pos1_x, pos1_y))
 
     if is_in_bounds(pos2_x, pos2_y):
         valid_positions.append((pos2_x, pos2_y))
 
-    if is_in_bounds(pos1_x, pos1_y):
-        valid_positions.append((pos1_x, pos1_y))
+    if is_in_bounds(pos3_x, pos3_y):
+        valid_positions.append((pos3_x, pos3_y))
+    if is_in_bounds(pos4_x, pos4_y):
+        valid_positions.append((pos4_x, pos4_y))
 
     # Check if pos2_y is within bounds and add it to the list if valid
 
     # Choose the position with the least y value
     if valid_positions:
-        return valid_positions[0]  # min(valid_positions, key=lambda pos: pos[1])
+        return min(valid_positions, key=lambda pos: pos[1])
     else:
         return wire_x + dx, wire_y
 
@@ -176,38 +180,6 @@ def log_data(data, filename):
         print(f"An unexpected error occurred: {e}")
 
 
-def get_wire_coordinates(apa_name, layer, side, n):
-    file_path = f"data/wireLUTs/{apa_name}_{layer}_{side}.csv"
-
-    try:
-        # Read the CSV file
-        df = pd.read_csv(file_path)
-
-        # Check if wire_number column exists
-        if "wire_number" not in df.columns:
-            raise ValueError("The column 'wire_number' does not exist in the file.")
-
-        # Find the row with the given wire_number
-        row = df[df["wire_number"] == n]
-
-        # Check if the row is found
-        if row.empty:
-            return None, None
-
-        # Get the values of x and y
-        x_value = row["x"].values[0]
-        y_value = row["y"].values[0]
-
-        return x_value, y_value
-
-    except FileNotFoundError:
-        print(f"File {file_path} not found.")
-        return None, None
-    except Exception as e:
-        print(f"An error occurred: {e}")
-        return None, None
-
-
 def load_wire_LUT(apa_name, layer):
     csv_file_path = f"data/wireLUTs/{apa_name}_{layer}.csv"
     wire_data = {}
@@ -222,18 +194,6 @@ def load_wire_LUT(apa_name, layer):
             wire_data[wire_number] = {"x": x, "y": y}
 
     return wire_data
-
-
-def timeit(func):
-    def wrapper(*args, **kwargs):
-        start_time = time.time()  # Record the start time
-        result = func(*args, **kwargs)  # Execute the function
-        end_time = time.time()  # Record the end time
-        elapsed_time = end_time - start_time  # Calculate the elapsed time
-        print(f"Function '{func.__name__}' took {elapsed_time:.4f} seconds to execute.")
-        return result  # Return the result of the function
-
-    return wrapper
 
 
 def gaussian_wiggle(wire_y, wiggle_step):
@@ -278,9 +238,7 @@ def calculate_kde_max(sample):
 
 
 def tension_pass(tension, length):
-    return tension > 4 and tension < MAX_TENSION
-
-    return tension > min(0.0258 * length + 0.232, 4) and tension < MAX_TENSION
+    return tension > 4 and tension < MAX_TENSION #min(0.0258 * length + 0.232, 4)
 
 
 if __name__ == "__main__":

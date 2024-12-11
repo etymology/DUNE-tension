@@ -18,21 +18,24 @@ XY_STATE = 3
 class Tensiometer:
     def __init__(
         self,
-        apa_name="",
+        apa_name="unknown_APA",
         tension_server_url="http://192.168.137.1:5000",
         ttyStr="/dev/ttyACM1",
-        sound_card_name="sof",
-        samples_per_wire=10,
-        record_duration=0.1,
+        sound_card_name="USB PnP Sound Device",
+        record_duration=0.2,
+        wiggle_step=0.1,
+        timeout=30,
+        samples_per_wire=1,
         confidence_threshold=0.5,
+        use_wiggle=False,
+        save_audio=False,
         delay_after_plucking=0.2,
         wiggle_type="gaussian",
-        wiggle_step=0.2,
-        save_audio=True,
-        timeout=10,
         use_servo=False,
-        use_wiggle=False,
-        initial_wire_height = 190
+        initial_wire_height=190,
+        layer="X",
+        side="A",
+        test_mode=False,
     ):
         """
         Initialize the controller, audio devices, and check web server connectivity more concisely.
@@ -52,49 +55,55 @@ class Tensiometer:
         self.use_servo = use_servo
         self.use_wiggle = use_wiggle
         self.initial_wire_height = initial_wire_height
+        self.layer = layer
+        self.side = side
 
         if wiggle_type == "gaussian":
             self.wiggle = utilities.gaussian_wiggle
         else:
             self.wiggle = utilities.stepwise_wiggle
-        if use_servo:
+
+        if not test_mode:
+            if use_servo:
+                try:
+                    self.maestro = Controller(ttyStr)
+                    self.servo_state = 0
+                    self.maestro.runScriptSub(1)
+                except Exception as e:
+                    print(f"Failed to initialize Maestro controller: {e}")
+                    exit(1)
+
             try:
-                self.maestro = Controller(ttyStr)
-                self.servo_state = 0
-                self.maestro.runScriptSub(1)
+                device_info = sd.query_devices()
+                self.sound_device_index = next(
+                    (
+                        index
+                        for index, d in enumerate(device_info)
+                        if sound_card_name in d["name"]
+                    ),
+                    None,
+                )
+                if self.sound_device_index is not None:
+                    self.sample_rate = device_info[self.sound_device_index][
+                        "default_samplerate"
+                    ]
+                    print(
+                        f"Using USB PnP Sound Device (hw:{self.sound_device_index},0)"
+                    )
+                else:
+                    print("Couldn't find USB PnP Sound Device.")
+                    print(device_info)
+                    exit(1)
             except Exception as e:
-                print(f"Failed to initialize Maestro controller: {e}")
+                print(f"Failed to initialize audio devices: {e}")
                 exit(1)
 
-        try:
-            device_info = sd.query_devices()
-            self.sound_device_index = next(
-                (
-                    index
-                    for index, d in enumerate(device_info)
-                    if sound_card_name in d["name"]
-                ),
-                None,
-            )
-            if self.sound_device_index is not None:
-                self.sample_rate = device_info[self.sound_device_index][
-                    "default_samplerate"
-                ]
-                print(f"Using USB PnP Sound Device (hw:{self.sound_device_index},0)")
-            else:
-                print("Couldn't find USB PnP Sound Device.")
-                print(device_info)
+            if not self.is_web_server_active(tension_server_url):
+                print(
+                    "Failed to connect to the tension server.\nMake sure you are connected to Dunes and the server is running."
+                )
                 exit(1)
-        except Exception as e:
-            print(f"Failed to initialize audio devices: {e}")
-            exit(1)
-
-        if not self.is_web_server_active(tension_server_url):
-            print(
-                "Failed to connect to the tension server.\nMake sure you are connected to Dunes and the server is running."
-            )
-            exit(1)
-        print("Connected to the tension server.")
+            print("Connected to the tension server.")
 
     def is_web_server_active(self, url):
         """
@@ -145,10 +154,12 @@ class Tensiometer:
         self.write_tag("Y_POSITION", y_target)
         self.write_tag("MOVE_TYPE", XY_MOVE_TYPE)
         current_x, current_y = self.get_xy()
-        while (abs(current_x - x_target)) > 0.1 and (abs(current_y - y_target)) > 0.1:
+        while (
+            (abs(current_x - x_target)) > 0.05 and (abs(current_y - y_target)) > 0.05
+        ) or self.get_movetype() == XY_MOVE_TYPE:
             current_x, current_y = self.get_xy()
         return True
-    
+
     def set_xy_target(self, x_target: float, y_target: float):
         """Move the winder to a given position."""
         # current_x, current_y = self.get_xy()

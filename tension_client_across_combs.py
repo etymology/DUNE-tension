@@ -1,196 +1,29 @@
-import time
-import numpy as np
-from datetime import datetime
 from Tensiometer import Tensiometer
-from audioProcessing import (
-    get_pitch_crepe,
-)
-import threading
 from utilities import (
-    log_data,
-    zone_lookup,
-    tension_lookup,
-    length_lookup,
-    calculate_kde_max,
-    tension_pass,
-    get_wire_coordinates,
     next_wire_target,
 )
-from random import gauss
-
-
-def collect_wire_data(
-    t: Tensiometer, layer: str, side: str, wire_number: int, wire_x, wire_y
-):
-    t.stop_servo_event.clear()
-    t.stop_wiggle_event.clear()
-
-    def start_servo_thread():
-        servo_thread = threading.Thread(target=t.servo_loop)
-        servo_thread.start()
-        return servo_thread
-
-    def start_wiggle_thread():
-        wiggle_thread = threading.Thread(target=t.wiggle_loop(wire_x, wire_y))
-        wiggle_thread.start()
-        return wiggle_thread
-
-    def save_audio_sample(audio_sample):
-        if t.save_audio:
-            np.savez(f"audio/{layer}{side}{wire_number}_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}",audio_sample)
-            # save_wav(
-            #     audio_sample=audio_sample,
-            #     filename=f"audio/{layer}{side}{wire_number}_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.wav",
-            #     sample_rate=t.sample_rate,
-            # )
-
-    def analyze_sample(audio_sample):
-        frequency, confidence = get_pitch_crepe(audio_sample, t.sample_rate)
-        tension = tension_lookup(length=length, frequency=frequency)
-        tension_ok = tension_pass(tension, length)
-        if not tension_ok and tension_pass(tension / 4, length):
-            tension /= 4
-            frequency /= 2
-            tension_ok = True
-        return frequency, confidence, tension, tension_ok
-
-    def collect_samples(start_time, length):
-        wires = []
-        good_wire_count = 0
-        while (
-            time.time() - start_time
-        ) < t.timeout and good_wire_count <= t.samples_per_wire:
-            t.set_xy_target(wire_x, gauss(wire_y, t.wiggle_step))
-            audio_sample =t.record_audio(
-                t.record_duration, plot=False, normalize=True
-            )
-            #  sd.rec(int(t.record_duration * t.sample_rate), samplerate=t.sample_rate, channels=1, dtype='float32')
-            # # sd.wait()
-            
-            save_audio_sample(audio_sample)
-            if audio_sample is not None:
-                frequency, confidence, tension, tension_ok = analyze_sample(
-                    audio_sample
-                )
-                if tension_ok and confidence > t.confidence_threshold:
-                    good_wire_count += 1
-                    wires.append(
-                    {
-                        "tension": tension,
-                        "tension_pass": tension_ok,
-                        "frequency": frequency,
-                        "confidence": confidence,
-                        "x": wire_x,
-                        "y": wire_y,
-                    }
-                )
-                print(
-                    f"Wire {wire_number} length: {length*1000:.1f}mm, tension: {tension:.1f}N, frequency: {frequency:.1f}Hz, confidence: {confidence*100:.1f}%"
-                )
-        return wires
-
-    def calculate_passing_wires(wires):
-        return [
-            d
-            for d in wires
-            if d.get("tension_pass", False)
-            and d.get("confidence", 0) > t.confidence_threshold
-        ]
-
-    def generate_result(passingWires):
-        nonlocal wire_x, wire_y
-        result = {
-            "layer": layer,
-            "side": side,
-            "wire_number": wire_number,
-            "tension": 0,
-            "tension_pass": False,
-            "zone": zone_lookup(wire_x),
-            "frequency": 0,
-            "confidence": 0,
-            "x": wire_x,
-            "y": wire_y,
-            "Gcode": f"X{round(wire_x,1)} Y{round(wire_y,1)}",
-        }
-        if passingWires is not None and len(passingWires) > 1:
-            result["frequency"] = calculate_kde_max(
-                [d["frequency"] for d in passingWires]
-            )
-            result["tension"] = tension_lookup(
-                length=length, frequency=result["frequency"]
-            )
-            result["tension_pass"] = tension_pass(result["tension"], length)
-            result["confidence"] = calculate_kde_max(
-                [d["confidence"] for d in passingWires]
-            )
-            result["x"] = round(np.average([d["x"] for d in passingWires]), 1)
-            result["y"] = round(np.average([d["y"] for d in passingWires]), 1)
-            result["Gcode"] = f"X{round(result['x'],1)} Y{round(result['y'],1)}"
-            log_data(
-                {
-                    "side": side,
-                    "wire_number": wire_number,
-                    "x": result["x"],
-                    "y": result["y"],
-                },
-                f"data/wireLUTs/{t.apa_name}_{layer}.csv",
-            )
-        return result
-
-    # Main logic
-    length = length_lookup(layer, wire_number, zone_lookup(wire_x))
-    start_time = time.time()
-
-    if t.use_servo:
-        servo_thread = start_servo_thread()
-    if t.use_wiggle:
-        wiggle_thread = start_wiggle_thread()
-    else:
-        t.goto_xy(wire_x, wire_y)
-    wires = collect_samples(start_time, length)
-    if t.use_servo:
-        t.stop_servo_event.set()
-        servo_thread.join()
-    if t.use_wiggle:
-        t.stop_wiggle_event.set()
-        wiggle_thread.join()
-
-    passingWires = calculate_passing_wires(wires)
-    result = generate_result(passingWires)
-
-    if result["tension"] == 0:
-        print(f"measurement failed for wire number {wire_number}.")
-    if not result["tension_pass"]:
-        print(f"Tension failed for wire number {wire_number}.")
-    print(
-        f"Wire number {wire_number} has length {length*1000:.1f}mm tension {result['tension']:.1f}N frequency {result['frequency']:.1f}Hz with confidence {result['confidence']*100:.1f}%.\n"
-        f"Took {time.time() - start_time} seconds to finish."
-    )
-    log_data(result, f"data/frequency_data_{t.apa_name}_{layer}.csv")
-
-    return result
+from data_collection import collect_wire_data
+import pandas as pd
 
 
 def measure_sequential_across_combs(
     t: Tensiometer,
-    side: str,
-    layer: str,
     initial_wire_number: int,
     direction: int = 1,
     use_relative_position: bool = False,
+    use_LUT: bool = False,
 ):
-    
     # direction = 1 for increasing wire number, -1 for decreasing wire number
 
-    if layer in ["X", "G"]:
+    if t.layer in ["X", "G"]:
         dx, dy = 0.0, 2300 / 480
         wire_min, wire_max = 1, 480
-        if layer == "G":
+        if t.layer == "G":
             wire_max = 481
     else:
         dx, dy = 8.0, 5.75
         wire_min, wire_max = 4, 1151
-        if (layer == "U" and side == "A") or (layer == "V" and side == "B"):
+        if (t.layer == "U" and t.side == "A") or (t.layer == "V" and t.side == "B"):
             dy = -5.75
 
     dx *= direction
@@ -204,48 +37,77 @@ def measure_sequential_across_combs(
 
         while wire_number >= wire_min and wire_number <= wire_max:
             wire_y = t.initial_wire_height + dy * (wire_number - 1)
-            wire_data = collect_wire_data(t, layer, side, wire_number, wire_x, wire_y)
+            wire_data = collect_wire_data(t, wire_number, wire_x, wire_y)
             wire_number += direction
             if use_relative_position:
                 y = wire_data["y"]
             else:
                 x, y = t.get_xy()
 
-
     def measure_diagonal_layer():
         nonlocal wire_number
-        wire_x, wire_y = t.get_xy()  # for testing
+        if use_LUT and get_coordinates(t, wire_number) is not None:
+            wire_x, wire_y = get_coordinates(t, wire_number)
+        else:
+            wire_x, wire_y = t.get_xy()
+            
         while wire_number <= wire_max and wire_number >= wire_min:
-            wire_data = collect_wire_data(t, layer, side, wire_number, wire_x, wire_y)
+            wire_data = collect_wire_data(t, wire_number, wire_x, wire_y)
             if use_relative_position:
                 wire_x, wire_y = wire_data["x"], wire_data["y"]
             wire_x, wire_y = next_wire_target(wire_x, wire_y, dx, dy)
             wire_number += direction
 
-    if layer in ["X", "G"]:
+    if t.layer in ["X", "G"]:
         measure_horizontal_layer()
     else:
         measure_diagonal_layer()
 
 
-def measure_LUT(t: Tensiometer, layer: str, side: str, wire_numbers_to_measure: list):
-    if layer in ["X", "G"]:
+def measure_LUT(t: Tensiometer, wire_numbers_to_measure: list):
+    if t.layer in ["X", "G"]:
         for wire_number in wire_numbers_to_measure:
             collect_wire_data(
                 t,
-                layer,
-                side,
                 wire_number,
                 6300,
                 t.initial_wire_height + 2300 / 480 * (wire_number - 1),
             )
     else:
         for wire_number in wire_numbers_to_measure:
-            wire_x, wire_y = get_wire_coordinates(t.apa_name, layer, side, wire_number)
+            wire_x, wire_y = get_coordinates(t, wire_number)
             if wire_x is not None and wire_y is not None:
-                collect_wire_data(t, layer, side, wire_number, wire_x, wire_y)
+                t.goto_xy(wire_x, wire_y)
+                collect_wire_data(t, wire_number, wire_x, wire_y)
             else:
                 print(f"Wire {wire_number} not found in LUT.")
+
+
+def get_coordinates(t: Tensiometer, wire_number: int):
+    """
+    Function to retrieve x and y coordinates for a given wire_number and side from a CSV file.
+
+    Args:
+        file_path (str): Path to the CSV file.
+        wire_number (int): The wire number to look up.
+        side (str): The side to look up ('A' or 'B').
+
+    Returns:
+        tuple: (x, y) coordinates as floats if found, or None if not found.
+    """
+    # Load the CSV file
+    df = pd.read_csv(f"data/frequency_data_{t.apa_name}_{t.layer}.csv")
+
+    # Filter rows matching wire_number and side
+    result = df[(df["wire_number"] == wire_number) & (df["side"] == t.side)]
+
+    if not result.empty:
+        # Extract x and y coordinates
+        x = result["x"].iloc[0]
+        y = result["y"].iloc[0]
+        return float(x), float(y)
+    else:
+        return None  # Return None if no matching row is found
 
 
 def seek_wire(t: Tensiometer, layer, side, wire_number):
@@ -271,28 +133,3 @@ def seek_wire(t: Tensiometer, layer, side, wire_number):
     print(f"Best y: {best_y}, confidence: {max_confidence}")
     t.goto_xy(x, best_y)
     return x, best_y
-
-
-if __name__ == "__main__":
-    t = Tensiometer(
-        apa_name="US_APA4",
-        record_duration=.2,
-        wiggle_step=0.1,
-        timeout=30,
-        samples_per_wire=1,
-        confidence_threshold=0.5,
-        use_wiggle=False,
-        save_audio=False,
-    )
-    current_layer = "V"
-    current_side = "B"
-    
-    measure_sequential_across_combs(
-        t,
-        initial_wire_number=1146,
-        direction=-1,
-        side=current_side,
-        layer=current_layer,
-    )
-
-    measure_LUT(t, current_layer, current_side, [538,730,943])
