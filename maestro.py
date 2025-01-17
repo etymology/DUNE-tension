@@ -41,17 +41,17 @@ class Controller:
         if platform.system() == "Windows":
             ttyStr = "COM3"
         
-        # Search for the Micro Maestro 6-Servo Controller
-        ports = list_ports.comports()
-        maestro_port = None
+        # # Search for the Micro Maestro 6-Servo Controller
+        # ports = list_ports.comports()
+        # maestro_port = None
         
-        for port in ports:
-            if "Micro Maestro 6-Servo Controller" in port.description:
-                maestro_port = port.device
-                break
+        # for port in ports:
+        #     if "Micro Maestro 6-Servo Controller" in port.description:
+        #         maestro_port = port.device
+        #         break
         
-        if maestro_port is not None:
-            ttyStr = maestro_port
+        # if maestro_port is not None:
+        #     ttyStr = maestro_port
         
         # Open the command port
         try:
@@ -115,7 +115,7 @@ class Controller:
         # if Max is defined and Target is above, force to Max
         if self.Maxs[chan] > 0 and target > self.Maxs[chan]:
             target = self.Maxs[chan]
-        self.send(self._make_command(target, 0x04, chan))
+        self.sendCmd(self._make_command(target, 0x04, chan))
         # Record Target value
         self.Targets[chan] = target
 
@@ -187,11 +187,5 @@ class Controller:
 
 
 if __name__ == "__main__":
-    from time import sleep
-
-    controller = Controller()
-    while True:
-        controller.runScriptSub(0)
-        print("Running script subroutine 0")
-        sleep(0.4)
-
+    controller = Controller(ttyStr="/dev/ttyACM0")
+    controller.setTarget(0, 6000)

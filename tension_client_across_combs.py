@@ -12,6 +12,7 @@ def measure_sequential_across_combs(
     direction: int = 1,
     use_relative_position: bool = False,
     use_LUT: bool = False,
+    final_wire_number: int = None,
 ):
     # direction = 1 for increasing wire number, -1 for decreasing wire number
 
@@ -35,7 +36,7 @@ def measure_sequential_across_combs(
         nonlocal wire_number
         wire_x, wire_y = t.get_xy()  # for testing
 
-        while wire_number >= wire_min and wire_number <= wire_max:
+        while wire_number >= wire_min and wire_number <= wire_max and wire_number != final_wire_number:
             wire_y = t.initial_wire_height + dy * (wire_number - 1)
             wire_data = collect_wire_data(t, wire_number, wire_x, wire_y)
             wire_number += direction
@@ -133,3 +134,9 @@ def seek_wire(t: Tensiometer, layer, side, wire_number):
     print(f"Best y: {best_y}, confidence: {max_confidence}")
     t.goto_xy(x, best_y)
     return x, best_y
+
+
+def measure_one_wire(t: Tensiometer, wire_number, tries):
+    x,y = t.get_xy()
+    for n in range(tries):
+        collect_wire_data(t,wire_number,x,y)

@@ -29,11 +29,6 @@ def collect_wire_data(
         servo_thread.start()
         return servo_thread
 
-    def start_wiggle_thread():
-        wiggle_thread = threading.Thread(target=t.wiggle_loop(wire_x, wire_y))
-        wiggle_thread.start()
-        return wiggle_thread
-
     def save_audio_sample(audio_sample):
         if t.save_audio:
             np.savez(
@@ -57,7 +52,7 @@ def collect_wire_data(
         while (
             time.time() - start_time
         ) < t.timeout and good_wire_count < t.samples_per_wire:
-            t.set_xy_target(wire_x, gauss(wire_y, t.wiggle_step))
+            # t.set_xy_target(wire_x, gauss(wire_y, t.wiggle_step))
             audio_sample = t.record_audio(t.record_duration, plot=False, normalize=True)
             #  sd.rec(int(t.record_duration * t.sample_rate), samplerate=t.sample_rate, channels=1, dtype='float32')
             # # sd.wait()
@@ -139,8 +134,6 @@ def collect_wire_data(
 
     if t.use_servo:
         servo_thread = start_servo_thread()
-    if t.use_wiggle:
-        wiggle_thread = start_wiggle_thread()
     t.goto_xy(wire_x, wire_y)
     sleep(0.2)
 
@@ -148,9 +141,6 @@ def collect_wire_data(
     if t.use_servo:
         t.stop_servo_event.set()
         servo_thread.join()
-    if t.use_wiggle:
-        t.stop_wiggle_event.set()
-        wiggle_thread.join()
 
     passingWires = calculate_passing_wires(wires)
     result = generate_result(passingWires)
