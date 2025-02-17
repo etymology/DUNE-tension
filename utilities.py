@@ -6,6 +6,7 @@ import pandas as pd
 import numpy as np
 from scipy.stats import gaussian_kde
 from itertools import combinations
+from scipy.signal import butter, filtfilt
 
 
 G_LENGTH = 1.285
@@ -18,6 +19,8 @@ Y_MAX = 2460
 X_MIN = 1000
 X_MAX = 7000
 comb_positions = [1030, 2230, 3420, 4590, 5770, 7030]
+MIN_PHYSICAL_TENSION = 2
+MAX_PHYSICAL_TENSION = 10
 
 
 # replace with real values for the comb positions
@@ -69,9 +72,9 @@ def next_wire_target(wire_x, wire_y, dx, dy):
             valid_positions.append(position)
     # Choose the position with the least y value
     if valid_positions:
-        return min(valid_positions, key=lambda pos: abs(pos[1]-1350))
+        return min(valid_positions, key=lambda pos: abs(pos[1] - 1350))
     else:
-        return wire_x+dx,wire_y
+        return wire_x + dx, wire_y
 
 
 def not_close_to_comb(x, tolerance=100):
@@ -242,11 +245,10 @@ def has_cluster_dict(data, key, n):
         return []
 
     for subset in combinations(data, n):
-
         values = [item[key] for item in subset]
         if np.std(values) < 0.1:
             return list(subset)
-        
+
         # values = sorted(values)
         # q1 = np.percentile(values, 25)
         # q3 = np.percentile(values, 75)
@@ -259,6 +261,74 @@ def has_cluster_dict(data, key, n):
         #     return list(subset)
 
     return []
+
+
+def bandpass_filter(
+    audio: np.ndarray, samplerate: int, f1: float, f2: float, order: int = 4
+) -> np.ndarray:
+    """
+    Apply a bandpass filter to an audio signal to exclude frequencies
+    outside the range [f1, f2].
+
+    Parameters
+    ----------
+    audio : np.ndarray
+        The input audio signal (1D or 2D). If 2D, each column or row
+        can be considered a channel (depending on your data layout).
+    samplerate : int
+        Sampling rate of the audio signal in Hz.
+    f1 : float
+        Lower cutoff frequency in Hz.
+    f2 : float
+        Upper cutoff frequency in Hz.
+    order : int, optional
+        Order of the Butterworth filter (default is 4).
+
+    Returns
+    -------
+    filtered_audio : np.ndarray
+        The bandpass-filtered audio signal.
+    """
+
+    # Normalize the cutoff frequencies to the Nyquist frequency (samplerate / 2).
+    nyquist = 0.5 * samplerate
+    low = f1 / nyquist
+    high = f2 / nyquist
+
+    # Design a Butterworth bandpass filter.
+    b, a = butter(order, [low, high], btype="band")
+
+    # Apply the filter to the audio signal using filtfilt for zero-phase filtering.
+    # If the audio is multi-channel, filtfilt processes each channel along the first dimension by default,
+    # so you might need to transpose your data if it is shaped differently.
+    # (For a 1D signal, this is straightforward.)
+    filtered_audio = filtfilt(b, a, audio, axis=0)
+
+    return filtered_audio
+
+
+def tension_bandpass_filter(
+    audio: np.ndarray, samplerate: int, length: float, order: int = 4
+) -> np.ndarray:
+    f_min = 1 / (2 * length) * np.sqrt(MIN_PHYSICAL_TENSION / WIRE_DENSITY)
+    f_max = 1 / (2 * length) * np.sqrt(MAX_PHYSICAL_TENSION / WIRE_DENSITY)
+    # Normalize the cutoff frequencies to the Nyquist frequency (samplerate / 2).
+    nyquist = 0.5 * samplerate
+    low = f_min / nyquist
+    high = f_max / nyquist
+
+    # Design a Butterworth bandpass filter.
+    b, a = butter(order, [low, high], btype="band")
+
+    # Apply the filter to the audio signal using filtfilt for zero-phase filtering.
+    # If the audio is multi-channel, filtfilt processes each channel along the first dimension by default,
+    # so you might need to transpose your data if it is shaped differently.
+    # (For a 1D signal, this is straightforward.)
+    filtered_audio = filtfilt(b, a, audio, axis=0)
+
+    return filtered_audio
+    audio_data = bandpass_filter(audio_data, samplerate, f_min, f_max)
+    return audio_data
 
 
 if __name__ == "__main__":

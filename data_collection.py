@@ -4,6 +4,7 @@ from datetime import datetime
 from Tensiometer import Tensiometer
 from audioProcessing import (
     get_pitch_crepe,
+    get_pitch_crepe_bandpass
 )
 import threading
 from utilities import (
@@ -14,7 +15,7 @@ from utilities import (
     tension_pass,
     has_cluster_dict,
     tension_plausible,
-    calculate_kde_max
+    calculate_kde_max,
 )
 
 
@@ -36,7 +37,7 @@ def collect_wire_data(t: Tensiometer, wire_number: int, wire_x, wire_y):
             )
 
     def analyze_sample(audio_sample):
-        frequency, confidence = get_pitch_crepe(audio_sample, t.sample_rate)
+        frequency, confidence = get_pitch_crepe_bandpass(audio_sample, t.sample_rate,length)
         tension = tension_lookup(length=length, frequency=frequency)
         tension_ok = tension_pass(tension, length)
         if not tension_ok and tension_pass(tension / 4, length):
@@ -59,8 +60,8 @@ def collect_wire_data(t: Tensiometer, wire_number: int, wire_x, wire_y):
                 t.wiggle(wire_y,current_wiggle)
             if audio_sample is not None:
                 frequency, confidence, tension, tension_ok = analyze_sample(
-                    audio_sample
-                )
+                    audio_sample    
+                )    
                 x, y = t.get_xy()
                 if confidence > t.confidence_threshold and tension_plausible(tension):
                     wiggle_start_time = time.time()

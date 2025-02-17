@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 import crepe
 import soundfile as sf
 
+
 def save_wav(audio_sample: np.ndarray, sample_rate: int, filename: str):
     # Save the audio sample to a WAV file
     sf.write(filename, audio_sample, int(sample_rate))
@@ -166,6 +167,33 @@ def get_pitch_naive_fft(
 
 def get_pitch_crepe(
     audio_data: np.ndarray, samplerate, model_capacity="tiny"
+) -> tuple[float, float]:
+    """Extract the pitch and confidence from the audio data using CREPE."""
+    _, frequencies, confidence, _ = crepe.predict(
+        audio_data,
+        samplerate,
+        model_capacity=model_capacity,
+        viterbi=False,
+        verbose=0,
+        step_size=50,
+    )
+
+    # Directly find the index of the maximum confidence
+    if len(confidence) > 0:
+        max_conf_idx = np.argmax(confidence)
+        max_frequency = frequencies[max_conf_idx]
+        max_confidence = confidence[max_conf_idx]
+    else:
+        # Handle the case where no confidence values are available
+        print("No confidence values available.")
+        max_frequency = 0.0
+        max_confidence = 0.0
+
+    return max_frequency, max_confidence
+
+
+def get_pitch_crepe_bandpass(
+    audio_data: np.ndarray, samplerate, length, model_capacity="tiny"
 ) -> tuple[float, float]:
     """Extract the pitch and confidence from the audio data using CREPE."""
     _, frequencies, confidence, _ = crepe.predict(
