@@ -5,14 +5,16 @@ import random
 import pandas as pd
 import numpy as np
 from scipy.stats import gaussian_kde
+from itertools import combinations
+
 
 G_LENGTH = 1.285
 X_LENGTH = 1.273
 WIRE_DENSITY = 0.000152
-MAX_TENSION = 8.5
+MAX_TENSION = 8
 COMB_SPACING = 1190
 Y_MIN = 220
-Y_MAX = 2420
+Y_MAX = 2460
 X_MIN = 1000
 X_MAX = 7000
 comb_positions = [1030, 2230, 3420, 4590, 5770, 7030]
@@ -54,44 +56,22 @@ def next_wire_target(wire_x, wire_y, dx, dy):
     print(f"dx, dy: {dx}, {dy}")
 
     # Calculate the two possible positions
-    pos1_y = wire_y + dy
-    pos1_x = wire_x
+    positions = []
 
-    pos2_y = Y_MIN + 50 + dy
-    pos2_x = (wire_y - (Y_MIN + 50)) / dy * dx + wire_x
+    for i in range(400):
+        positions.append((wire_x - i * dx, wire_y + (i + 1) * dy))
+        positions.append((wire_x + (i + 1) * dx, wire_y - i * dy))
 
-    pos3_y = wire_y - 300 * dy / dx + dy
-    pos3_x = wire_x + 300
-
-    pos4_y = wire_y
-    pos4_x = wire_x + dx
-    # Initialize an empty list to store valid positions
     valid_positions = []
 
-    # print(f"pos1: {pos1_x}, {pos1_y}")
-    # print("pos2: ", pos2_x, pos2_y)
-    # print("pos3: ", pos3_x, pos3_y)
-    # print("pos4: ", pos4_x, pos4_y)
-    # # # Check if pos1_y is within bounds and add it to the list if valid
-    # # Check if pos2_y is within bounds and add it to the list if valid
-    if is_in_bounds(pos1_x, pos1_y):
-        valid_positions.append((pos1_x, pos1_y))
-
-    if is_in_bounds(pos2_x, pos2_y):
-        valid_positions.append((pos2_x, pos2_y))
-
-    if is_in_bounds(pos3_x, pos3_y):
-        valid_positions.append((pos3_x, pos3_y))
-    if is_in_bounds(pos4_x, pos4_y):
-        valid_positions.append((pos4_x, pos4_y))
-
-    # Check if pos2_y is within bounds and add it to the list if valid
-
+    for position in positions:
+        if is_in_bounds(position[0], position[1]):
+            valid_positions.append(position)
     # Choose the position with the least y value
     if valid_positions:
-        return min(valid_positions, key=lambda pos: pos[1])
+        return min(valid_positions, key=lambda pos: abs(pos[1]-1350))
     else:
-        return wire_x + dx, wire_y
+        return wire_x+dx,wire_y
 
 
 def not_close_to_comb(x, tolerance=100):
@@ -103,7 +83,7 @@ def not_close_to_comb(x, tolerance=100):
 
 
 def is_in_bounds(x, y):
-    return X_MIN < x < X_MAX and Y_MIN < y < Y_MAX and not_close_to_comb(x)
+    return (X_MIN < x < X_MAX) and (Y_MIN < y < Y_MAX) and not_close_to_comb(x)
 
 
 def length_lookup(layer: str, wire_number: int, zone: int, taped=False):
@@ -238,14 +218,67 @@ def calculate_kde_max(sample):
 
 
 def tension_pass(tension, length):
-    return tension > 4 and tension < MAX_TENSION #min(0.0258 * length + 0.232, 4)
+    return tension > min(25.8 * length + 0.232, 4) and tension < MAX_TENSION  #
+
+
+def tension_plausible(tension):
+    return tension < 10 and tension > 2
+
+
+def has_cluster_dict(data, key, n):
+    """
+    Checks if any subset of size n in the list of dictionaries forms a cluster
+    based on the values of a specified key using the IQR method.
+
+    Args:
+        data (list): A list of dictionaries.
+        key (str): The key to check values for clustering.
+        n (int): The size of the subset to check.
+
+    Returns:
+        list: A subset of dictionaries that forms a cluster if one exists, otherwise an empty list.
+    """
+    if len(data) < n:
+        return []
+
+    for subset in combinations(data, n):
+
+        values = [item[key] for item in subset]
+        if np.std(values) < 0.1:
+            return list(subset)
+        
+        # values = sorted(values)
+        # q1 = np.percentile(values, 25)
+        # q3 = np.percentile(values, 75)
+        # iqr = q3 - q1
+        # lower_bound = q1 - 1.5 * iqr
+        # upper_bound = q3 + 1.5 * iqr
+
+        # # Check if all values are within the bounds
+        # if all(lower_bound <= x <= upper_bound for x in values):
+        #     return list(subset)
+
+    return []
 
 
 if __name__ == "__main__":
-    # Test the wiggle generator
-    wire_y = 0
-    wg = get_wiggle_generator("gaussian", wire_y)
-    for _ in range(10):
-        print(next(wg))
-    for x in range(23, 100):
-        print(length_lookup("V", x, 1))
+    wire_x = 4989
+    wire_y = 371
+    dx, dy = -8, 5.75
+    # print(not_close_to_comb(4989))
+    print(is_in_bounds(wire_x, wire_y))
+    print(next_wire_target(wire_x, wire_y, dx, dy))
+
+    # Example usage
+    # numbers = [1, 1.1, 1.3, 10, 12, 23]
+    # n = 4
+    # result = has_cluster(numbers, n)
+    # print(f"Cluster found: {result}")  # Output: Cluster found: True
+
+    # # Test the wiggle generator
+    # wire_y = 0
+    # wg = get_wiggle_generator("gaussian", wire_y)
+    # for _ in range(10):
+    #     print(next(wg))
+    # for x in range(23, 100):
+    #     print(length_lookup("V", x, 1))

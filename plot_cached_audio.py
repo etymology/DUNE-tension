@@ -89,7 +89,7 @@ with open("results.csv", "w", newline="") as csvfile:
                         )
 
                         # Filter to include only positive frequencies up to 10000 Hz
-                        positive_freq_indices = (fft_freq > 0) & (fft_freq <= 10000)
+                        positive_freq_indices = (fft_freq > 0) & (fft_freq <= 500)
                         positive_freqs = fft_freq[positive_freq_indices]
                         positive_magnitudes = np.abs(fft_result)[positive_freq_indices]
 
@@ -114,9 +114,9 @@ with open("results.csv", "w", newline="") as csvfile:
                         )
                         ax2.set_xlabel("Frequency (Hz)")
                         ax2.set_ylabel("Magnitude")
-                        ax2.set_xscale(
-                            "log"
-                        )  # Set the x-axis to a logarithmic scale
+                        # ax2.set_xscale(
+                        #     "log"
+                        # )  # Set the x-axis to a logarithmic scale
 
                         # Add vertical lines and labels for the detected frequencies
                         if autocorr_frequency <= 5000:

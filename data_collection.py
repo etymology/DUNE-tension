@@ -11,16 +11,15 @@ from utilities import (
     zone_lookup,
     tension_lookup,
     length_lookup,
-    calculate_kde_max,
     tension_pass,
+    has_cluster_dict,
+    tension_plausible,
+    calculate_kde_max
 )
-from random import gauss
-from time import sleep
 
 
-def collect_wire_data(
-    t: Tensiometer, wire_number: int, wire_x, wire_y
-):
+
+def collect_wire_data(t: Tensiometer, wire_number: int, wire_x, wire_y):
     t.stop_servo_event.clear()
     t.stop_wiggle_event.clear()
 
@@ -46,46 +45,46 @@ def collect_wire_data(
             tension_ok = True
         return frequency, confidence, tension, tension_ok
 
-    def collect_samples(start_time, length):
+    def collect_samples(start_time):
+        nonlocal wire_x, wire_y
         wires = []
-        good_wire_count = 0
-        while (
-            time.time() - start_time
-        ) < t.timeout and good_wire_count < t.samples_per_wire:
-            # t.set_xy_target(wire_x, gauss(wire_y, t.wiggle_step))
+        wiggle_start_time = time.time()
+        current_wiggle = t.starting_wiggle_step
+        while (time.time() - start_time) < t.timeout:
             audio_sample = t.record_audio(t.record_duration, plot=False, normalize=True)
-            #  sd.rec(int(t.record_duration * t.sample_rate), samplerate=t.sample_rate, channels=1, dtype='float32')
-            # # sd.wait()
-
             save_audio_sample(audio_sample)
+            if time.time() - wiggle_start_time > t.wiggle_interval and t.use_wiggle:
+                wiggle_start_time = time.time()
+                print("Wiggling")
+                t.wiggle(wire_y,current_wiggle)
             if audio_sample is not None:
                 frequency, confidence, tension, tension_ok = analyze_sample(
                     audio_sample
                 )
-                if tension_ok and confidence > t.confidence_threshold:
-                    good_wire_count += 1
+                x, y = t.get_xy()
+                if confidence > t.confidence_threshold and tension_plausible(tension):
+                    wiggle_start_time = time.time()
                     wires.append(
                         {
                             "tension": tension,
                             "tension_pass": tension_ok,
                             "frequency": frequency,
                             "confidence": confidence,
-                            "x": wire_x,
-                            "y": wire_y,
+                            "x": x,
+                            "y": y,
                         }
                     )
-                print(
-                    f"Wire {wire_number} length: {length*1000:.1f}mm, tension: {tension:.1f}N, frequency: {frequency:.1f}Hz, confidence: {confidence*100:.1f}%"
-                )
-        return wires
+                    wire_y = np.average([d["y"] for d in wires])
+                    # current_wiggle/=1.5
 
-    def calculate_passing_wires(wires):
-        return [
-            d
-            for d in wires
-            if d.get("tension_pass", False)
-            and d.get("confidence", 0) > t.confidence_threshold
-        ]
+                    cluster = has_cluster_dict(wires, "tension", t.samples_per_wire)
+                    if cluster != []:
+                        return cluster
+                    print(
+                        f"tension: {tension:.1f}N, frequency: {frequency:.1f}Hz, "
+                        f"confidence: {confidence * 100:.1f}%",f"y: {y:.1f}"
+                    )
+        return []
 
     def generate_result(passingWires):
         nonlocal wire_x, wire_y
@@ -95,36 +94,27 @@ def collect_wire_data(
             "wire_number": wire_number,
             "tension": 0,
             "tension_pass": False,
-            "zone": zone_lookup(wire_x),
             "frequency": 0,
+            "zone": zone_lookup(wire_x),
             "confidence": 0,
+            "t_sigma": 0,
             "x": wire_x,
             "y": wire_y,
-            "Gcode": f"X{round(wire_x,1)} Y{round(wire_y,1)}",
+            "Gcode": f"X{round(wire_x, 1)} Y{round(wire_y, 1)}",
         }
-        if len(passingWires) == 1:
-            result["frequency"] = passingWires[0]["frequency"]
-            result["tension"] = passingWires[0]["tension"]
-            result["tension_pass"] = passingWires[0]["tension_pass"]
-            result["confidence"] = passingWires[0]["confidence"]
-            result["x"] = passingWires[0]["x"]
-            result["y"] = passingWires[0]["y"]
-            result["Gcode"] = f"X{round(result['x'],1)} Y{round(result['y'],1)}"
 
-        if len(passingWires) > 1:
-            result["frequency"] = calculate_kde_max(
-                [d["frequency"] for d in passingWires]
-            )
+        if len(passingWires) > 0:
+            result["frequency"] = calculate_kde_max([d["frequency"] for d in passingWires])
             result["tension"] = tension_lookup(
                 length=length, frequency=result["frequency"]
             )
             result["tension_pass"] = tension_pass(result["tension"], length)
-            result["confidence"] = calculate_kde_max(
-                [d["confidence"] for d in passingWires]
-            )
+            result["confidence"] = np.average([d["confidence"] for d in passingWires])
+            result["t_sigma"] = np.std([d["tension"] for d in passingWires])
             result["x"] = round(np.average([d["x"] for d in passingWires]), 1)
             result["y"] = round(np.average([d["y"] for d in passingWires]), 1)
-            result["Gcode"] = f"X{round(result['x'],1)} Y{round(result['y'],1)}"
+            result["Gcode"] = f"X{round(result['x'], 1)} Y{round(result['y'], 1)}"
+            result["wires"] = str([float(d["tension"]) for d in passingWires])
 
         return result
 
@@ -135,24 +125,24 @@ def collect_wire_data(
     if t.use_servo:
         servo_thread = start_servo_thread()
     t.goto_xy(wire_x, wire_y)
-    sleep(0.2)
 
-    wires = collect_samples(start_time, length)
+    wires = collect_samples(start_time)
     if t.use_servo:
         t.stop_servo_event.set()
         servo_thread.join()
 
-    passingWires = calculate_passing_wires(wires)
-    result = generate_result(passingWires)
+    result = generate_result(wires)
 
     if result["tension"] == 0:
         print(f"measurement failed for wire number {wire_number}.")
     if not result["tension_pass"]:
         print(f"Tension failed for wire number {wire_number}.")
+    ttf = time.time() - start_time
     print(
-        f"Wire number {wire_number} has length {length*1000:.1f}mm tension {result['tension']:.1f}N frequency {result['frequency']:.1f}Hz with confidence {result['confidence']*100:.1f}%.\n"
-        f"Took {time.time() - start_time} seconds to finish."
+        f"Wire number {wire_number} has length {length * 1000:.1f}mm tension {result['tension']:.1f}N frequency {result['frequency']:.1f}Hz with confidence {result['confidence'] * 100:.1f}%.\n"
+        f"Took {ttf} seconds to finish."
     )
+    result["ttf"] = ttf
     log_data(result, f"data/frequency_data_{t.apa_name}_{t.layer}.csv")
 
     return result

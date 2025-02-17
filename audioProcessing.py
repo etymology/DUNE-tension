@@ -4,7 +4,6 @@ import matplotlib.pyplot as plt
 import crepe
 import soundfile as sf
 
-
 def save_wav(audio_sample: np.ndarray, sample_rate: int, filename: str):
     # Save the audio sample to a WAV file
     sf.write(filename, audio_sample, int(sample_rate))

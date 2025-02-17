@@ -4,10 +4,9 @@ from maestro import Controller
 import sounddevice as sd
 import numpy as np
 import matplotlib.pyplot as plt
-import utilities
 import threading
 import time
-from random import gauss
+from random import choice, gauss
 
 IDLE_MOVE_TYPE = 0
 IDLE_STATE = 1
@@ -23,7 +22,7 @@ class Tensiometer:
         ttyStr="/dev/ttyACM1",
         sound_card_name="USB PnP Sound",
         record_duration=0.2,
-        wiggle_step=0.1,
+        starting_wiggle_step=0.1,
         timeout=60,
         samples_per_wire=1,
         confidence_threshold=0.7,
@@ -36,6 +35,7 @@ class Tensiometer:
         layer="X",
         side="A",
         test_mode=False,
+        wiggle_interval=3,
     ):
         """
         Initialize the controller, audio devices, and check web server connectivity more concisely.
@@ -47,7 +47,7 @@ class Tensiometer:
         self.confidence_threshold = confidence_threshold
         self.delay_after_plucking = delay_after_plucking
         self.wiggle_type = wiggle_type
-        self.wiggle_step = wiggle_step
+        self.starting_wiggle_step = starting_wiggle_step
         self.save_audio = save_audio
         self.timeout = timeout
         self.stop_servo_event = threading.Event()
@@ -57,11 +57,7 @@ class Tensiometer:
         self.initial_wire_height = initial_wire_height
         self.layer = layer
         self.side = side
-
-        if wiggle_type == "gaussian":
-            self.wiggle = utilities.gaussian_wiggle
-        else:
-            self.wiggle = utilities.stepwise_wiggle
+        self.wiggle_interval = wiggle_interval
 
         if not test_mode:
             if use_servo:
@@ -147,17 +143,17 @@ class Tensiometer:
                 f"Motion target {x_target},{y_target} out of bounds. Please enter a valid position."
             )
             return False
-
+        current_state = self.get_state()
+        while current_state != IDLE_STATE:
+            current_state = self.get_state()
         self.write_tag("MOVE_TYPE", IDLE_MOVE_TYPE)
         self.write_tag("STATE", IDLE_STATE)
         self.write_tag("X_POSITION", x_target)
         self.write_tag("Y_POSITION", y_target)
         self.write_tag("MOVE_TYPE", XY_MOVE_TYPE)
         current_x, current_y = self.get_xy()
-        while (
-            (abs(current_x - x_target)) > 0.05 and (abs(current_y - y_target)) > 0.05
-        ) or self.get_movetype() == XY_MOVE_TYPE:
-            current_x, current_y = self.get_xy()
+        while self.get_movetype() == XY_MOVE_TYPE:
+            time.sleep(0.001)
         return True
 
     def set_xy_target(self, x_target: float, y_target: float):
@@ -179,9 +175,9 @@ class Tensiometer:
         x, y = self.get_xy()
         self.goto_xy(x + increment_x, y + increment_y)
 
-    def wiggle_loop(self, x, y):
-        while not self.stop_wiggle_event.is_set():
-            self.goto_xy(x, gauss(y, self.wiggle_step))
+    def wiggle(self, wire_y,step):
+        """Wiggle the winder by a given step size."""
+        self.increment(0, gauss(0, step))
 
     def record_audio(self, duration, plot=False, normalize=False):
         """Record audio for a given duration and sample rate and normalize it to the range -1 to 1. Optionally plot the waveform."""

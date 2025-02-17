@@ -11,7 +11,7 @@ def measure_sequential_across_combs(
     initial_wire_number: int,
     direction: int = 1,
     use_relative_position: bool = False,
-    use_LUT: bool = False,
+    use_LUT: bool = True,
     final_wire_number: int = None,
 ):
     # direction = 1 for increasing wire number, -1 for decreasing wire number

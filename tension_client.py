@@ -27,7 +27,7 @@ def analyze_wire(
     t: Tensiometer, layer: str, side: str, wire_number: int, wire_x, wire_y
 ):
     t.goto_xy(wire_x, wire_y)
-    wiggle_generator = t.wiggle(wire_y, t.wiggle_step)
+    wiggle_generator = t.wiggle(wire_y, t.starting_wiggle_step)
     analysis_methods: Dict[str, AnalysisFuncType] = {
         "crepe": get_pitch_crepe,
         # "naive_fft": get_pitch_naive_fft,
@@ -211,7 +211,7 @@ if __name__ == "__main__":
     t = Tensiometer(
         apa_name="US_APA3",
         samples_per_wire=10,
-        wiggle_step=0.3,
+        starting_wiggle_step=0.3,
         wiggle_type="gaussian",
         confidence_threshold=0.5,
         delay_after_plucking=0.2,
