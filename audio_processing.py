@@ -4,6 +4,10 @@ import matplotlib.pyplot as plt
 import crepe
 import soundfile as sf
 
+from scipy.signal import find_peaks
+import librosa
+import os
+
 
 def save_wav(audio_sample: np.ndarray, sample_rate: int, filename: str):
     # Save the audio sample to a WAV file
@@ -217,3 +221,177 @@ def get_pitch_crepe_bandpass(
         max_confidence = 0.0
 
     return max_frequency, max_confidence
+
+
+def get_pitch_fft_interpolated(audio, sample_rate):
+    """
+    Estimates the pitch (dominant frequency) of an audio signal.
+
+    This function computes the magnitude spectrum via FFT, detects peaks using
+    scipy.signal.find_peaks, and uses parabolic interpolation around the highest
+    peak to estimate the frequency with sub-bin resolution.
+
+    Parameters:
+        audio (np.ndarray): 1D numpy array containing the audio signal.
+        sample_rate (int): Sampling rate of the audio signal in Hz.
+
+    Returns:
+        float or None: The estimated pitch in Hz, or None if no peak is found.
+    """
+    # Number of samples in the audio signal.
+    N = len(audio)
+
+    # Compute the real FFT and corresponding frequency bins.
+    spectrum = np.abs(np.fft.rfft(audio))
+
+    # Find peaks in the magnitude spectrum.
+    peaks, properties = find_peaks(spectrum, height=0)
+
+    # If no peaks are found, return None.
+    if len(peaks) == 0:
+        return None
+
+    # Select the peak with the highest magnitude.
+    dominant_peak = peaks[np.argmax(spectrum[peaks])]
+
+    # Parabolic interpolation around the peak to refine the peak position.
+    if dominant_peak > 0 and dominant_peak < len(spectrum) - 1:
+        # Magnitudes of the neighboring bins.
+        alpha = spectrum[dominant_peak - 1]
+        beta = spectrum[dominant_peak]
+        gamma = spectrum[dominant_peak + 1]
+
+        # Calculate the adjustment (p) using the parabolic formula.
+        denominator = alpha - 2 * beta + gamma
+        if denominator == 0:
+            p = 0
+        else:
+            p = 0.5 * (alpha - gamma) / denominator
+    else:
+        p = 0
+
+    # The refined index of the peak.
+    refined_index = dominant_peak + p
+
+    # Calculate the pitch using the refined index.
+    # The frequency resolution of the FFT is sample_rate / N.
+    pitch = refined_index * (sample_rate / N)
+
+    return pitch,1
+
+def generate_noise_filter(noise_audio,sample_rate, output_filter_path="filters/noise_filter.npz", n_fft=1024, hop_length=256):
+    """
+    Loads a .npz file containing background noise (keys: "audio", "sample_rate"),
+    computes its STFT, and averages the magnitude spectrum over time to create a noise filter.
+    The filter (and STFT parameters) is then saved to the specified output path.
+    
+    Parameters:
+        noise_npz_path (str): Path to the .npz file containing background noise.
+        output_filter_path (str): Path (including filename) to save the noise filter.
+        n_fft (int): FFT window size.
+        hop_length (int): Hop length for the STFT.
+    """
+    # # Load the background noise data
+    # data = np.load(noise_npz_path)
+    # noise_audio = data['audio']
+    # sample_rate = int(data['sample_rate'])
+    
+    # Compute the STFT of the noise audio
+    noise_stft = librosa.stft(noise_audio, n_fft=n_fft, hop_length=hop_length)
+    noise_mag = np.abs(noise_stft)
+    
+    # Average the magnitude over time to obtain a noise spectrum (filter)
+    noise_filter = np.mean(noise_mag, axis=1)  # shape: (n_fft//2+1,)
+    
+    noise_level = np.max(abs(noise_audio))
+    # Ensure the filters directory exists
+    os.makedirs(os.path.dirname(output_filter_path), exist_ok=True)
+    
+    # Save the filter along with STFT parameters and sample rate
+    np.savez(output_filter_path, noise_filter=noise_filter, n_fft=n_fft, hop_length=hop_length, sample_rate=sample_rate,noise_level=noise_level)
+    print(f"Noise filter saved to {output_filter_path}")
+    return noise_filter, n_fft, hop_length, sample_rate,noise_level
+
+
+def remove_noise(audio, sample_rate, filter_file_path="filters/noise_filter.npz"):
+    """
+    Removes background noise from the given audio signal using spectral subtraction.
+    
+    This function:
+      1. Loads the saved noise filter.
+      2. If the sample rate differs from the filter’s sample rate, resamples the audio.
+      3. Computes the STFT of the input audio.
+      4. Subtracts the noise spectrum from the magnitude spectrogram (ensuring no negative values).
+      5. Reconstructs the time-domain signal using the inverse STFT.
+    
+    Parameters:
+        audio (np.ndarray): Input noisy audio signal.
+        sample_rate (int): Sample rate of the input audio.
+        filter_file_path (str): Path to the saved noise filter (.npz file).
+    
+    Returns:
+        np.ndarray: The denoised audio signal.
+    """
+    # Load the saved filter and parameters
+    filter_data = np.load(filter_file_path)
+    noise_filter = filter_data['noise_filter']
+    n_fft = int(filter_data['n_fft'])
+    hop_length = int(filter_data['hop_length'])
+    filter_sr = int(filter_data['sample_rate'])
+    
+    # Resample audio if its sample rate does not match the filter's sample rate
+    if sample_rate != filter_sr:
+        audio = librosa.resample(audio, orig_sr=sample_rate, target_sr=filter_sr)
+        sample_rate = filter_sr
+        # print(f"Audio resampled to {filter_sr} Hz to match filter sample rate.")
+    
+    # Compute the STFT of the input audio
+    audio_stft = librosa.stft(audio, n_fft=n_fft, hop_length=hop_length)
+    magnitude = np.abs(audio_stft)
+    phase = np.angle(audio_stft)
+    
+    # Subtract the noise filter (applied across each time frame)
+    # Expand noise_filter to match the shape of magnitude spectrogram
+    noise_filter_expanded = noise_filter[:, np.newaxis]
+    cleaned_magnitude = magnitude - noise_filter_expanded
+    cleaned_magnitude = np.maximum(cleaned_magnitude, 0)  # clip negative values
+    
+    # Reconstruct the STFT with the original phase
+    cleaned_stft = cleaned_magnitude * np.exp(1j * phase)
+    
+    # Compute the inverse STFT to get the time-domain cleaned audio
+    cleaned_audio = librosa.istft(cleaned_stft, hop_length=hop_length)
+    
+    return cleaned_audio
+
+
+# Example usage:
+if __name__ == "__main__":
+    import matplotlib.pyplot as plt
+
+    # Generate a 1-second 440 Hz sine wave for demonstration.
+    sample_rate = 44100
+    t = np.linspace(0, 1, sample_rate, endpoint=False)
+    audio = 0.5 * np.sin(2 * np.pi * 440 * t)
+
+    estimated_pitch = get_pitch_fft_interpolated(audio, sample_rate)
+    print(f"Estimated pitch: {estimated_pitch:.2f} Hz")
+
+    # Optionally, visualize the spectrum and the detected peak.
+    N = len(audio)
+    spectrum = np.abs(np.fft.rfft(audio))
+    freqs = np.fft.rfftfreq(N, d=1 / sample_rate)
+
+    plt.figure(figsize=(10, 4))
+    plt.plot(freqs, spectrum, label="Spectrum")
+    plt.axvline(
+        estimated_pitch,
+        color="r",
+        linestyle="--",
+        label=f"Estimated Pitch: {estimated_pitch:.2f} Hz",
+    )
+    plt.xlabel("Frequency (Hz)")
+    plt.ylabel("Magnitude")
+    plt.title("Frequency Spectrum with Estimated Pitch")
+    plt.legend()
+    plt.show()

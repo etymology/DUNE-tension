@@ -14,16 +14,19 @@ if __name__ == "__main__":
         layer="G",
         side="A",
         starting_wiggle_step=.2,
-        samples_per_wire=5,
+        samples_per_wire=500,
         confidence_threshold=0,
-        use_wiggle=True,
+        use_wiggle=False,
         sound_card_name="default",
         timeout=120,
         save_audio=True,
         record_duration=.4,
         wiggle_interval=3,
-        initial_wire_height=189.8
+        initial_wire_height=189.8,
+        use_audio_filter=True,
+        pitch_method="fft",
     )
+    # t.calibrate_noise_filter()
     # process_wire_data(t)
     # lookup = find_tensions_outside_range(t)
     # measure_LUT(t, [1
@@ -32,7 +35,7 @@ if __name__ == "__main__":
     # )
     # measure_LUT(t,[396,423])
     measure_sequential_across_combs(
-        t, initial_wire_number=8
+        t, initial_wire_number=1
             , direction=1, use_relative_position=True, use_LUT=False
     )
 

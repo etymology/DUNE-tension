@@ -2,10 +2,8 @@ import time
 import numpy as np
 from datetime import datetime
 from Tensiometer import Tensiometer
-from audioProcessing import (
-    get_pitch_crepe,
-    get_pitch_crepe_bandpass
-)
+from audio_processing import get_pitch_crepe, get_pitch_fft_interpolated
+import os
 import threading
 from utilities import (
     log_data,
@@ -19,7 +17,6 @@ from utilities import (
 )
 
 
-
 def collect_wire_data(t: Tensiometer, wire_number: int, wire_x, wire_y):
     t.stop_servo_event.clear()
     t.stop_wiggle_event.clear()
@@ -31,13 +28,27 @@ def collect_wire_data(t: Tensiometer, wire_number: int, wire_x, wire_y):
 
     def save_audio_sample(audio_sample):
         if t.save_audio:
-            np.savez(
-                f"audio/{t.layer}{t.side}{wire_number}_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}",
-                audio_sample,
-            )
+            directory = "audio"
+            # Ensure the output directory exists.
+            os.makedirs(directory, exist_ok=True)
+
+            # Create timestamp and file name.
+            timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+            file_name = f"{t.layer}{t.side}{wire_number}_{timestamp}.npz"
+            file_path = os.path.join(directory, file_name)
+
+            # Save the data.
+            np.savez(file_path, audio=audio_sample, sample_rate=t.sample_rate)
+
+            # print(f"Saved audio to: {file_path}")
 
     def analyze_sample(audio_sample):
-        frequency, confidence = get_pitch_crepe_bandpass(audio_sample, t.sample_rate,length)
+        if t.pitch_method == "fft":
+            frequency, confidence = get_pitch_fft_interpolated(
+                audio_sample, t.sample_rate
+            )
+        else:
+            frequency, confidence = get_pitch_crepe(audio_sample, t.sample_rate)
         tension = tension_lookup(length=length, frequency=frequency)
         tension_ok = tension_pass(tension, length)
         if not tension_ok and tension_pass(tension / 4, length):
@@ -52,16 +63,21 @@ def collect_wire_data(t: Tensiometer, wire_number: int, wire_x, wire_y):
         wiggle_start_time = time.time()
         current_wiggle = t.starting_wiggle_step
         while (time.time() - start_time) < t.timeout:
-            audio_sample = t.record_audio(t.record_duration, plot=False, normalize=True)
+            audio_sample = t.record_audio(
+                t.record_duration,
+                plot=False,
+                normalize=True,
+                use_audio_filter=t.use_audio_filter,
+            )
             save_audio_sample(audio_sample)
             if time.time() - wiggle_start_time > t.wiggle_interval and t.use_wiggle:
                 wiggle_start_time = time.time()
                 print("Wiggling")
-                t.wiggle(wire_y,current_wiggle)
+                t.wiggle(wire_y, current_wiggle)
             if audio_sample is not None:
                 frequency, confidence, tension, tension_ok = analyze_sample(
-                    audio_sample    
-                )    
+                    audio_sample
+                )
                 x, y = t.get_xy()
                 if confidence > t.confidence_threshold and tension_plausible(tension):
                     wiggle_start_time = time.time()
@@ -83,7 +99,8 @@ def collect_wire_data(t: Tensiometer, wire_number: int, wire_x, wire_y):
                         return cluster
                     print(
                         f"tension: {tension:.1f}N, frequency: {frequency:.1f}Hz, "
-                        f"confidence: {confidence * 100:.1f}%",f"y: {y:.1f}"
+                        f"confidence: {confidence * 100:.1f}%",
+                        f"y: {y:.1f}",
                     )
         return []
 
@@ -105,7 +122,9 @@ def collect_wire_data(t: Tensiometer, wire_number: int, wire_x, wire_y):
         }
 
         if len(passingWires) > 0:
-            result["frequency"] = calculate_kde_max([d["frequency"] for d in passingWires])
+            result["frequency"] = calculate_kde_max(
+                [d["frequency"] for d in passingWires]
+            )
             result["tension"] = tension_lookup(
                 length=length, frequency=result["frequency"]
             )

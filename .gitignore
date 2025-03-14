@@ -3,5 +3,6 @@ __pycache__/
 .mypy_cache/
 settings.json
 audio/*
+audio_formatted/*
 venv/*
 images/*

@@ -8,6 +8,13 @@ from scipy.stats import gaussian_kde
 from itertools import combinations
 from scipy.signal import butter, filtfilt
 
+import os
+import glob
+import numpy as np
+import matplotlib.pyplot as plt
+from scipy.signal import butter, filtfilt
+import librosa
+
 
 G_LENGTH = 1.285
 X_LENGTH = 1.273
@@ -20,7 +27,7 @@ X_MIN = 1000
 X_MAX = 7000
 comb_positions = [1030, 2230, 3420, 4590, 5770, 7030]
 MIN_PHYSICAL_TENSION = 2
-MAX_PHYSICAL_TENSION = 10
+MAX_PHYSICAL_TENSION = 13
 
 
 # replace with real values for the comb positions
@@ -225,7 +232,7 @@ def tension_pass(tension, length):
 
 
 def tension_plausible(tension):
-    return tension < 10 and tension > 2
+    return tension < MAX_PHYSICAL_TENSION and tension > MIN_PHYSICAL_TENSION
 
 
 def has_cluster_dict(data, key, n):
@@ -263,55 +270,13 @@ def has_cluster_dict(data, key, n):
     return []
 
 
-def bandpass_filter(
-    audio: np.ndarray, samplerate: int, f1: float, f2: float, order: int = 4
-) -> np.ndarray:
-    """
-    Apply a bandpass filter to an audio signal to exclude frequencies
-    outside the range [f1, f2].
-
-    Parameters
-    ----------
-    audio : np.ndarray
-        The input audio signal (1D or 2D). If 2D, each column or row
-        can be considered a channel (depending on your data layout).
-    samplerate : int
-        Sampling rate of the audio signal in Hz.
-    f1 : float
-        Lower cutoff frequency in Hz.
-    f2 : float
-        Upper cutoff frequency in Hz.
-    order : int, optional
-        Order of the Butterworth filter (default is 4).
-
-    Returns
-    -------
-    filtered_audio : np.ndarray
-        The bandpass-filtered audio signal.
-    """
-
-    # Normalize the cutoff frequencies to the Nyquist frequency (samplerate / 2).
-    nyquist = 0.5 * samplerate
-    low = f1 / nyquist
-    high = f2 / nyquist
-
-    # Design a Butterworth bandpass filter.
-    b, a = butter(order, [low, high], btype="band")
-
-    # Apply the filter to the audio signal using filtfilt for zero-phase filtering.
-    # If the audio is multi-channel, filtfilt processes each channel along the first dimension by default,
-    # so you might need to transpose your data if it is shaped differently.
-    # (For a 1D signal, this is straightforward.)
-    filtered_audio = filtfilt(b, a, audio, axis=0)
-
-    return filtered_audio
-
-
 def tension_bandpass_filter(
     audio: np.ndarray, samplerate: int, length: float, order: int = 4
 ) -> np.ndarray:
     f_min = 1 / (2 * length) * np.sqrt(MIN_PHYSICAL_TENSION / WIRE_DENSITY)
     f_max = 1 / (2 * length) * np.sqrt(MAX_PHYSICAL_TENSION / WIRE_DENSITY)
+
+
     # Normalize the cutoff frequencies to the Nyquist frequency (samplerate / 2).
     nyquist = 0.5 * samplerate
     low = f_min / nyquist
@@ -327,8 +292,99 @@ def tension_bandpass_filter(
     filtered_audio = filtfilt(b, a, audio, axis=0)
 
     return filtered_audio
-    audio_data = bandpass_filter(audio_data, samplerate, f_min, f_max)
-    return audio_data
+
+def process_audio_folder(folder_path: str,length):
+    """
+    Loads all .npz files in a given folder, applies a bandpass filter
+    to each audio signal (with cutoff frequencies f1 and f2), 
+    then plots time and frequency domain data before and after filtering,
+    limiting the frequency-domain view to only up to 2*f2.
+    
+    Parameters
+    ----------
+    folder_path : str
+        Path to the folder containing .npz files.
+    f1 : float
+        Lower cutoff frequency in Hz for the bandpass filter.
+    f2 : float
+        Upper cutoff frequency in Hz for the bandpass filter.
+    """
+    f_min = 1 / (2 * length) * np.sqrt(MIN_PHYSICAL_TENSION / WIRE_DENSITY)
+    f_max = 1 / (2 * length) * np.sqrt(MAX_PHYSICAL_TENSION / WIRE_DENSITY)
+
+    # Find all .npz files in the folder
+    file_list = glob.glob(os.path.join(folder_path, '*.npz'))
+    
+    for file_path in file_list:
+        # Load the .npz file; we assume it has 'audio' and/or other arrays
+        # with audio data, and we'll assume a 44.1 kHz samplerate if not provided.
+        data = np.load(file_path, allow_pickle=True)
+        
+        # If you know the file always contains only one array with audio, 
+        # you can directly reference it. Otherwise, iterate over items:
+        for array_name in data.files:
+            audio = data[array_name]
+            
+            # Samplerate (assuming 44.1 kHz if not available in the file)
+            samplerate = 44100  
+            
+            # Apply bandpass filter
+            filtered_audio = tension_bandpass_filter(audio, samplerate, X_LENGTH)
+            
+            # ---------------------------
+            # Plot Time Domain
+            # ---------------------------
+            plt.figure(figsize=(12, 8))
+            
+            # Original audio (time domain)
+            plt.subplot(2, 2, 1)
+            plt.title(f'Time Domain (Original) - {os.path.basename(file_path)}')
+            plt.plot(audio, label='Original Audio')
+            plt.xlabel('Sample')
+            plt.ylabel('Amplitude')
+            plt.legend()
+            
+            # Filtered audio (time domain)
+            plt.subplot(2, 2, 2)
+            plt.title('Time Domain (Filtered)')
+            plt.plot(filtered_audio, label='Filtered Audio', color='orange')
+            plt.xlabel('Sample')
+            plt.ylabel('Amplitude')
+            plt.legend()
+            
+            # ---------------------------
+            # Plot Frequency Domain
+            # ---------------------------
+            # Compute single-sided frequency axis (for real-valued signals)
+            freq_axis = np.fft.rfftfreq(len(audio), d=1.0/samplerate)
+            
+            # Compute magnitude spectra
+            original_spectrum = np.fft.rfft(audio)
+            filtered_spectrum = np.fft.rfft(filtered_audio)
+            
+            # Create a mask to show only frequencies <= 2*f2
+            max_freq = 2.0 * f_max
+            freq_mask = freq_axis <= max_freq
+            
+            # Original audio (frequency domain)
+            plt.subplot(2, 2, 3)
+            plt.title('Frequency Domain (Original)')
+            plt.plot(freq_axis[freq_mask], np.abs(original_spectrum)[freq_mask], label='Original Spectrum')
+            plt.xlabel('Frequency (Hz)')
+            plt.ylabel('Magnitude')
+            plt.legend()
+            
+            # Filtered audio (frequency domain)
+            plt.subplot(2, 2, 4)
+            plt.title('Frequency Domain (Filtered)')
+            plt.plot(freq_axis[freq_mask], np.abs(filtered_spectrum)[freq_mask], label='Filtered Spectrum', color='orange')
+            plt.xlabel('Frequency (Hz)')
+            plt.ylabel('Magnitude')
+            plt.legend()
+            
+            plt.tight_layout()
+            plt.show()
+
 
 
 if __name__ == "__main__":
@@ -338,6 +394,11 @@ if __name__ == "__main__":
     # print(not_close_to_comb(4989))
     print(is_in_bounds(wire_x, wire_y))
     print(next_wire_target(wire_x, wire_y, dx, dy))
+
+
+    folder = "audio/"
+
+    process_audio_folder(folder,X_LENGTH)
 
     # Example usage
     # numbers = [1, 1.1, 1.3, 10, 12, 23]

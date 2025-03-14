@@ -6,7 +6,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 import threading
 import time
-from random import choice, gauss
+from random import gauss
+from audio_processing import generate_noise_filter, remove_noise
 
 IDLE_MOVE_TYPE = 0
 IDLE_STATE = 1
@@ -36,6 +37,9 @@ class Tensiometer:
         side="A",
         test_mode=False,
         wiggle_interval=3,
+        use_audio_filter=False,
+        pitch_method="crepe",
+        noise_parameters=None,
     ):
         """
         Initialize the controller, audio devices, and check web server connectivity more concisely.
@@ -58,7 +62,10 @@ class Tensiometer:
         self.layer = layer
         self.side = side
         self.wiggle_interval = wiggle_interval
-
+        self.use_audio_filter = use_audio_filter
+        self.pitch_method = pitch_method
+        self.noise_parameters = noise_parameters
+        
         if not test_mode:
             if use_servo:
                 try:
@@ -175,11 +182,11 @@ class Tensiometer:
         x, y = self.get_xy()
         self.goto_xy(x + increment_x, y + increment_y)
 
-    def wiggle(self, wire_y,step):
+    def wiggle(self, wire_y, step):
         """Wiggle the winder by a given step size."""
         self.increment(0, gauss(0, step))
 
-    def record_audio(self, duration, plot=False, normalize=False):
+    def record_audio(self, duration, plot=False, normalize=False, use_audio_filter=False):
         """Record audio for a given duration and sample rate and normalize it to the range -1 to 1. Optionally plot the waveform."""
         try:
             audio_data = sd.rec(
@@ -190,6 +197,8 @@ class Tensiometer:
             )
             sd.wait()  # Wait until recording is finished
             audio_data = audio_data.flatten()  # Flatten the audio data to a 1D array
+            if filter:
+                audio_data = remove_noise(audio_data, self.sample_rate)
             # Normalize the audio data to the range -1 to 1
             if normalize:
                 max_val = np.max(np.abs(audio_data))
@@ -210,6 +219,11 @@ class Tensiometer:
         except Exception as e:
             print(f"An error occurred while recording audio: {e}")
             return None
+
+    def calibrate_noise_filter(self):
+        audio_data = self.record_audio(1, plot=False, normalize=True)
+        _,_,_,_,self.noise_level = generate_noise_filter(audio_data, self.sample_rate)
+
 
     def servo_toggle(self):
         if self.servo_state == 0:
