@@ -42,16 +42,18 @@ class Controller:
             ttyStr = "COM3"
         
         # # Search for the Micro Maestro 6-Servo Controller
-        # ports = list_ports.comports()
-        # maestro_port = None
+        ports = list_ports.comports()
+        maestro_port = None
+        for port in ports:
+            print(port.description)        
+        for port in ports:
+            if "Micro Maestro 6-Servo Controller" in port.description:
+                maestro_port = port.device
+                print(f"Found Micro Maestro on {maestro_port}")
+                break
         
-        # for port in ports:
-        #     if "Micro Maestro 6-Servo Controller" in port.description:
-        #         maestro_port = port.device
-        #         break
-        
-        # if maestro_port is not None:
-        #     ttyStr = maestro_port
+        if maestro_port is not None:
+            ttyStr = maestro_port
         
         # Open the command port
         try:

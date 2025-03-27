@@ -16,7 +16,7 @@ MAX_TENSION = 8
 COMB_SPACING = 1190
 Y_MIN = 220
 Y_MAX = 2460
-X_MIN = 1000
+X_MIN = 1100
 X_MAX = 7000
 comb_positions = [1030, 2230, 3420, 4590, 5770, 7030]
 MIN_PHYSICAL_TENSION = 2
@@ -61,7 +61,7 @@ def next_wire_target(wire_x, wire_y, dx, dy):
     # Calculate the two possible positions
     positions = []
 
-    for i in range(400):
+    for i in range(0,500,5):
         positions.append((wire_x - i * dx, wire_y + (i + 1) * dy))
         positions.append((wire_x + (i + 1) * dx, wire_y - i * dy))
 
@@ -77,8 +77,8 @@ def next_wire_target(wire_x, wire_y, dx, dy):
         return wire_x + dx, wire_y
 
 
-def not_close_to_comb(x, tolerance=100):
-    # Check if x is within +/- 100 of any number in comb_positions
+def not_close_to_comb(x, tolerance=250):
+    # Check if x is within +/- 200 of any number in comb_positions
     for pos in comb_positions:
         if abs(pos - x) <= tolerance:
             return False

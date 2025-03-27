@@ -2,10 +2,7 @@ import time
 import numpy as np
 from datetime import datetime
 from Tensiometer import Tensiometer
-from audioProcessing import (
-    get_pitch_crepe,
-    get_pitch_crepe_bandpass
-)
+from audioProcessing import get_pitch_crepe, get_pitch_crepe_bandpass
 import threading
 from utilities import (
     log_data,
@@ -17,7 +14,6 @@ from utilities import (
     tension_plausible,
     calculate_kde_max,
 )
-
 
 
 def collect_wire_data(t: Tensiometer, wire_number: int, wire_x, wire_y):
@@ -37,10 +33,14 @@ def collect_wire_data(t: Tensiometer, wire_number: int, wire_x, wire_y):
             )
 
     def analyze_sample(audio_sample):
-        frequency, confidence = get_pitch_crepe_bandpass(audio_sample, t.sample_rate,length)
+        frequency, confidence = get_pitch_crepe_bandpass(audio_sample, t.sample_rate, length)
         tension = tension_lookup(length=length, frequency=frequency)
         tension_ok = tension_pass(tension, length)
-        if not tension_ok and tension_pass(tension / 4, length):
+        if (
+            not tension_ok
+            and confidence > t.confidence_threshold
+            and tension_pass(tension / 4, length)
+        ):
             tension /= 4
             frequency /= 2
             tension_ok = True
@@ -57,11 +57,11 @@ def collect_wire_data(t: Tensiometer, wire_number: int, wire_x, wire_y):
             if time.time() - wiggle_start_time > t.wiggle_interval and t.use_wiggle:
                 wiggle_start_time = time.time()
                 print("Wiggling")
-                t.wiggle(wire_y,current_wiggle)
+                t.wiggle(wire_y, current_wiggle)
             if audio_sample is not None:
                 frequency, confidence, tension, tension_ok = analyze_sample(
-                    audio_sample    
-                )    
+                    audio_sample
+                )
                 x, y = t.get_xy()
                 if confidence > t.confidence_threshold and tension_plausible(tension):
                     wiggle_start_time = time.time()
@@ -75,16 +75,19 @@ def collect_wire_data(t: Tensiometer, wire_number: int, wire_x, wire_y):
                             "y": y,
                         }
                     )
-                    wire_y = np.average([d["y"] for d in wires])
-                    # current_wiggle/=1.5
-
-                    cluster = has_cluster_dict(wires, "tension", t.samples_per_wire)
-                    if cluster != []:
-                        return cluster
                     print(
                         f"tension: {tension:.1f}N, frequency: {frequency:.1f}Hz, "
-                        f"confidence: {confidence * 100:.1f}%",f"y: {y:.1f}"
+                        f"confidence: {confidence * 100:.1f}%",
+                        f"x: {x:.1f} y: {y:.1f}",
                     )
+                    wire_y = np.average([d["y"] for d in wires])
+                    # current_wiggle/=1.5
+                    if t.samples_per_wire == 1:
+                        return wires
+                    else:
+                        cluster = has_cluster_dict(wires, "tension", t.samples_per_wire)
+                        if cluster != []:
+                            return cluster
         return []
 
     def generate_result(passingWires):
@@ -105,7 +108,9 @@ def collect_wire_data(t: Tensiometer, wire_number: int, wire_x, wire_y):
         }
 
         if len(passingWires) > 0:
-            result["frequency"] = calculate_kde_max([d["frequency"] for d in passingWires])
+            result["frequency"] = calculate_kde_max(
+                [d["frequency"] for d in passingWires]
+            )
             result["tension"] = tension_lookup(
                 length=length, frequency=result["frequency"]
             )
