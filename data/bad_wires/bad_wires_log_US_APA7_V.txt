@@ -1,0 +1,8 @@
+US_APA7 - Layer V, Side A:
+  Bad wire_numbers (missing or no tension_pass=True): 8-9, 680, 1099-1146
+  No outlier wire_numbers
+
+US_APA7 - Layer V, Side B:
+  Bad wire_numbers (missing or no tension_pass=True): 8-18, 28
+  Outlier wire_numbers (far from moving average): 28
+

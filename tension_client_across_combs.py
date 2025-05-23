@@ -27,6 +27,9 @@ def measure_sequential_across_combs(
         if (t.layer == "U" and t.side == "A") or (t.layer == "V" and t.side == "B"):
             dy = -5.75
 
+    if t.flipped:
+        dy = -dy
+
     dx *= direction
     dy *= direction
 
@@ -36,7 +39,11 @@ def measure_sequential_across_combs(
         nonlocal wire_number
         wire_x, wire_y = t.get_xy()  # for testing
 
-        while wire_number >= wire_min and wire_number <= wire_max and wire_number != final_wire_number:
+        while (
+            wire_number >= wire_min
+            and wire_number <= wire_max
+            and wire_number != final_wire_number
+        ):
             wire_y = t.initial_wire_height + dy * (wire_number - 1)
             wire_data = collect_wire_data(t, wire_number, wire_x, wire_y)
             wire_number += direction
@@ -51,7 +58,7 @@ def measure_sequential_across_combs(
             wire_x, wire_y = get_coordinates(t, wire_number)
         else:
             wire_x, wire_y = t.get_xy()
-            
+
         while wire_number <= wire_max and wire_number >= wire_min:
             wire_data = collect_wire_data(t, wire_number, wire_x, wire_y)
             if use_relative_position:
@@ -76,12 +83,43 @@ def measure_LUT(t: Tensiometer, wire_numbers_to_measure: list):
             )
     else:
         for wire_number in wire_numbers_to_measure:
-            wire_x, wire_y = get_coordinates(t, wire_number)
+            wire_x, wire_y = get_latest_xy(t, wire_number)
             if wire_x is not None and wire_y is not None:
                 t.goto_xy(wire_x, wire_y)
                 collect_wire_data(t, wire_number, wire_x, wire_y)
             else:
                 print(f"Wire {wire_number} not found in LUT.")
+
+# Return the latest X and Y coordinates instead of the G-code string
+def get_latest_xy(t: Tensiometer,wire_number: int):
+    apa_name = t.apa_name
+    layer = t.layer
+    side = t.side
+    # Load the CSV file
+    file_path = f'data/tension_data/tension_data_{apa_name}_{layer}.csv'
+    expected_columns = [
+        'layer', 'side', 'wire_number', 'tension', 'tension_pass',
+        'frequency', 'zone', 'confidence', 't_sigma', 'x', 'y', 'Gcode',
+        'wires', 'ttf', 'time'
+    ]
+
+    try:
+        df = pd.read_csv(file_path, skiprows=2, names=expected_columns)
+    except FileNotFoundError:
+        return f"❌ File not found: {file_path}"
+
+    df['wire_number'] = pd.to_numeric(df['wire_number'], errors='coerce')
+    df = df.dropna(subset=['wire_number'])
+    df = df[df['wire_number'].astype(int) == wire_number]
+    df = df[df['side'].astype(str) == side]
+
+    if df.empty:
+        return f"⚠️ No data for wire {wire_number} on side {side} in {apa_name} layer {layer}."
+
+    # Sort by time and get the latest
+    df_sorted = df.sort_values(by='time')
+    latest = df_sorted.iloc[-1]
+    return float(latest['x']), float(latest['y'])
 
 
 def get_coordinates(t: Tensiometer, wire_number: int):
@@ -97,7 +135,7 @@ def get_coordinates(t: Tensiometer, wire_number: int):
         tuple: (x, y) coordinates as floats if found, or None if not found.
     """
     # Load the CSV file
-    df = pd.read_csv(f"data/frequency_data_{t.apa_name}_{t.layer}.csv")
+    df = pd.read_csv(f"data/tension_data/tension_data_{t.apa_name}_{t.layer}.csv")
 
     # Filter rows matching wire_number and side
     result = df[(df["wire_number"] == wire_number) & (df["side"] == t.side)]
@@ -137,6 +175,6 @@ def seek_wire(t: Tensiometer, layer, side, wire_number):
 
 
 def measure_one_wire(t: Tensiometer, wire_number, tries):
-    x,y = t.get_xy()
+    x, y = t.get_xy()
     for n in range(tries):
-        collect_wire_data(t,wire_number,x,y)
+        collect_wire_data(t, wire_number, x, y)

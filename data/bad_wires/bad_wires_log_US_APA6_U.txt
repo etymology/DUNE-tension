@@ -1,0 +1,6 @@
+US_APA6 - Layer U, Side A:
+  Bad wire_numbers (missing or no tension_pass=True): 8-35, 496, 752-753, 959-1146
+
+US_APA6 - Layer U, Side B:
+  Bad wire_numbers (missing or no tension_pass=True): 8, 1110, 1125-1146
+

@@ -14,16 +14,19 @@ X_LENGTH = 1.273
 WIRE_DENSITY = 0.000152
 MAX_TENSION = 8
 COMB_SPACING = 1190
-Y_MIN = 220
+Y_MIN = 200
 Y_MAX = 2460
-X_MIN = 1000
+X_MIN = 1100
 X_MAX = 7000
-comb_positions = [1030, 2230, 3420, 4590, 5770, 7030]
+COMB_TOLERANCE = 300
+
+comb_positions = [X_MIN -COMB_TOLERANCE+100, 2230, 3420, 4590, 5770, X_MAX+COMB_TOLERANCE-100]
 MIN_PHYSICAL_TENSION = 2
 MAX_PHYSICAL_TENSION = 10
 
 
 # replace with real values for the comb positions
+
 def zone_lookup(
     x,
 ):
@@ -56,12 +59,13 @@ def distance_to_zone_middle(x):
 
 def next_wire_target(wire_x, wire_y, dx, dy):
     print(f"wire_x, wire_y: {wire_x}, {wire_y}")
+ 
     print(f"dx, dy: {dx}, {dy}")
 
     # Calculate the two possible positions
     positions = []
 
-    for i in range(400):
+    for i in range(0, 400):
         positions.append((wire_x - i * dx, wire_y + (i + 1) * dy))
         positions.append((wire_x + (i + 1) * dx, wire_y - i * dy))
 
@@ -77,7 +81,7 @@ def next_wire_target(wire_x, wire_y, dx, dy):
         return wire_x + dx, wire_y
 
 
-def not_close_to_comb(x, tolerance=100):
+def not_close_to_comb(x, tolerance=COMB_TOLERANCE):
     # Check if x is within +/- 100 of any number in comb_positions
     for pos in comb_positions:
         if abs(pos - x) <= tolerance:
@@ -225,7 +229,7 @@ def tension_pass(tension, length):
 
 
 def tension_plausible(tension):
-    return tension < 10 and tension > 2
+    return tension < 12 and tension > 2
 
 
 def has_cluster_dict(data, key, n):

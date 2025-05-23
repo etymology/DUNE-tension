@@ -1,0 +1,6 @@
+US_APA4 - Layer U, Side A:
+  Bad wire_numbers (missing or no tension_pass=True): 8-24
+
+US_APA4 - Layer U, Side B:
+  Bad wire_numbers (missing or no tension_pass=True): 1137-1146
+

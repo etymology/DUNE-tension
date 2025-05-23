@@ -56,7 +56,7 @@ def collect_wire_data(t: Tensiometer, wire_number: int, wire_x, wire_y):
             save_audio_sample(audio_sample)
             if time.time() - wiggle_start_time > t.wiggle_interval and t.use_wiggle:
                 wiggle_start_time = time.time()
-                print("Wiggling")
+                print(f"Wiggling {current_wiggle}mm")
                 t.wiggle(wire_y,current_wiggle)
             if audio_sample is not None:
                 frequency, confidence, tension, tension_ok = analyze_sample(
@@ -76,7 +76,7 @@ def collect_wire_data(t: Tensiometer, wire_number: int, wire_x, wire_y):
                         }
                     )
                     wire_y = np.average([d["y"] for d in wires])
-                    # current_wiggle/=1.5
+                    current_wiggle=current_wiggle/2+0.05
 
                     cluster = has_cluster_dict(wires, "tension", t.samples_per_wire)
                     if cluster != []:
@@ -144,6 +144,6 @@ def collect_wire_data(t: Tensiometer, wire_number: int, wire_x, wire_y):
         f"Took {ttf} seconds to finish."
     )
     result["ttf"] = ttf
-    log_data(result, f"data/frequency_data_{t.apa_name}_{t.layer}.csv")
+    log_data(result, f"data/tension_data/tension_data_{t.apa_name}_{t.layer}.csv")
 
     return result

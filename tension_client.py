@@ -147,7 +147,7 @@ def measure_sequential(
     layer: str,
     use_relative_position=True,
 ):
-    logfilename = f"data/frequency_data_{t.apa_name}_{layer}.csv"  # {initial_wire_number}-{final_wire_number}_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.csv"
+    logfilename = f"data/tension_data/tension_data_{t.apa_name}_{layer}.csv"  # {initial_wire_number}-{final_wire_number}_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.csv"
 
     if initial_wire_number > final_wire_number:
         step = -1
@@ -204,7 +204,7 @@ def measure_list(t: Tensiometer, wire_numbers_to_measure: list, layer: str, side
                 print(f"measurement failed for wire number {wire_number}.")
             if not wire_data["tension_pass"]:
                 print(f"Tension failed for wire number {wire_number}.")
-            log_data(wire_data, f"data/frequency_data_{t.apa_name}_{layer}.csv")
+            log_data(wire_data, f"data/tension_data/tension_data_{t.apa_name}_{layer}.csv")
             print(f"Finished scanning wire {wire_number}.")
 
 if __name__ == "__main__":

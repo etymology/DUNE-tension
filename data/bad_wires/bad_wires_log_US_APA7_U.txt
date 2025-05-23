@@ -1,0 +1,8 @@
+US_APA7 - Layer U, Side A:
+  No bad wire_numbers
+  Outlier wire_numbers (far from moving average): 93
+
+US_APA7 - Layer U, Side B:
+  No bad wire_numbers
+  Outlier wire_numbers (far from moving average): 632, 1124
+

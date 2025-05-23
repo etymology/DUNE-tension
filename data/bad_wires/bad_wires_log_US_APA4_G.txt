@@ -1,0 +1,6 @@
+US_APA4 - Layer G, Side A:
+  No bad wire_numbers
+
+US_APA4 - Layer G, Side B:
+  No bad wire_numbers
+

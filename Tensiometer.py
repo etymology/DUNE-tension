@@ -7,6 +7,7 @@ import matplotlib.pyplot as plt
 import threading
 import time
 from random import choice, gauss
+import pandas as pd
 
 IDLE_MOVE_TYPE = 0
 IDLE_STATE = 1
@@ -36,6 +37,7 @@ class Tensiometer:
         side="A",
         test_mode=False,
         wiggle_interval=3,
+        flipped=False,
     ):
         """
         Initialize the controller, audio devices, and check web server connectivity more concisely.
@@ -58,6 +60,7 @@ class Tensiometer:
         self.layer = layer
         self.side = side
         self.wiggle_interval = wiggle_interval
+        self.flipped = flipped
 
         if not test_mode:
             if use_servo:
@@ -243,6 +246,40 @@ class Tensiometer:
         except requests.exceptions.RequestException as e:
             return {"error": str(e)}
 
+    def load_tension_summary(self):
+        import pandas as pd
+        file_path = f"data/tension_summaries/tension_summary_{self.apa_name}_{self.layer}.csv"
+        try:
+            df = pd.read_csv(file_path)
+        except FileNotFoundError:
+            return f"❌ File not found: {file_path}", [], []
+
+        if 'A' not in df.columns or 'B' not in df.columns:
+            return f"⚠️ File missing required columns 'A' and 'B'", [], []
+
+        # Convert columns to lists, preserving NaNs if present
+        a_list = df['A'].tolist()
+        b_list = df['B'].tolist()
+
+        return a_list, b_list
+
+    def get_uuid(self):
+        """
+        Get the UUID of the APA.
+        """
+        try:
+            lut = pd.read_csv("data/uuid_lut.csv")
+        except FileNotFoundError:
+            return "❌ Lookup file not found at data/uuid_lut.csv"
+
+        match = lut[lut['APA_name'] == self.apa_name]
+
+        if match.empty:
+            return f"⚠️ No UUID found for APA name: {self.apa_name}"
+        
+        return match.iloc[0]['UUID']
+
+
     def write_tag(self, tag_name, value):
         """
         Send a POST request to write a value to a PLC tag.
@@ -261,3 +298,23 @@ class Tensiometer:
                 }
         except requests.exceptions.RequestException as e:
             return {"error": str(e)}
+
+
+if __name__ == "__main__":
+    t = Tensiometer(
+        apa_name="US_APA7",
+        layer="V",
+        side="B",
+        starting_wiggle_step=0.3,
+        samples_per_wire=3,
+        confidence_threshold=0.6,
+        use_wiggle=True,
+        sound_card_name="default",
+        timeout=100,
+        save_audio=True,
+        record_duration=0.15,
+        wiggle_interval=1,
+        test_mode=True,
+    )
+
+    print(t.get_tensions())

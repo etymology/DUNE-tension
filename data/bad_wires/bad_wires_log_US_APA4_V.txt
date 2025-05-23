@@ -1,0 +1,6 @@
+US_APA4 - Layer V, Side A:
+  Bad wire_numbers (missing or no tension_pass=True): 1048-1049, 1051, 1054-1146
+
+US_APA4 - Layer V, Side B:
+  Bad wire_numbers (missing or no tension_pass=True): 8-40
+

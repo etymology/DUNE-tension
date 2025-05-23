@@ -1,6 +1,4 @@
-from tension_client_across_combs import (
-    measure_sequential_across_combs,measure_LUT
-)
+from tension_client_across_combs import measure_sequential_across_combs, measure_LUT
 from Tensiometer import Tensiometer
 
 # from process_wire_data import process_wire_data, find_tensions_outside_range
@@ -10,33 +8,35 @@ os.environ["CUDA_VISIBLE_DEVICES"] = ""
 
 if __name__ == "__main__":
     t = Tensiometer(
-        apa_name="US_APA5",
+        apa_name="US_APA7",
         layer="G",
-        side="A",
-        starting_wiggle_step=.2,
-        samples_per_wire=5,
-        confidence_threshold=0,
+        side="B",
+        starting_wiggle_step=0.2,
+        samples_per_wire=3,
+        confidence_threshold=0.7,
         use_wiggle=True,
         sound_card_name="default",
-        timeout=120,
+        timeout=100,
         save_audio=True,
-        record_duration=.4,
-        wiggle_interval=3,
-        initial_wire_height=189.8
-    )
-    # process_wire_data(t)
-    # lookup = find_tensions_outside_range(t)
-    # measure_LUT(t, [1
-    # measure_sequential_across_combs(
-    #     t, initial_wire_number=431, direction=1, use_relative_position=True, use_LUT=False
-    # )
-    # measure_LUT(t,[396,423])
-    measure_sequential_across_combs(
-        t, initial_wire_number=8
-            , direction=1, use_relative_position=True, use_LUT=False
+        record_duration=0.15,
+        wiggle_interval=2,
+        flipped=False,
+        initial_wire_height=193.6
     )
 
-    # measure_LUT(t, [1089199])
+    measure_LUT(
+        t,
+        [48,]
+
+    )
+
+
+
+    # measure_LUT(
+    #     t,
+    #     [1105
+    #      ]
+    # )
 
     # x,y=t.get_xy()
     # t.goto_xy(x,y+0.1)

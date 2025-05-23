@@ -15,7 +15,7 @@ t = Tensiometer(
 
 def process_wire_data(t: Tensiometer):
     # Load the data
-    input_file = f"data/frequency_data_{t.apa_name}_{t.layer}.csv"
+    input_file = f"data/tension_data/tension_data_{t.apa_name}_{t.layer}.csv"
     output_file = f"data/processed_wire_data_{t.apa_name}_{t.layer}.csv"
     data = pd.read_csv(input_file)
 
