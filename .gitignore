@@ -5,3 +5,4 @@ settings.json
 audio/*
 venv/*
 images/*
+data/renamed_audio/*

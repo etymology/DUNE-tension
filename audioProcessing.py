@@ -3,6 +3,13 @@ import numpy as np
 import matplotlib.pyplot as plt
 import crepe
 import soundfile as sf
+from tension_calculation import (
+    tension_lookup,
+    tension_pass,
+)
+import sounddevice as sd
+import os
+import random
 
 
 def save_wav(audio_sample: np.ndarray, sample_rate: int, filename: str):
@@ -217,3 +224,95 @@ def get_pitch_crepe_bandpass(
         max_confidence = 0.0
 
     return max_frequency, max_confidence
+
+
+def record_audio(duration, sample_rate, plot=False, normalize=False):
+    """Record audio for a given duration and sample rate and normalize it to the range -1 to 1. Optionally plot the waveform."""
+    try:
+        audio_data = sd.rec(
+            int(duration * sample_rate),
+            samplerate=sample_rate,
+            channels=1,
+            dtype="float64",
+        )
+        sd.wait()  # Wait until recording is finished
+        audio_data = audio_data.flatten()  # Flatten the audio data to a 1D array
+        # Normalize the audio data to the range -1 to 1
+        if normalize:
+            max_val = np.max(np.abs(audio_data))
+            if max_val > 0:
+                audio_data = audio_data / max_val
+
+        # Plot the waveform if plot is True
+        if plot:
+            plt.figure(figsize=(10, 4))
+            plt.plot(audio_data)
+            plt.title("Recorded Audio Waveform")
+            plt.xlabel("Sample Index")
+            plt.ylabel("Amplitude")
+            plt.grid()
+            plt.show()
+
+        return audio_data
+    except Exception as e:
+        print(f"An error occurred while recording audio: {e}")
+        return None
+
+
+def analyze_sample(audio_sample, sample_rate, wire_length):
+    frequency, confidence = get_pitch_crepe(audio_sample, sample_rate)
+    tension = tension_lookup(length=wire_length, frequency=frequency)
+    tension_ok = tension_pass(tension, wire_length)
+    if not tension_ok and tension_pass(tension / 4, wire_length):
+        tension /= 4
+        frequency /= 2
+        tension_ok = True
+    return frequency, confidence, tension, tension_ok
+
+
+def get_samplerate():
+    try:
+        device_info = sd.query_devices()
+        sound_device_index = next(
+            (index for index, d in enumerate(device_info) if "PnP" in d["name"]),
+            None,
+        )
+        if sound_device_index is not None:
+            sample_rate = device_info[sound_device_index]["default_samplerate"]
+            print(
+                f"Using (hw:{sound_device_index},0),{device_info[sound_device_index]['name']}"
+            )
+        else:
+            print("Couldn't find USB PnP Sound Device.")
+            print(device_info)
+            return None
+        return sample_rate
+    except Exception as e:
+        print(f"Failed to initialize audio devices: {e}")
+        exit(1)
+
+
+def spoof_audio_sample(npz_dir: str) -> np.ndarray:
+    """
+    Load a random .npz file from the given directory and return the 'audio' array.
+
+    Parameters:
+        npz_dir (str): Path to the directory containing .npz files.
+
+    Returns:
+        np.ndarray: The audio array from the randomly selected .npz file.
+
+    Raises:
+        ValueError: If no valid .npz files are found or the expected 'audio' key is missing.
+    """
+    npz_files = [f for f in os.listdir(npz_dir) if f.endswith(".npz")]
+    if not npz_files:
+        raise ValueError("No .npz files found in the directory.")
+
+    chosen_file = random.choice(npz_files)
+    file_path = os.path.join(npz_dir, chosen_file)
+
+    with np.load(file_path) as data:
+        if "audio" not in data:
+            raise ValueError(f"'audio' not found in {file_path}")
+        return data["audio"]

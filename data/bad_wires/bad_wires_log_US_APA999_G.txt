@@ -1,0 +1,4 @@
+US_APA999 - Layer G, Side B:
+  Bad wire_numbers (missing or no tension_pass=True): 1-19, 21-481
+  No outlier wire_numbers
+

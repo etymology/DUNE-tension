@@ -1,0 +1,4 @@
+ - Layer X, Side A:
+  Bad wire_numbers (missing or no tension_pass=True): 1-320, 322-465, 467-469, 471-473, 475-480
+  Outlier wire_numbers (far from moving average): 469, 474
+

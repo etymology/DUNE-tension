@@ -3,47 +3,63 @@ import requests
 from maestro import Controller
 import sounddevice as sd
 import numpy as np
-import matplotlib.pyplot as plt
 import threading
 import time
-from random import choice, gauss
+import os
 import pandas as pd
+from analyze_tension_data import analyze_tension_data
+from datetime import datetime
+import math
+from typing import List
+from logging_util import (
+    log_data,
+)
 
-IDLE_MOVE_TYPE = 0
-IDLE_STATE = 1
-XY_MOVE_TYPE = 2
-XY_STATE = 3
+from geometry import (
+    zone_lookup,
+    length_lookup,
+    refine_position,
+)
+from tension_calculation import (
+    tension_lookup,
+    tension_pass,
+    has_cluster_dict,
+    tension_plausible,
+    calculate_kde_max,
+)
+from audioProcessing import record_audio, analyze_sample
+from plc_io import get_xy, goto_xy, wiggle, TENSION_SERVER_URL
 
 
 class Tensiometer:
     def __init__(
         self,
-        apa_name="unknown_APA",
-        tension_server_url="http://192.168.137.1:5000",
+        apa_name,
+        layer,
+        side,
         ttyStr="/dev/ttyACM1",
-        sound_card_name="USB PnP Sound",
-        record_duration=0.2,
-        starting_wiggle_step=0.1,
+        sound_card_name="default",
+        record_duration=0.15,
+        starting_wiggle_step=0.2,
         timeout=60,
-        samples_per_wire=1,
+        samples_per_wire=3,
         confidence_threshold=0.7,
-        use_wiggle=False,
-        save_audio=False,
+        use_wiggle=True,
+        save_audio=True,
         delay_after_plucking=0.2,
         wiggle_type="gaussian",
         use_servo=False,
         initial_wire_height=190,
-        layer="X",
-        side="A",
         test_mode=False,
-        wiggle_interval=3,
+        wiggle_interval=2,
         flipped=False,
+        bypass_data_collection=False,
+        stop_event=None,
     ):
         """
         Initialize the controller, audio devices, and check web server connectivity more concisely.
         """
         self.apa_name = apa_name
-        self.tension_server_url = tension_server_url
         self.samples_per_wire = samples_per_wire
         self.record_duration = record_duration
         self.confidence_threshold = confidence_threshold
@@ -61,6 +77,23 @@ class Tensiometer:
         self.side = side
         self.wiggle_interval = wiggle_interval
         self.flipped = flipped
+        self.bypass_data_collection = bypass_data_collection
+        self.stop_event = stop_event
+
+        if self.layer in ["X", "G"]:
+            self.dx, self.dy = 0.0, 2300 / 480
+            self.wire_min, self.wire_max = 1, 480
+            if self.layer == "G":
+                self.wire_max = 481
+        else:
+            self.dx, self.dy = 8.0, 5.75
+            self.wire_min, self.wire_max = 8, 1146
+            if (self.layer == "U" and self.side == "A") or (
+                self.layer == "V" and self.side == "B"
+            ):
+                self.dy = -5.75
+        if self.flipped:
+            self.dy = -self.dy
 
         if not test_mode:
             if use_servo:
@@ -97,7 +130,7 @@ class Tensiometer:
                 print(f"Failed to initialize audio devices: {e}")
                 exit(1)
 
-            if not self.is_web_server_active(tension_server_url):
+            if not self.is_web_server_active(TENSION_SERVER_URL):
                 print(
                     "Failed to connect to the tension server.\nMake sure you are connected to Dunes and the server is running."
                 )
@@ -114,152 +147,23 @@ class Tensiometer:
             print(f"An error occurred while checking the server: {e}")
             return False
 
-    def __exit__(self):
-        self.maestro.close()
-
-    def pluck_string(self):
-        if not self.maestro.faulted:
-            self.maestro.runScriptSub(0)
-        else:
-            print("Maestro is faulted. Cannot pluck the string.")
-
-    def get_xy(self):
-        """Get the current position of the tensioning system."""
-        x = self.read_tag("X_axis.ActualPosition")
-        y = self.read_tag("Y_axis.ActualPosition")
-        return x, y
-
-    def get_state(self) -> dict[str, list]:
-        """Get the current state of the tensioning system."""
-        return self.read_tag("STATE")
-
-    def get_movetype(self) -> int:
-        """Get the current move type of the tensioning system."""
-        movetype = self.read_tag("MOVE_TYPE")
-        return movetype
-
-    def goto_xy(self, x_target: float, y_target: float, speed=50):
-        """Move the winder to a given position."""
-        # current_x, current_y = self.get_xy()
-        if x_target < 0 or x_target > 7174 or y_target < 0 or y_target > 2680:
-            print(
-                f"Motion target {x_target},{y_target} out of bounds. Please enter a valid position."
-            )
-            return False
-        current_state = self.get_state()
-        while current_state != IDLE_STATE:
-            current_state = self.get_state()
-        self.write_tag("MOVE_TYPE", IDLE_MOVE_TYPE)
-        self.write_tag("STATE", IDLE_STATE)
-        self.write_tag("X_POSITION", x_target)
-        self.write_tag("Y_POSITION", y_target)
-        self.write_tag("MOVE_TYPE", XY_MOVE_TYPE)
-        current_x, current_y = self.get_xy()
-        while self.get_movetype() == XY_MOVE_TYPE:
-            time.sleep(0.001)
-        return True
-
-    def set_xy_target(self, x_target: float, y_target: float):
-        """Move the winder to a given position."""
-        # current_x, current_y = self.get_xy()
-        if x_target < 0 or x_target > 7174 or y_target < 0 or y_target > 2680:
-            print(
-                f"Motion target {x_target},{y_target} out of bounds. Please enter a valid position."
-            )
-            return False
-
-        self.write_tag("MOVE_TYPE", IDLE_MOVE_TYPE)
-        self.write_tag("STATE", IDLE_STATE)
-        self.write_tag("X_POSITION", x_target)
-        self.write_tag("Y_POSITION", y_target)
-        self.write_tag("MOVE_TYPE", XY_MOVE_TYPE)
-
-    def increment(self, increment_x, increment_y):
-        x, y = self.get_xy()
-        self.goto_xy(x + increment_x, y + increment_y)
-
-    def wiggle(self, wire_y,step):
-        """Wiggle the winder by a given step size."""
-        self.increment(0, gauss(0, step))
-
-    def record_audio(self, duration, plot=False, normalize=False):
-        """Record audio for a given duration and sample rate and normalize it to the range -1 to 1. Optionally plot the waveform."""
-        try:
-            audio_data = sd.rec(
-                int(duration * self.sample_rate),
-                samplerate=self.sample_rate,
-                channels=1,
-                dtype="float64",
-            )
-            sd.wait()  # Wait until recording is finished
-            audio_data = audio_data.flatten()  # Flatten the audio data to a 1D array
-            # Normalize the audio data to the range -1 to 1
-            if normalize:
-                max_val = np.max(np.abs(audio_data))
-                if max_val > 0:
-                    audio_data = audio_data / max_val
-
-            # Plot the waveform if plot is True
-            if plot:
-                plt.figure(figsize=(10, 4))
-                plt.plot(audio_data)
-                plt.title("Recorded Audio Waveform")
-                plt.xlabel("Sample Index")
-                plt.ylabel("Amplitude")
-                plt.grid()
-                plt.show()
-
-            return audio_data
-        except Exception as e:
-            print(f"An error occurred while recording audio: {e}")
-            return None
-
-    def servo_toggle(self):
-        if self.servo_state == 0:
-            self.servo_state = 1
-            self.maestro.runScriptSub(0)
-        elif self.servo_state == 1:
-            self.servo_state = 0
-            self.maestro.runScriptSub(1)
-
-    def servo_loop(self):
-        while not self.stop_servo_event.is_set():
-            self.maestro.runScriptSub(0)
-            time.sleep(0.4)
-
-    def read_tag(self, tag_name):
-        """
-        Send a GET request to read the value of a PLC tag.
-        """
-        url = f"{self.tension_server_url}/tags/{tag_name}"
-        # print(f"Attempting to read from URL: {url}")  # Debugging statement
-        try:
-            response = requests.get(url)
-            if response.status_code == 200:
-                # print(response.json())
-                return response.json()[tag_name][1]
-            else:
-                return {
-                    "error": "Failed to read tag",
-                    "status_code": response.status_code,
-                }
-        except requests.exceptions.RequestException as e:
-            return {"error": str(e)}
-
     def load_tension_summary(self):
         import pandas as pd
-        file_path = f"data/tension_summaries/tension_summary_{self.apa_name}_{self.layer}.csv"
+
+        file_path = (
+            f"data/tension_summaries/tension_summary_{self.apa_name}_{self.layer}.csv"
+        )
         try:
             df = pd.read_csv(file_path)
         except FileNotFoundError:
             return f"❌ File not found: {file_path}", [], []
 
-        if 'A' not in df.columns or 'B' not in df.columns:
-            return f"⚠️ File missing required columns 'A' and 'B'", [], []
+        if "A" not in df.columns or "B" not in df.columns:
+            return "⚠️ File missing required columns 'A' and 'B'", [], []
 
         # Convert columns to lists, preserving NaNs if present
-        a_list = df['A'].tolist()
-        b_list = df['B'].tolist()
+        a_list = df["A"].tolist()
+        b_list = df["B"].tolist()
 
         return a_list, b_list
 
@@ -272,36 +176,309 @@ class Tensiometer:
         except FileNotFoundError:
             return "❌ Lookup file not found at data/uuid_lut.csv"
 
-        match = lut[lut['APA_name'] == self.apa_name]
+        match = lut[lut["APA_name"] == self.apa_name]
 
         if match.empty:
             return f"⚠️ No UUID found for APA name: {self.apa_name}"
-        
-        return match.iloc[0]['UUID']
+
+        return match.iloc[0]["UUID"]
+
+    def has_data(self) -> bool:
+        file_path = f"data/tension_data/tension_data_{self.apa_name}_{self.layer}.csv"
+
+        if not os.path.exists(file_path):
+            return False
+
+        df = pd.read_csv(file_path, usecols=["side"])
+        return any(df["side"].str.upper() == self.side.upper())
+
+    def measure_calibrate(self, wire_number: int):
+        x, y = get_xy()
+        self.collect_wire_data(wire_number, x, y)
+
+    def measure_list(self, wire_list: List[int]):
+        # Step 1: Get valid (wire, x, y) triplets
+        triplets = []
+        for wire in wire_list:
+            x, y = self.get_xy_from_file(wire)
+            if x is not None and y is not None:
+                triplets.append((wire, x, y))
+
+        if not triplets:
+            print("No valid wires with known coordinates.")
+            return
+
+        # Step 2: Sort greedily by minimizing distance
+        current_x, current_y = get_xy()
+        visited = []
+        remaining = triplets.copy()
+
+        while remaining:
+            nearest = min(
+                remaining,
+                key=lambda triplet: math.hypot(
+                    triplet[1] - current_x, triplet[2] - current_y
+                ),
+            )
+            visited.append(nearest)
+            remaining.remove(nearest)
+            current_x, current_y = nearest[1], nearest[2]
+
+        # Step 3: Measure in sorted order
+        for wire, x, y in visited:
+            if self.stop_event and self.stop_event.is_set():
+                print("List measurement interrupted!")
+                return
+            self.collect_wire_data(wire, x, y)
+
+    def measure_auto(self):
+        if not self.has_data():
+            print("No data available, please measure first.")
+            return
+        d = analyze_tension_data(self.apa_name, self.layer)
+        wires_to_measure = d["missing_wires"]
+        if len(wires_to_measure) == 0:
+            print("All wires have been measured.")
+            return
+        else:
+            print("Measuring missing wires...")
+            # Measure the missing wires        print(f"Missing wires: {wires_to_measure}")
+            self.measure_list(wires_to_measure)
+
+    def collect_wire_data(self, wire_number: int, wire_x, wire_y):
 
 
-    def write_tag(self, tag_name, value):
-        """
-        Send a POST request to write a value to a PLC tag.
-        """
-        url = f"{self.tension_server_url}/tags/{tag_name}"
-        # print(f"Attempting to write to URL: {url}")  # Debugging statement
-        payload = {"value": value}
+        def save_audio_sample(audio_sample):
+            if self.save_audio:
+                np.savez(
+                    f"audio/{self.layer}{self.side}{wire_number}_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}",
+                    audio_sample,
+                )
+
+        def collect_samples(start_time):
+            nonlocal wire_x, wire_y
+            wires = []
+            wiggle_start_time = time.time()
+            current_wiggle = self.starting_wiggle_step
+            while (time.time() - start_time) < self.timeout:
+                if self.stop_event and self.stop_event.is_set():
+                    print("tension measurement interrupted!")
+                    return
+                audio_sample = record_audio(
+                    self.record_duration, self.sample_rate, plot=False, normalize=True
+                )
+                save_audio_sample(audio_sample)
+                if (
+                    time.time() - wiggle_start_time > self.wiggle_interval
+                    and self.use_wiggle
+                ):
+                    wiggle_start_time = time.time()
+                    print(f"Wiggling {current_wiggle}mm")
+                    wiggle(current_wiggle)
+                if audio_sample is not None:
+                    frequency, confidence, tension, tension_ok = analyze_sample(
+                        audio_sample, self.sample_rate, length
+                    )
+                    x, y = get_xy()
+                    if confidence > self.confidence_threshold and tension_plausible(
+                        tension
+                    ):
+                        wiggle_start_time = time.time()
+                        wires.append(
+                            {
+                                "tension": tension,
+                                "tension_pass": tension_ok,
+                                "frequency": frequency,
+                                "confidence": confidence,
+                                "x": x,
+                                "y": y,
+                            }
+                        )
+                        wire_y = np.average([d["y"] for d in wires])
+                        current_wiggle = current_wiggle / 2 + 0.05
+
+                        cluster = has_cluster_dict(
+                            wires, "tension", self.samples_per_wire
+                        )
+                        if cluster != []:
+                            return cluster
+                        print(
+                            f"tension: {tension:.1f}N, frequency: {frequency:.1f}Hz, "
+                            f"confidence: {confidence * 100:.1f}%",
+                            f"y: {y:.1f}",
+                        )
+            return []
+
+        def generate_result(passingWires):
+            nonlocal wire_x, wire_y
+            result = {
+                "layer": self.layer,
+                "side": self.side,
+                "wire_number": wire_number,
+                "tension": 0,
+                "tension_pass": False,
+                "frequency": 0,
+                "zone": zone_lookup(wire_x),
+                "confidence": 0,
+                "t_sigma": 0,
+                "x": wire_x,
+                "y": wire_y,
+                "Gcode": f"X{round(wire_x, 1)} Y{round(wire_y, 1)}",
+            }
+
+            if len(passingWires) > 0:
+                result["frequency"] = calculate_kde_max(
+                    [d["frequency"] for d in passingWires]
+                )
+                result["tension"] = tension_lookup(
+                    length=length, frequency=result["frequency"]
+                )
+                result["tension_pass"] = tension_pass(result["tension"], length)
+                result["confidence"] = np.average(
+                    [d["confidence"] for d in passingWires]
+                )
+                result["t_sigma"] = np.std([d["tension"] for d in passingWires])
+                result["x"] = round(np.average([d["x"] for d in passingWires]), 1)
+                result["y"] = round(np.average([d["y"] for d in passingWires]), 1)
+                result["Gcode"] = f"X{round(result['x'], 1)} Y{round(result['y'], 1)}"
+                result["wires"] = str([float(d["tension"]) for d in passingWires])
+
+            return result
+
+        if self.bypass_data_collection:
+            result = {
+                "layer": self.layer,
+                "side": self.side,
+                "wire_number": wire_number,
+                "tension": 6,
+                "tension_pass": True,
+                "frequency": 90,
+                "zone": zone_lookup(wire_x),
+                "confidence": 100,
+                "t_sigma": 0,
+                "x": wire_x,
+                "y": wire_y,
+                "Gcode": f"X{round(wire_x, 1)} Y{round(wire_y, 1)}",
+                "ttf": 0,
+                "time": datetime.now(),
+            }
+            log_data(
+                result,
+                f"data/tension_data/tension_data_{self.apa_name}_{self.layer}.csv",
+            )
+            return result
+        # Main logic
+        length = length_lookup(self.layer, wire_number, zone_lookup(wire_x))
+        start_time = time.time()
+
+        goto_xy(wire_x, wire_y)
+
+        wires = collect_samples(start_time)
+        result = generate_result(wires)
+
+        if result["tension"] == 0:
+            print(f"measurement failed for wire number {wire_number}.")
+        if not result["tension_pass"]:
+            print(f"Tension failed for wire number {wire_number}.")
+        ttf = time.time() - start_time
+        print(
+            f"Wire number {wire_number} has length {length * 1000:.1f}mm tension {result['tension']:.1f}N frequency {result['frequency']:.1f}Hz with confidence {result['confidence'] * 100:.1f}%.\n"
+            f"Took {ttf} seconds to finish."
+        )
+        result["ttf"] = ttf
+        log_data(
+            result, f"data/tension_data/tension_data_{self.apa_name}_{self.layer}.csv"
+        )
+
+        return result
+
+    def get_xy_from_file(self, wire_number: int) -> tuple[float, float] | None:
+        apa_name = self.apa_name
+        layer = self.layer
+        side = self.side
+        dx = self.dx
+        dy = self.dy
+        wire_min = self.wire_min
+        wire_max = self.wire_max
+
+        if wire_number < wire_min or wire_number > wire_max:
+            print(f"Wire number {wire_number} is out of range for layer {layer}.")
+            return None
+
+        # Load the CSV file
+        file_path = f"data/tension_data/tension_data_{apa_name}_{layer}.csv"
+        expected_columns = [
+            "layer",
+            "side",
+            "wire_number",
+            "tension",
+            "tension_pass",
+            "frequency",
+            "zone",
+            "confidence",
+            "t_sigma",
+            "x",
+            "y",
+            "Gcode",
+            "wires",
+            "ttf",
+            "time",
+        ]
+
         try:
-            response = requests.post(url, json=payload)
-            if response.status_code == 200:
-                return response.json()
-            else:
-                return {
-                    "error": "Failed to write tag",
-                    "status_code": response.status_code,
-                }
-        except requests.exceptions.RequestException as e:
-            return {"error": str(e)}
+            df = pd.read_csv(file_path, skiprows=1, names=expected_columns)
+        except FileNotFoundError:
+            return f"❌ File not found: {file_path}"
+        df_side = (
+            df[df["side"].str.upper() == side.upper()]
+            .sort_values("time")  # sort so latest is last
+            .drop_duplicates(
+                subset="wire_number", keep="last"
+            )  # keep latest for each wire
+            .sort_values("wire_number")  # optional: sort by wire number
+            .reset_index(drop=True)
+        )
+
+        if df_side.empty:
+            print(f"No data found for side '{side}' in file {file_path}")
+            return None
+
+        wire_numbers = df_side["wire_number"].values
+        xs = df_side["x"].values
+        ys = df_side["y"].values
+
+        if wire_number in wire_numbers:
+            idx = np.where(wire_numbers == wire_number)[0][0]
+            x, y = xs[idx], ys[idx]
+        elif wire_number < wire_numbers[0]:
+            print("moving from first wire")
+            delta_x = -dx * (wire_numbers[0] - wire_number)
+
+            x, y = xs[0] + delta_x, ys[0]
+        elif wire_number > wire_numbers[-1]:
+            print("moving from last wire")
+            delta_x = dx * (wire_number - wire_numbers[-1])
+
+            x, y = xs[-1] + delta_x, ys[-1]
+        else:
+            print("moving by interpolation")
+            lower_idx = np.max(np.where(wire_numbers < wire_number))
+            upper_idx = np.min(np.where(wire_numbers > wire_number))
+            wl, wu = wire_numbers[lower_idx], wire_numbers[upper_idx]
+            xl, xu = xs[lower_idx], xs[upper_idx]
+            yl, yu = ys[lower_idx], ys[upper_idx]
+            fraction = (wire_number - wl) / (wu - wl)
+            x = xl + fraction * (xu - xl)
+            y = yl + fraction * (yu - yl)
+
+        if layer in ["V", "U"]:
+            refined = refine_position(x, y, dx, dy)
+            return refined
+        return (x, y)
 
 
 if __name__ == "__main__":
-    t = Tensiometer(
+    self = Tensiometer(
         apa_name="US_APA7",
         layer="V",
         side="B",
@@ -316,5 +493,3 @@ if __name__ == "__main__":
         wiggle_interval=1,
         test_mode=True,
     )
-
-    print(t.get_tensions())

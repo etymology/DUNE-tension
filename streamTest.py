@@ -1,114 +1,87 @@
-import pyaudio
-import aubio
-import numpy as np
 import time
-from Tensiometer import Tensiometer  # Import the Tensiometer class
+import torch
+import sounddevice as sd
+from pesto import load_model
+import matplotlib.pyplot as plt
+import matplotlib.animation as animation
+from matplotlib.collections import LineCollection
+import numpy as np
 
-# Set constants (as defined by user)
-BUFFER_SIZE = 2**12  # Larger buffer size to capture low-frequency signals
-CHANNELS = 1  # Mono audio
-RATE = 44100  # Sample rate in Hz
-DEVICE_NAME = "USB PnP Sound Device"  # Name of the device to search for
-PITCH_METHOD = "yin"  # Using 'yin' for pitch detection
-HOP_SIZE = BUFFER_SIZE // 2  # Increase hop size proportionally to buffer size
-PITCH_PERIOD = 0.1  # Pitch output every 0.1 seconds
-SILENCE_THRESHOLD = -60  # Silence threshold in dB
-GAIN = 3.0  # Gain factor to amplify the signal (2.0 = 2x amplification)
-N_CONSECUTIVE = 3  # Number of consecutive values within 5% to consider pitch stable
-CONFIDENCE_THRESHOLD = 0.7  # Confidence threshold for stable pitch
+# === Audio and Model Config ===
+RATE = 48000
+BUFFER_SIZE = 2048
+HISTORY_LEN = 200
+SAMPLE_SCALE = 4
 
-# Initialize PyAudio
-p = pyaudio.PyAudio()
+pesto_model = load_model(
+    'mir-1k_g7',
+    step_size=5.,
+    sampling_rate=RATE*SAMPLE_SCALE,
+    streaming=True,
+    max_batch_size=1
+)
 
-# Find the USB PnP Sound Device
-def find_input_device(device_name):
-    for i in range(p.get_device_count()):
-        device_info = p.get_device_info_by_index(i)
-        if device_name in device_info.get('name'):
-            return i
-    return None
+# === Pitch + Confidence History ===
+pitch_history = [0.0] * HISTORY_LEN
+conf_history = [0.1] * HISTORY_LEN  # Start with low confidence values
 
-device_index = find_input_device(DEVICE_NAME)
-if device_index is None:
-    print(f"Error: Could not find device with name '{DEVICE_NAME}'")
-    exit(1)
+# === Plot Setup ===
+fig, ax = plt.subplots()
+ax.set_ylim(50, 600)
+ax.set_xlim(0, HISTORY_LEN - 1)
+ax.set_title("Pitch Trace (Confidence = Darkness)")
+ax.set_ylabel("Pitch (Hz)")
+ax.set_xlabel("Frame")
+ax.grid(True)
 
-print(f"Using device: {DEVICE_NAME}")
+# Create empty LineCollection
+segments = []
+for i in range(HISTORY_LEN - 1):
+    segments.append([[i, 0], [i + 1, 0]])
+line_collection = LineCollection(segments, linewidth=2)
+ax.add_collection(line_collection)
 
-# Open a stream with PyAudio using the USB PnP Sound Device
-stream = p.open(format=pyaudio.paFloat32,
-                channels=CHANNELS,
-                rate=RATE,
-                input=True,
-                input_device_index=device_index,
-                frames_per_buffer=BUFFER_SIZE)
+# === Update Function ===
+def update(frame):
+    global pitch_history, conf_history
 
-# Initialize aubio pitch detection with larger buffer size
-pitch_o = aubio.pitch(PITCH_METHOD, BUFFER_SIZE, HOP_SIZE, RATE)
-pitch_o.set_unit("Hz")
-pitch_o.set_silence(SILENCE_THRESHOLD)  # Set silence threshold
+    # Record and process
+    buffer = sd.rec(BUFFER_SIZE, samplerate=RATE, channels=1, dtype='float32')
+    sd.wait()
+    buffer_tensor = torch.tensor(buffer.T, dtype=torch.float32)
+    pitch, conf, amp = pesto_model(buffer_tensor, return_activations=False, convert_to_freq=True)
 
-# Initialize Tensiometer instance
-t = Tensiometer()  # Create instance of the Tensiometer class
+    pitch_val = pitch.mean().item()/SAMPLE_SCALE if pitch.numel() > 0 else 0.0
+    conf_val = conf.mean().item() if conf.numel() > 0 else 0.1
 
-# Buffer for storing the last few pitch values to check stability
-pitch_buffer = []
+    if not torch.isfinite(pitch.mean()): pitch_val = 0.0
+    if not torch.isfinite(conf.mean()): conf_val = 0.1
 
-def check_pitch_stability(pitch_buffer, tolerance=0.05):
-    """
-    Check if the last N_CONSECUTIVE values in the buffer are within tolerance.
-    Tolerance is set to 5% (0.05).
-    """
-    if len(pitch_buffer) < N_CONSECUTIVE:
-        return False
-    # Compare the values in the buffer
-    min_pitch = min(pitch_buffer)
-    max_pitch = max(pitch_buffer)
-    return (max_pitch - min_pitch) / min_pitch <= tolerance
+    # Update history
+    pitch_history = pitch_history[1:] + [pitch_val]
+    conf_history = conf_history[1:] + [conf_val]
 
-try:
-    while True:
-        # Read from the audio stream
-        audio_buffer = stream.read(BUFFER_SIZE, exception_on_overflow=False)
-        signal = np.frombuffer(audio_buffer, dtype=np.float32)
+    # Create new segments
+    new_segments = []
+    new_alphas = []
 
-        # Amplify the signal
-        amplified_signal = signal * GAIN
+    for i in range(HISTORY_LEN - 1):
+        new_segments.append([
+            [i, pitch_history[i]],
+            [i + 1, pitch_history[i + 1]]
+        ])
+        alpha = max(0.05, min(conf_history[i], 1.0))  # Clamp alpha to [0.05, 1.0]
+        new_alphas.append(alpha)
 
-        # Process the amplified signal in chunks of HOP_SIZE
-        for i in range(0, len(amplified_signal), HOP_SIZE):
-            hop_signal = amplified_signal[i:i + HOP_SIZE]
+    # Map alphas to RGBA colors
+    colors = [(0, 0, 1, a) for a in new_alphas]  # Blue line, variable alpha
 
-            if len(hop_signal) == HOP_SIZE:  # Ensure the signal is of the correct size
-                # Get pitch and confidence
-                pitch = pitch_o(hop_signal)[0]
-                confidence = pitch_o.get_confidence()
+    line_collection.set_segments(new_segments)
+    line_collection.set_color(colors)
 
-                # Only proceed if confidence is above the threshold
-                if confidence > CONFIDENCE_THRESHOLD:
-                    # Add the pitch to the buffer and keep only the last N_CONSECUTIVE values
-                    pitch_buffer.append(pitch)
-                    if len(pitch_buffer) > N_CONSECUTIVE:
-                        pitch_buffer.pop(0)
+    return line_collection,
 
-                    # Check if the pitch values in the buffer are stable
-                    if len(pitch_buffer) >= N_CONSECUTIVE and check_pitch_stability(pitch_buffer):
-                        # Calculate the average pitch
-                        avg_pitch = np.mean(pitch_buffer)
-
-                        # Get x, y from the tensiometer
-                        x, y = t.get_xy()
-
-                        # Print the average pitch and Y value
-                        print(f"Y: {y}, Frequency: {avg_pitch:.2f} Hz")
-
-                        # Reset pitch buffer after printing
-                        pitch_buffer.clear()
-
-except KeyboardInterrupt:
-    print("Stopping...")
-
-# Cleanup
-stream.stop_stream()
-stream.close()
-p.terminate()
+# === Animate ===
+ani = animation.FuncAnimation(fig, update, interval=50, blit=True)
+plt.tight_layout()
+plt.show()

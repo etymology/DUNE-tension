@@ -42,16 +42,16 @@ class Controller:
             ttyStr = "COM3"
         
         # # Search for the Micro Maestro 6-Servo Controller
-        # ports = list_ports.comports()
-        # maestro_port = None
+        ports = list_ports.comports()
+        maestro_port = None
         
-        # for port in ports:
-        #     if "Micro Maestro 6-Servo Controller" in port.description:
-        #         maestro_port = port.device
-        #         break
+        for port in ports:
+            if "Micro Maestro 6-Servo Controller" in port.description:
+                maestro_port = port.device
+                break
         
-        # if maestro_port is not None:
-        #     ttyStr = maestro_port
+        if maestro_port is not None:
+            ttyStr = maestro_port
         
         # Open the command port
         try:
@@ -184,7 +184,6 @@ class Controller:
     def stopScript(self):
         cmd = chr(0x24)
         self.sendCmd(cmd)
-
 
 if __name__ == "__main__":
     controller = Controller(ttyStr="/dev/ttyACM0")
