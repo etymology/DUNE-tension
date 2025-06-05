@@ -36,6 +36,7 @@ class Tensiometer:
         confidence_threshold=0.7,
         save_audio=True,
         spoof=False,
+        spoof_movement=False,
     ):
         self.config = make_config(
             apa_name=apa_name,
@@ -49,24 +50,20 @@ class Tensiometer:
         )
         self.stop_event = stop_event or threading.Event()
         try:
-            is_web_server_active()
+            web_ok = is_web_server_active()
         except Exception:
-            pass
-        if not spoof:
-            from plc_io import get_xy, goto_xy, wiggle
+            web_ok = False
 
-            self.get_current_xy_position = get_xy
-            self.goto_xy_func = goto_xy
-            self.wiggle_func = wiggle
+        if not spoof_movement and web_ok:
+            from plc_io import get_xy, goto_xy, wiggle
         else:
+            from plc_io import spoof_get_xy as get_xy, spoof_goto_xy as goto_xy, spoof_wiggle as wiggle
             print(
-                "Web server is not active or spoofing enabled. Using dummy functions."
+                "Web server is not active or spoof_movement enabled. Using dummy functions."
             )
-            self.get_current_xy_position = lambda: (3000, 1300)
-            self.goto_xy_func = lambda x, y: True
-            self.wiggle_func = lambda step: True
-            if not spoof:
-                exit()
+        self.get_current_xy_position = get_xy
+        self.goto_xy_func = goto_xy
+        self.wiggle_func = wiggle
 
         self.samplerate = get_samplerate()
         if self.samplerate is None or spoof:

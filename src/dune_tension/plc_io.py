@@ -108,3 +108,30 @@ def is_web_server_active():
     except requests.RequestException as e:
         print(f"An error occurred while checking the server: {e}")
         return False
+
+
+# ---------------------------------------------------------------------------
+# Spoofing utilities
+# ---------------------------------------------------------------------------
+
+def spoof_get_xy() -> tuple[float, float]:
+    """Return a fixed XY position when PLC hardware is not available."""
+    return 3000.0, 1300.0
+
+
+def spoof_goto_xy(x_target: float, y_target: float) -> bool:
+    """Pretend to move the winder to a position when testing."""
+    # Reuse bounds check from :func:`goto_xy` for consistency
+    if x_target < 0 or x_target > 7174 or y_target < 0 or y_target > 2680:
+        print(
+            f"[spoof] Motion target {x_target},{y_target} out of bounds."
+        )
+        return False
+    print(f"[spoof] Moving to {x_target},{y_target}")
+    return True
+
+
+def spoof_wiggle(step: float) -> bool:
+    """Pretend to wiggle the winder."""
+    print(f"[spoof] Wiggling by ±{step} mm")
+    return True
