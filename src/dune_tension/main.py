@@ -2,7 +2,7 @@ import tkinter as tk
 from tkinter import messagebox
 import json
 import os
-from tensiometer_functional import Tensiometer
+from dune_tension.tensiometer import Tensiometer
 from threading import Event, Thread
 import time
 from maestro import Controller

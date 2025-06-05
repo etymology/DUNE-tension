@@ -1,5 +1,5 @@
 from m2m.common import ConnectToAPI, EditAction
-from tensiometer_functional import Tensiometer
+from dune_tension.tensiometer import Tensiometer
 
 
 def uploadTensions(t: Tensiometer):
