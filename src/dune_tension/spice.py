@@ -60,10 +60,9 @@ def record_for_spice(
 # converted_audio_file = record_for_spice()
 
 # Loading audio samples from the wav file:
-sample_rate, audio_samples = wavfile.read(record_for_spice(duration=.1), "rb")
+sample_rate, audio_samples = wavfile.read(record_for_spice(duration=0.1), "rb")
 
-print(audio_samples/float(MAX_ABS_INT16)
-)
+print(audio_samples / float(MAX_ABS_INT16))
 audio_samples = audio_samples / float(MAX_ABS_INT16)
 
 

@@ -3,7 +3,7 @@ from common import ConnectToAPI, GetComponent, GetAction
 
 
 # Main script function
-if __name__ == '__main__':
+if __name__ == "__main__":
     # Set up a connection to the database API and get the connection request headers
     # This must be done at the beginning of this main script function, but ONLY ONCE
     connection, headers = ConnectToAPI()
@@ -12,7 +12,7 @@ if __name__ == '__main__':
     # User-defined script functionality goes here
 
     # Retrieving an existing component record requires only the UUID
-    componentUUID = '5f9ea420-3e88-11ed-9114-03f8483882ff'
+    componentUUID = "5f9ea420-3e88-11ed-9114-03f8483882ff"
 
     # Call the component retrieval function, which take the UUID as its first argument
     # The second and third arguments must ALWAYS be 'connection' and 'headers' respectively
@@ -24,7 +24,7 @@ if __name__ == '__main__':
     print()
 
     # Retrieving an existing action record requires only the ID
-    actionID = '63340ac79708eb30e6403cb9'
+    actionID = "63340ac79708eb30e6403cb9"
 
     # Call the action retrieval function, which take the ID as its first argument
     # The second and third arguments must ALWAYS be 'connection' and 'headers' respectively

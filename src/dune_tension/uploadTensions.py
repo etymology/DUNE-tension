@@ -1,6 +1,6 @@
-from m2m.common import ConnectToAPI, PerformAction, EditAction
-from Tensiometer import Tensiometer
-from datetime import datetime
+from m2m.common import ConnectToAPI, EditAction
+from tensiometer_functional import Tensiometer
+
 
 def uploadTensions(t: Tensiometer):
     connection, headers = ConnectToAPI()
@@ -19,10 +19,9 @@ def uploadTensions(t: Tensiometer):
     #     actionTypeFormID, componentUUID, actionData, connection, headers
     # )
 
-    create_layer_action_id  = r'68266b2822ca58899f11b183'
+    create_layer_action_id = r"683f72822967cf595ddbd6d3"
     print(f" Successfully performed action with ID: {create_layer_action_id}")
 
-    
     tensions_sideA, tensions_sideB = t.load_tension_summary()
 
     actionData_fields = [
@@ -39,7 +38,11 @@ def uploadTensions(t: Tensiometer):
     ]
 
     edit_layer_action_id = EditAction(
-        create_layer_action_id, actionData_fields, actionData_values, connection, headers
+        create_layer_action_id,
+        actionData_fields,
+        actionData_values,
+        connection,
+        headers,
     )
     print(f" Successfully edited action with ID: {edit_layer_action_id}")
 
@@ -48,9 +51,9 @@ def uploadTensions(t: Tensiometer):
 
 if __name__ == "__main__":
     t = Tensiometer(
-        apa_name="US_APA7",
-        layer="G",
-        test_mode=True,
+        apa_name="US_APA9",
+        layer="X",
+        side="A",
     )
 
     uploadTensions(t)

@@ -18,7 +18,6 @@ logger.setLevel(logging.ERROR)
 # Specify the directory containing the .npz files
 folder_path = "audio/"
 sample_rate = 44100  # Sample rate in Hz
-subsample_length = 0.2  # Length of the subsample in seconds
 
 # List all files in the directory
 files = os.listdir(folder_path)
@@ -120,9 +119,7 @@ with open("results.csv", "w", newline="") as csvfile:
 
                         # Add vertical lines and labels for the detected frequencies
                         if autocorr_frequency <= 5000:
-                            ax2.axvline(
-                                x=autocorr_frequency, color="r", linestyle="--"
-                            )
+                            ax2.axvline(x=autocorr_frequency, color="r", linestyle="--")
                             ax2.text(
                                 autocorr_frequency,
                                 max(positive_magnitudes) / 2,
@@ -131,9 +128,7 @@ with open("results.csv", "w", newline="") as csvfile:
                                 ha="center",
                             )
                         if crepe_frequency <= 5000:
-                            ax2.axvline(
-                                x=crepe_frequency, color="g", linestyle="--"
-                            )
+                            ax2.axvline(x=crepe_frequency, color="g", linestyle="--")
                             ax2.text(
                                 crepe_frequency,
                                 max(positive_magnitudes) / 2,

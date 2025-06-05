@@ -5,11 +5,11 @@ from sklearn.mixture import GaussianMixture
 import pandas as pd
 
 # Load the uploaded file to inspect its contents
-file_path = 'differences.csv'
+file_path = "differences.csv"
 data = pd.read_csv(file_path)
 
 # Columns to analyze
-columns_to_analyze = ['1-3', '1-2', '2-3']
+columns_to_analyze = ["1-3", "1-2", "2-3"]
 
 # Prepare subplots
 fig, axes = plt.subplots(1, len(columns_to_analyze), figsize=(15, 5))
@@ -41,14 +41,22 @@ for i, column in enumerate(columns_to_analyze):
 
     # Plot the histogram and the two Gaussian fits
     ax = axes[i]
-    ax.hist(column_data, bins=30, density=True, alpha=0.6, color='gray', edgecolor='black', label='Data Histogram')
-    ax.plot(x_values, pdf_1, label=f'Gaussian 1 (μ={means[0]:.2f}, σ={stds[0]:.2f})')
-    ax.plot(x_values, pdf_2, label=f'Gaussian 2 (μ={means[1]:.2f}, σ={stds[1]:.2f})')
-    ax.plot(x_values, pdf_1 + pdf_2, 'k--', label='Combined Fit')
+    ax.hist(
+        column_data,
+        bins=30,
+        density=True,
+        alpha=0.6,
+        color="gray",
+        edgecolor="black",
+        label="Data Histogram",
+    )
+    ax.plot(x_values, pdf_1, label=f"Gaussian 1 (μ={means[0]:.2f}, σ={stds[0]:.2f})")
+    ax.plot(x_values, pdf_2, label=f"Gaussian 2 (μ={means[1]:.2f}, σ={stds[1]:.2f})")
+    ax.plot(x_values, pdf_1 + pdf_2, "k--", label="Combined Fit")
 
     ax.set_title(f'Histogram of "{column}"')
     ax.set_xlabel(f'Values of "{column}"')
-    ax.set_ylabel('Density')
+    ax.set_ylabel("Density")
     ax.legend()
     ax.grid(True)
 

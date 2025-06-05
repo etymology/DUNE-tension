@@ -15,7 +15,7 @@ data_clean = data.dropna(subset=["a1", "a2", "a3", "a4"])
 pairwise_differences = {}
 columns = ["a1", "a2", "a3", "a4"]
 for i, col1 in enumerate(columns):
-    for col2 in columns[i + 1:]:
+    for col2 in columns[i + 1 :]:
         diff_name = f"{col1}-{col2}"
         valid_rows = (data_clean[col1] != 0) & (data_clean[col2] != 0)
         pairwise_differences[diff_name] = (
@@ -48,13 +48,15 @@ for idx, (key, diffs) in enumerate(pairwise_differences.items(), start=1):
                 "Mean": gmm.means_[i, 0],
                 "StdDev": np.sqrt(gmm.covariances_[i, 0, 0]),
                 "Weight": gmm.weights_[i],
-                "log_likelihood": gmm.score(diffs_reshaped),   
+                "log_likelihood": gmm.score(diffs_reshaped),
             }
         )
 
     # Create histogram and plot GMM fit
     plt.subplot(3, 2, idx)
-    plt.hist(diffs_reshaped, bins=bin_edges, density=True, alpha=0.6, label="Data Histogram")
+    plt.hist(
+        diffs_reshaped, bins=bin_edges, density=True, alpha=0.6, label="Data Histogram"
+    )
 
     x = np.linspace(global_min, global_max, 500).reshape(-1, 1)
     y_gmm = np.exp(gmm.score_samples(x))

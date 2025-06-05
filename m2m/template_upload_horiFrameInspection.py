@@ -6,16 +6,20 @@ from frameInspections import ExtractM4HoleResults
 ####################################
 
 # For uploading new or revised inspection results, the following information is required:
-dataFile_m4Holes = '/user/majumdar/Desktop/horizontalInspections/UK_Frames/F000_results.xlsx'     
-                                                                     # Full path to the input data file (must be a string ending in '.xlsx')
-action_id        = '65c3a4df0273db98a06e517a'                        # ID of the existing frame surveys action to be edited (get from DB)
-edtAction_comms  = ''                                                # Free-form string, additional description or commentary if desired
+dataFile_m4Holes = (
+    "/user/majumdar/Desktop/horizontalInspections/UK_Frames/F000_results.xlsx"
+)
+# Full path to the input data file (must be a string ending in '.xlsx')
+action_id = "65c3a4df0273db98a06e517a"  # ID of the existing frame surveys action to be edited (get from DB)
+edtAction_comms = (
+    ""  # Free-form string, additional description or commentary if desired
+)
 
 # ##################################
 
 
 # Main script function
-if __name__ == '__main__':
+if __name__ == "__main__":
     # Set up a connection to the database API and get the connection request headers
     # This must be done at the beginning of this main script function, but ONLY ONCE
     connection, headers = ConnectToAPI()
@@ -29,13 +33,13 @@ if __name__ == '__main__':
 
     # Call the extraction function ... this returns a Python dictionary containing the results
     dict_m4Holes = ExtractM4HoleResults(dataFile_m4Holes)
-    
+
     # Edit an existing 'Horizontal Frame Inspection' action with the dictionary in the list of field values to be edited
     # For more general details about editing actions via M2M, please see the README and the 'template_edit_action.py' script
     actionID = action_id
     actionData_fields = [
-        'm4Holes',
-        'comments',
+        "m4Holes",
+        "comments",
     ]
     actionData_values = [
         dict_m4Holes,
@@ -43,7 +47,7 @@ if __name__ == '__main__':
     ]
 
     id = EditAction(actionID, actionData_fields, actionData_values, connection, headers)
-    print(f' Successfully edited action with ID: {id}')
+    print(f" Successfully edited action with ID: {id}")
 
     ########################################
 

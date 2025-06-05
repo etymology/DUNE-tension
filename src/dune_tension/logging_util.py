@@ -2,6 +2,7 @@ from datetime import datetime
 import os
 import csv
 
+
 def log_data(data, filename):
     """
     Log data into a CSV file.
@@ -39,4 +40,3 @@ def log_data(data, filename):
         print(f"Error opening or writing to file: {e}")
     except Exception as e:
         print(f"An unexpected error occurred: {e}")
-

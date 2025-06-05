@@ -13,6 +13,7 @@ os.makedirs(output_dir, exist_ok=True)
 # Set constant sample rate
 samplerate = 44100
 
+
 # Parse timestamp from filename
 def parse_audio_filename(filename):
     # e.g., GB20_2025-05-23_14-18-33.npz
@@ -24,9 +25,23 @@ def parse_audio_filename(filename):
     dt = datetime.strptime(timestamp, "%Y-%m-%d_%H-%M-%S")
     return layer, side, wire_number, dt
 
+
 expected_columns = [
-    "layer", "side", "wire_number", "tension", "tension_pass", "frequency",
-    "zone", "confidence", "t_sigma", "x", "y", "Gcode", "wires", "ttf", "time"
+    "layer",
+    "side",
+    "wire_number",
+    "tension",
+    "tension_pass",
+    "frequency",
+    "zone",
+    "confidence",
+    "t_sigma",
+    "x",
+    "y",
+    "Gcode",
+    "wires",
+    "ttf",
+    "time",
 ]
 
 # Load all tension dataframes indexed by apa_name and layer
@@ -38,7 +53,9 @@ for path in csv_files:
     apa_name = parts[0]
     layer = parts[1]
     df = pd.read_csv(path, usecols=["time", "wire_number", "side"])
-    df["parsed_time"] = pd.to_datetime(df["time"], format="%Y-%m-%d_%H-%M-%S", errors="coerce")
+    df["parsed_time"] = pd.to_datetime(
+        df["time"], format="%Y-%m-%d_%H-%M-%S", errors="coerce"
+    )
     csv_data[(apa_name, layer)] = df
 
 # Process each audio file
@@ -55,7 +72,11 @@ for path in audio_files:
         if csv_layer != layer:
             continue
         # Filter to rows with matching side and wire_number
-        matches = df[(df["side"] == side) & (df["wire_number"] == wire_number) & df["parsed_time"].notna()]
+        matches = df[
+            (df["side"] == side)
+            & (df["wire_number"] == wire_number)
+            & df["parsed_time"].notna()
+        ]
         if matches.empty:
             continue
         # Find row with closest time
@@ -63,7 +84,12 @@ for path in audio_files:
         closest_idx = time_diffs.idxmin()
         if time_diffs[closest_idx] < min_time_diff:
             min_time_diff = time_diffs[closest_idx]
-            best_match = (apa_name, layer, side, matches.loc[closest_idx, "parsed_time"])
+            best_match = (
+                apa_name,
+                layer,
+                side,
+                matches.loc[closest_idx, "parsed_time"],
+            )
 
     if best_match:
         apa_name, layer, side, matched_time = best_match

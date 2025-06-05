@@ -4,15 +4,57 @@ import json
 import os
 from tensiometer_functional import Tensiometer
 from threading import Event, Thread
+import time
+from maestro import Controller
 
 state_file = "gui_state.json"
 stop_event = Event()
+
+
+class ServoController:
+    def __init__(self):
+        self.servo = Controller()
+        self.servo.setRange(0, 4000, 8000)
+        self.running = Event()
+        self.dwell_time = 1.0
+
+    def set_speed(self, val):
+        self.servo.setSpeed(0, int(val))
+
+    def set_accel(self, val):
+        self.servo.setAccel(0, int(val))
+
+    def set_dwell_time(self, val):
+        self.dwell_time = float(val)
+
+    def start_loop(self):
+        if not self.running.is_set():
+            self.running.set()
+            Thread(target=self.run_loop, daemon=True).start()
+
+    def stop_loop(self):
+        self.running.clear()
+
+    def run_loop(self):
+        while self.running.is_set():
+            self.servo.setTarget(0, 4000)
+            while self.servo.isMoving(0) and self.running.is_set():
+                time.sleep(0.01)
+            self.servo.setTarget(0, 8000)
+            while self.servo.isMoving(0) and self.running.is_set():
+                time.sleep(0.01)
+            time.sleep(self.dwell_time)
+
+
+servo_controller = ServoController()
+
 
 def save_state():
     try:
         samples = int(entry_samples.get())
         conf = float(entry_confidence.get())
     except ValueError as e:
+        print(f"{e}")
         samples = 3
         conf = 0.7
 
@@ -25,9 +67,13 @@ def save_state():
         "wire_list": entry_wire_list.get(),
         "samples_per_wire": samples,
         "confidence_threshold": conf,
+        "servo_speed": speed_slider.get(),
+        "servo_accel": accel_slider.get(),
+        "servo_dwell": dwell_slider.get(),
     }
     with open(state_file, "w") as f:
         json.dump(state, f)
+
 
 def load_state():
     if os.path.exists(state_file):
@@ -41,6 +87,10 @@ def load_state():
             entry_wire_list.insert(0, state.get("wire_list", ""))
             entry_samples.insert(0, str(state.get("samples_per_wire", 3)))
             entry_confidence.insert(0, str(state.get("confidence_threshold", 0.7)))
+            speed_slider.set(state.get("servo_speed", 1))
+            accel_slider.set(state.get("servo_accel", 1))
+            dwell_slider.set(state.get("servo_dwell", 100))
+
 
 def create_tensiometer():
     try:
@@ -61,42 +111,66 @@ def create_tensiometer():
         layer=layer_var.get(),
         side=side_var.get(),
         flipped=flipped_var.get(),
-        spoof=True,
+        spoof=False,
         stop_event=stop_event,
         samples_per_wire=samples,
         confidence_threshold=conf,
     )
 
+
 def measure_calibrate():
     def run():
-        t = create_tensiometer()
-        wire_number = int(entry_wire.get())
-        save_state()
-        t.measure_calibrate(wire_number)
-        print("Done calibrating wire", wire_number)
+        servo_controller.start_loop()
+        try:
+            t = create_tensiometer()
+            wire_number = int(entry_wire.get())
+            save_state()
+            t.measure_calibrate(wire_number)
+            print("Done calibrating wire", wire_number)
+        finally:
+            servo_controller.stop_loop()
+
     Thread(target=run, daemon=True).start()
+
 
 def measure_auto():
     def run():
-        t = create_tensiometer()
-        save_state()
-        t.measure_auto()
-        print("Done measuring all wires")
+        servo_controller.start_loop()
+        try:
+            t = create_tensiometer()
+            save_state()
+            t.measure_auto()
+            print("Done measuring all wires")
+        finally:
+            servo_controller.stop_loop()
+
     Thread(target=run, daemon=True).start()
+
 
 def measure_list():
     def run():
-        t = create_tensiometer()
-        wire_list = [int(w.strip()) for w in entry_wire_list.get().split(",") if w.strip().isdigit()]
-        save_state()
-        print(f"Measuring wires: {wire_list}")
-        t.measure_list(wire_list, preserve_order=False)
-        print(" Done measuring wires", wire_list)
+        servo_controller.start_loop()
+        try:
+            t = create_tensiometer()
+            wire_list = [
+                int(w.strip())
+                for w in entry_wire_list.get().split(",")
+                if w.strip().isdigit()
+            ]
+            save_state()
+            print(f"Measuring wires: {wire_list}")
+            t.measure_list(wire_list, preserve_order=False)
+            print("Done measuring wires", wire_list)
+        finally:
+            servo_controller.stop_loop()
+
     Thread(target=run, daemon=True).start()
+
 
 def interrupt():
     stop_event.set()
     stop_event.clear()
+
 
 root = tk.Tk()
 root.title("Tensiometer GUI")
@@ -120,7 +194,9 @@ tk.OptionMenu(root, side_var, "A", "B").grid(row=2, column=1)
 
 # Flipped
 flipped_var = tk.BooleanVar()
-tk.Checkbutton(root, text="Flipped", variable=flipped_var).grid(row=3, column=1, sticky="w")
+tk.Checkbutton(root, text="Flipped", variable=flipped_var).grid(
+    row=3, column=1, sticky="w"
+)
 
 # Samples per wire
 tk.Label(root, text="Samples per Wire (≥2):").grid(row=4, column=0, sticky="e")
@@ -149,6 +225,34 @@ tk.Button(root, text="Measure Auto", command=measure_auto).grid(row=8, column=0)
 
 # Interrupt
 tk.Button(root, text="Interrupt", command=interrupt).grid(row=8, column=1)
+
+# Servo Speed Slider
+tk.Label(root, text="Servo Speed (1–255):").grid(row=9, column=0, sticky="e")
+speed_slider = tk.Scale(
+    root, from_=1, to=255, orient=tk.HORIZONTAL, command=servo_controller.set_speed
+)
+speed_slider.set(1)
+speed_slider.grid(row=9, column=1)
+
+# Servo Acceleration Slider
+tk.Label(root, text="Servo Acceleration (1–255):").grid(row=10, column=0, sticky="e")
+accel_slider = tk.Scale(
+    root, from_=1, to=255, orient=tk.HORIZONTAL, command=servo_controller.set_accel
+)
+accel_slider.set(1)
+accel_slider.grid(row=10, column=1)
+
+# Dwell Time Slider
+tk.Label(root, text="Dwell Time (0.00–2.00s):").grid(row=11, column=0, sticky="e")
+dwell_slider = tk.Scale(
+    root,
+    from_=0,
+    to=200,
+    orient=tk.HORIZONTAL,
+    command=lambda val: servo_controller.set_dwell_time(float(val) / 100),
+)
+dwell_slider.set(100)
+dwell_slider.grid(row=11, column=1)
 
 load_state()
 root.mainloop()

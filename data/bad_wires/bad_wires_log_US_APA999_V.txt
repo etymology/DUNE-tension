@@ -1,4 +1,4 @@
 US_APA999 - Layer V, Side B:
-  Bad wire_numbers (missing or no tension_pass=True): 8-320, 322-1146
-  No outlier wire_numbers
+  Bad wire_numbers (missing or no tension_pass=True): 8-302, 322-1146
+  Outlier wire_numbers (far from moving average): 310-312
 

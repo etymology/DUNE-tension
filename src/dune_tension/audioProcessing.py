@@ -2,7 +2,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import crepe
-import soundfile as sf
 from tension_calculation import (
     tension_lookup,
     tension_pass,
@@ -10,17 +9,6 @@ from tension_calculation import (
 import sounddevice as sd
 import os
 import random
-
-
-def save_wav(audio_sample: np.ndarray, sample_rate: int, filename: str):
-    # Save the audio sample to a WAV file
-    sf.write(filename, audio_sample, int(sample_rate))
-
-
-def load_wav(filename: str):
-    # Load the WAV file
-    audio_sample, sample_rate = sf.read(filename)
-    return audio_sample, sample_rate
 
 
 def load_audio_data(file_name):
@@ -41,7 +29,7 @@ def get_pitch_autocorrelation(
     """
     Analyzes an audio signal to find the dominant frequency using autocorrelation.
 
-    Parameters:
+    Parameters:==
     - audio_data (np.ndarray): The audio signal data as a numpy array.
     - samplerate (int): The sample rate of the audio signal.
     - freq_low (int): The lower boundary of the frequency range to search (default 10 Hz).
@@ -199,33 +187,6 @@ def get_pitch_crepe(
     return max_frequency, max_confidence
 
 
-def get_pitch_crepe_bandpass(
-    audio_data: np.ndarray, samplerate, length, model_capacity="tiny"
-) -> tuple[float, float]:
-    """Extract the pitch and confidence from the audio data using CREPE."""
-    _, frequencies, confidence, _ = crepe.predict(
-        audio_data,
-        samplerate,
-        model_capacity=model_capacity,
-        viterbi=False,
-        verbose=0,
-        step_size=50,
-    )
-
-    # Directly find the index of the maximum confidence
-    if len(confidence) > 0:
-        max_conf_idx = np.argmax(confidence)
-        max_frequency = frequencies[max_conf_idx]
-        max_confidence = confidence[max_conf_idx]
-    else:
-        # Handle the case where no confidence values are available
-        print("No confidence values available.")
-        max_frequency = 0.0
-        max_confidence = 0.0
-
-    return max_frequency, max_confidence
-
-
 def record_audio(duration, sample_rate, plot=False, normalize=False):
     """Record audio for a given duration and sample rate and normalize it to the range -1 to 1. Optionally plot the waveform."""
     try:
@@ -274,11 +235,12 @@ def get_samplerate():
     try:
         device_info = sd.query_devices()
         sound_device_index = next(
-            (index for index, d in enumerate(device_info) if "PnP" in d["name"]),
+            (index for index, d in enumerate(device_info) if "default" in d["name"]),
             None,
         )
         if sound_device_index is not None:
             sample_rate = device_info[sound_device_index]["default_samplerate"]
+            print(device_info)
             print(
                 f"Using (hw:{sound_device_index},0),{device_info[sound_device_index]['name']}"
             )

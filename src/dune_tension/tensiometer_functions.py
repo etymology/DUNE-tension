@@ -1,8 +1,9 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional, Callable
 import math
 from typing import List, Tuple
-from analyze_tension_data import analyze_tension_data
+from data_cache import get_dataframe
+
 
 @dataclass
 class TensiometerConfig:
@@ -18,6 +19,13 @@ class TensiometerConfig:
     confidence_threshold: float
     save_audio: bool
     spoof: bool
+
+    data_path: str = field(init=False)
+
+    def __post_init__(self):
+        self.data_path = (
+            f"data/tension_data/tension_data_{self.apa_name}_{self.layer}.csv"
+        )
 
 
 def make_config(
@@ -76,41 +84,23 @@ def load_tension_summary(config: TensiometerConfig) -> tuple[list, list]:
 
 
 def get_xy_from_file(
-    config: TensiometerConfig, wire_number: int
+    config: TensiometerConfig,
+    wire_number: int,
 ) -> Optional[tuple[float, float]]:
-    import pandas as pd
     import numpy as np
     from geometry import refine_position
 
-    if wire_number < config.wire_min or wire_number > config.wire_max:
-        return None
-
-    file_path = f"data/tension_data/tension_data_{config.apa_name}_{config.layer}.csv"
-    expected_columns = [
-        "layer",
-        "side",
-        "wire_number",
-        "tension",
-        "tension_pass",
-        "frequency",
-        "zone",
-        "confidence",
-        "t_sigma",
-        "x",
-        "y",
-        "Gcode",
-        "wires",
-        "ttf",
-        "time",
-    ]
-
-    try:
-        df = pd.read_csv(file_path, skiprows=1, names=expected_columns)
-    except FileNotFoundError:
-        return None
-
+    df = get_dataframe(config.data_path)
+    virtual_side = (
+        {"A": "B", "B": "A"}[config.side.upper()]
+        if config.flipped
+        else config.side.upper()
+    )
+    if config.flipped and config.layer in ["X", "G"]:
+        wire_number = config.wire_max - wire_number
+        print(f"Flipped wire number: {wire_number}")
     df_side = (
-        df[df["side"].str.upper() == config.side.upper()]
+        df[df["side"].str.upper() == virtual_side]
         .sort_values("time")
         .drop_duplicates(subset="wire_number", keep="last")
         .sort_values("wire_number")
@@ -123,21 +113,14 @@ def get_xy_from_file(
     wire_numbers = df_side["wire_number"].values
     xs, ys = df_side["x"].values, df_side["y"].values
 
-    if wire_number in wire_numbers:
-        idx = np.where(wire_numbers == wire_number)[0][0]
-        x, y = xs[idx], ys[idx]
-    elif wire_number < wire_numbers[0]:
-        x, y = xs[0] - config.dx * (wire_numbers[0] - wire_number), ys[0]
-    elif wire_number > wire_numbers[-1]:
-        x, y = xs[-1] + config.dx * (wire_number - wire_numbers[-1]), ys[-1]
-    else:
-        lower_idx = np.max(np.where(wire_numbers < wire_number))
-        upper_idx = np.min(np.where(wire_numbers > wire_number))
-        f = (wire_number - wire_numbers[lower_idx]) / (
-            wire_numbers[upper_idx] - wire_numbers[lower_idx]
-        )
-        x = xs[lower_idx] + f * (xs[upper_idx] - xs[lower_idx])
-        y = ys[lower_idx] + f * (ys[upper_idx] - ys[lower_idx])
+    # Find index of the closest wire_number in the array
+    idx_closest = np.argmin(np.abs(wire_numbers - wire_number))
+    closest_wire = wire_numbers[idx_closest]
+    dy_offset = (wire_number - closest_wire) * config.dy
+
+    # Since we assume each wire is (0, dy) away from the next:
+    x = xs[idx_closest]
+    y = ys[idx_closest] + dy_offset
 
     return (
         refine_position(x, y, config.dx, config.dy)

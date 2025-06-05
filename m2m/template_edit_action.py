@@ -3,7 +3,7 @@ from common import ConnectToAPI, EditAction
 
 
 # Main script function
-if __name__ == '__main__':
+if __name__ == "__main__":
     # Set up a connection to the database API and get the connection request headers
     # This must be done at the beginning of this main script function, but ONLY ONCE
     connection, headers = ConnectToAPI()
@@ -15,15 +15,14 @@ if __name__ == '__main__':
     #   - the ID of the action to be edited
     #   - the names of any data fields to be edited
     #   - the new values of any data fields to be edited
-    actionID = '63340ac79708eb30e6403cb9'
-    actionData_fields = ['name', 'measurement']
-    actionData_values = ['M2M Action (edited)', 19.07]
+    actionID = "63340ac79708eb30e6403cb9"
+    actionData_fields = ["name", "measurement"]
+    actionData_values = ["M2M Action (edited)", 19.07]
 
     # Call the action editing function, which takes the ID, data field names and new field values as its first three arguments
     # The last two arguments must ALWAYS be 'connection' and 'headers' respectively
     # If successful, the function returns the ID of the edited action (if not, an error message is automatically displayed)
-    id = EditAction(actionID, actionData_fields,
-                    actionData_values, connection, headers)
+    id = EditAction(actionID, actionData_fields, actionData_values, connection, headers)
     print(f" Successfully edited action with ID: {id}")
 
     ########################################

@@ -8,7 +8,6 @@ file_path = "four_passes.csv"
 data = pd.read_csv(file_path)
 
 
-
 # Drop rows with NaNs in all four columns to simplify pairwise calculations
 data_clean = data.dropna(subset=["a1", "a2", "a3", "a4"])
 

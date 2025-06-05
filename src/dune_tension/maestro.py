@@ -1,7 +1,7 @@
 import serial
 from sys import version_info
 import platform
-from serial.tools import list_ports  # Importing list_ports directly
+import time
 
 PY2 = version_info[0] == 2  # Running Python 2.x?
 
@@ -33,33 +33,35 @@ class Controller:
     # ports, or you are using a Windows OS, you can provide the tty port.  For
     # example, '/dev/ttyACM2' or for Windows, something like 'COM3'.
 
-    def __init__(self, ttyStr="/dev/ttyACM1", device=0x0C):
+    def __init__(self, ttyStr="/dev/ttyACM0", device=0x0C):
         self.faulted = False
         self.usb = None
-        
+
         # Determine the appropriate port based on the operating system
         if platform.system() == "Windows":
             ttyStr = "COM3"
-        
-        # # Search for the Micro Maestro 6-Servo Controller
-        ports = list_ports.comports()
-        maestro_port = None
-        
-        for port in ports:
-            if "Micro Maestro 6-Servo Controller" in port.description:
-                maestro_port = port.device
-                break
-        
-        if maestro_port is not None:
-            ttyStr = maestro_port
-        
+
+        # # # Search for the Micro Maestro 6-Servo Controller
+        # ports = list_ports.comports()
+        # maestro_port = None
+
+        # for port in ports:
+        #     if "Micro Maestro 6-Servo Controller" in port.description:
+        #         maestro_port = port.device
+        #         break
+
+        # if maestro_port is not None:
+        #     ttyStr = maestro_port
+
         # Open the command port
         try:
             self.usb = serial.Serial(ttyStr)
             self.faulted = False
             print(f"Connected to Micro Maestro on {ttyStr}")
         except serial.SerialException:
-            print(f"Couldn't find Micro Maestro on {ttyStr}! Check the connection or port.")
+            print(
+                f"Couldn't find Micro Maestro on {ttyStr}! Check the connection or port."
+            )
             self.faulted = True
 
         # Command lead-in and device number are sent for each Pololu serial command.
@@ -122,7 +124,7 @@ class Controller:
     # Set speed of channel
     # Speed is measured as 0.25microseconds/10milliseconds
     # For the standard 1ms pulse width change to move a servo between extremes, a speed
-    # of 1 will take 1 minute, and a X6500.0 Y205.8speed of 60 would take 1 second.
+    # of 1 will take 1 minute, and a speed of 60 would take 1 second.
     # Speed of 0 is unrestricted.
     def setSpeed(self, chan, speed):
         self.sendCmd(self._make_command(speed, 0x07, chan))
@@ -185,6 +187,22 @@ class Controller:
         cmd = chr(0x24)
         self.sendCmd(cmd)
 
+
 if __name__ == "__main__":
-    controller = Controller(ttyStr="/dev/ttyACM0")
-    controller.setTarget(0, 6000)
+    import serial.tools.list_ports
+
+    print([port.description for port in serial.tools.list_ports.comports()])
+
+    servo = Controller()
+    servo.setRange(0, 4000, 8000)
+    servo.setSpeed(0, 1)
+    servo.setAccel(0, 1)
+    while True:
+        time.sleep(1)
+        servo.setTarget(0, 4000)
+        while servo.isMoving(0):
+            time.sleep(0.01)
+        servo.setTarget(0, 8000)  # set servo to move to center position
+        while servo.isMoving(0):
+            time.sleep(0.01)
+    servo.close()

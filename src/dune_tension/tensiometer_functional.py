@@ -2,13 +2,13 @@ import threading
 import numpy as np
 from datetime import datetime
 import time
-
+import pandas as pd
 from tension_calculation import (
     calculate_kde_max,
     tension_lookup,
     tension_pass,
     has_cluster_dict,
-    tension_plausible
+    tension_plausible,
 )
 from tensiometer_functions import (
     make_config,
@@ -19,10 +19,9 @@ from geometry import (
     zone_lookup,
     length_lookup,
 )
-from logging_util import log_data
-from audioProcessing import analyze_sample,get_samplerate
-from servo_control import is_maestro_active
-from plc_io import is_web_server_active
+from audioProcessing import analyze_sample, get_samplerate
+from plc_io import is_web_server_active, goto_xy
+from data_cache import get_dataframe, update_dataframe, EXPECTED_COLUMNS
 
 
 class Tensiometer:
@@ -49,30 +48,44 @@ class Tensiometer:
             spoof=spoof,
         )
         self.stop_event = stop_event or threading.Event()
-        if is_web_server_active() and not spoof:
+        try:
+            is_web_server_active()
+        except Exception:
+            pass
+        if not spoof:
             from plc_io import get_xy, goto_xy, wiggle
+
             self.get_current_xy_position = get_xy
             self.goto_xy_func = goto_xy
             self.wiggle_func = wiggle
         else:
-            print("Web server is not active or spoofing enabled. Using dummy functions.")
-            self.get_current_xy_position = lambda: (3000,1300)
-            self.goto_xy_func = lambda x,y: True
+            print(
+                "Web server is not active or spoofing enabled. Using dummy functions."
+            )
+            self.get_current_xy_position = lambda: (3000, 1300)
+            self.goto_xy_func = lambda x, y: True
             self.wiggle_func = lambda step: True
+            if not spoof:
+                exit()
 
-        is_maestro_active()
-        self.samplerate=get_samplerate()
+        self.samplerate = get_samplerate()
         if self.samplerate is None or spoof:
             print("Using spoofed audio sample for testing.")
             from audioProcessing import spoof_audio_sample
+
             self.samplerate = 44100  # Default samplerate for spoofing
-            self.record_audio_func = lambda duration, samplerate: spoof_audio_sample ("data/renamed_audio")
+            self.record_audio_func = lambda duration, sample_rate: spoof_audio_sample(
+                "data/renamed_audio"
+            )
         else:
             from audioProcessing import record_audio
-            self.record_audio_func = lambda: record_audio(0.15, normalize=True)
-        
+
+            self.record_audio_func = lambda duration, sample_rate: record_audio(
+                0.15, sample_rate=sample_rate, normalize=True
+            )
+
     def measure_calibrate(self, wire_number):
-        xy = get_xy_from_file(self.config, wire_number)
+        xy = self.get_current_xy_position()
         if xy is None:
             print(
                 f"No position data found for wire {wire_number}. Using current position."
@@ -82,7 +95,7 @@ class Tensiometer:
                 y,
             ) = self.get_current_xy_position()
         else:
-            x,y = xy
+            x, y = xy
             self.goto_xy_func(x, y)
 
         return self.collect_wire_data(
@@ -94,16 +107,22 @@ class Tensiometer:
     def measure_auto(self):
         from analyze_tension_data import analyze_tension_data
 
-        result = analyze_tension_data(self.config.apa_name, self.config.layer)
-        wires_to_measure = result.get("missing_wires", [])
+        result = analyze_tension_data(self.config)
+        wires_to_measure = result.get("missing_wires", [])[self.config.side]
+
+        print(f"Missing wires: {wires_to_measure}")
         if not wires_to_measure:
             print("All wires are already measured.")
             return
 
         print("Measuring missing wires...")
-        self.measure_list(wires_to_measure, preserve_order=True)
+        print(f"Missing wires: {wires_to_measure}")
+        for wire_number in wires_to_measure:
+            print(f"Measuring wire {wire_number}...")
+            x, y = get_xy_from_file(self.config, wire_number)
+            self.collect_wire_data(wire_number=wire_number, wire_x=x, wire_y=y)
 
-    def measure_list(self, wire_list,preserve_order):
+    def measure_list(self, wire_list, preserve_order):
         measure_list(
             config=self.config,
             wire_list=wire_list,
@@ -123,20 +142,20 @@ class Tensiometer:
             nonlocal wire_x, wire_y
             wires = []
             wiggle_start_time = time.time()
-            current_wiggle = 0.3
-            while (time.time() - start_time) < 60:
+            current_wiggle = 0.5
+            while (time.time() - start_time) < 30:
                 if self.stop_event and self.stop_event.is_set():
                     print("tension measurement interrupted!")
                     return
-                audio_sample = self.record_audio_func(duration=0.15, samplerate=self.samplerate)
+                audio_sample = self.record_audio_func(
+                    duration=0.15, sample_rate=self.samplerate
+                )
                 if self.config.save_audio and not self.config.spoof:
                     np.savez(
                         f"audio/{self.config.layer}{self.config.side}{wire_number}_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}",
                         audio_sample,
-                    )(audio_sample)
-                if (
-                    time.time() - wiggle_start_time > 2
-                ):
+                    )
+                if time.time() - wiggle_start_time > 1:
                     wiggle_start_time = time.time()
                     print(f"Wiggling {current_wiggle}mm")
                     self.wiggle_func(current_wiggle)
@@ -145,8 +164,9 @@ class Tensiometer:
                         audio_sample, self.samplerate, length
                     )
                     x, y = self.get_current_xy_position()
-                    if confidence > self.config.confidence_threshold and tension_plausible(
-                        tension
+                    if (
+                        confidence > self.config.confidence_threshold
+                        and tension_plausible(tension)
                     ):
                         wiggle_start_time = time.time()
                         wires.append(
@@ -160,7 +180,7 @@ class Tensiometer:
                             }
                         )
                         wire_y = np.average([d["y"] for d in wires])
-                        current_wiggle = current_wiggle / 2 + 0.05
+                        current_wiggle = (current_wiggle + 0.1) / 1.5
 
                         cluster = has_cluster_dict(
                             wires, "tension", self.config.samples_per_wire
@@ -209,12 +229,28 @@ class Tensiometer:
                 result["wires"] = str([float(d["tension"]) for d in passingWires])
 
             return result
-        
+
         # Main logic
         length = length_lookup(self.config.layer, wire_number, zone_lookup(wire_x))
         start_time = time.time()
 
-        self.goto_xy_func(wire_x, wire_y)
+        succeed = goto_xy(wire_x, wire_y)
+        if not succeed:
+            print(f"Failed to move to wire {wire_number} position {wire_x},{wire_y}.")
+            return {
+                "layer": self.config.layer,
+                "side": self.config.side,
+                "wire_number": wire_number,
+                "tension": 0,
+                "tension_pass": False,
+                "frequency": 0,
+                "zone": zone_lookup(wire_x),
+                "confidence": 0,
+                "t_sigma": 0,
+                "x": wire_x,
+                "y": wire_y,
+                "Gcode": f"X{round(wire_x, 1)} Y{round(wire_y, 1)}",
+            }
 
         wires = collect_samples(start_time)
         result = generate_result(wires)
@@ -225,12 +261,29 @@ class Tensiometer:
             print(f"Tension failed for wire number {wire_number}.")
         ttf = time.time() - start_time
         print(
-            f"Wire number {wire_number} has length {length * 1000:.1f}mm tension {result['tension']:.1f}N frequency {result['frequency']:.1f}Hz with confidence {result['confidence'] * 100:.1f}%.\n at {result["x"]},{result["y"]}\n"
+            f"Wire number {wire_number} has length {length * 1000:.1f}mm tension {result['tension']:.1f}N frequency {result['frequency']:.1f}Hz with confidence {result['confidence'] * 100:.1f}%.\n at {result['x']},{result['y']}\n"
             f"Took {ttf} seconds to finish."
         )
         result["ttf"] = ttf
-        log_data(
-            result, f"data/tension_data/tension_data_{self.config.apa_name}_{self.config.layer}.csv"
-        )
+
+        df = get_dataframe(self.config.data_path)
+        row = {col: result.get(col, None) for col in EXPECTED_COLUMNS}
+        df.loc[len(df)] = row
+        update_dataframe(self.config.data_path, df)
 
         return result
+
+    def load_tension_summary(self):
+        try:
+            df = pd.read_csv(self.config.data_path)
+        except FileNotFoundError:
+            return f"❌ File not found: {self.config.data_path}", [], []
+
+        if "A" not in df.columns or "B" not in df.columns:
+            return "⚠️ File missing required columns 'A' and 'B'", [], []
+
+        # Convert columns to lists, preserving NaNs if present
+        a_list = df["A"].tolist()
+        b_list = df["B"].tolist()
+
+        return a_list, b_list

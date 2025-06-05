@@ -16,6 +16,7 @@ comb_positions = [
     X_MAX + COMB_TOLERANCE - 100,
 ]
 
+
 def zone_lookup(
     x,
 ):
@@ -37,11 +38,6 @@ def zone_x_target(zone: int):
     return [1635, 2825, 4015, 5185, 6365][zone - 1]
 
 
-def distance_to_zone_middle(x):
-    ### returns the signed distance to the middle of the zone
-    return abs(x - zone_x_target(zone_lookup(x)))
-
-
 def not_close_to_comb(x, tolerance=COMB_TOLERANCE):
     # Check if x is within +/- 100 of any number in comb_positions
     for pos in comb_positions:
@@ -52,6 +48,7 @@ def not_close_to_comb(x, tolerance=COMB_TOLERANCE):
 
 def is_in_bounds(x, y):
     return (X_MIN < x < X_MAX) and (Y_MIN < y < Y_MAX) and not_close_to_comb(x)
+
 
 def refine_position(
     x: float, y: float, dx: float, dy: float
@@ -75,8 +72,10 @@ def refine_position(
     # Return candidate with the minimum difference to y_target
     return min(candidates, key=lambda pos: abs(y_target - pos[1]))
 
+
 def length_lookup(layer: str, wire_number: int, zone: int, taped=False):
     import pandas as pd
+
     file_path = f"wire_lengths/{layer}_LUT.csv"
 
     if layer not in ["U", "V", "X", "G"]:
@@ -104,4 +103,3 @@ def length_lookup(layer: str, wire_number: int, zone: int, taped=False):
         return value / 1000
     except KeyError:
         return None
-

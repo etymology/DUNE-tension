@@ -1,7 +1,6 @@
 import requests
 import time
 from random import gauss
-from maestro import Controller
 
 TENSION_SERVER_URL = "http://192.168.137.1:5000"
 IDLE_MOVE_TYPE = 0
@@ -84,6 +83,7 @@ def goto_xy(x_target: float, y_target: float):
     write_tag("X_POSITION", x_target)
     write_tag("Y_POSITION", y_target)
     write_tag("MOVE_TYPE", XY_MOVE_TYPE)
+
     while get_movetype() == XY_MOVE_TYPE:
         time.sleep(0.001)
     return True
@@ -98,6 +98,7 @@ def wiggle(step):
     """Wiggle the winder by a given step size."""
     increment(0, gauss(0, step))
 
+
 def is_web_server_active():
     """
     Check if a web server is active by sending a HTTP GET request.
@@ -107,4 +108,3 @@ def is_web_server_active():
     except requests.RequestException as e:
         print(f"An error occurred while checking the server: {e}")
         return False
-    

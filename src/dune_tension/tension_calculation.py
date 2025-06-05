@@ -35,11 +35,10 @@ def calculate_kde_max(sample):
     return max_kde_sample_value
 
 
-
-
 def tension_lookup(length, frequency: float):
     tension = (2 * length * frequency) ** 2 * WIRE_DENSITY
     return tension
+
 
 def tension_pass(tension, length):
     return tension > min(25.8 * length + 0.232, 4) and tension < MAX_PASSING_TENSION  #
@@ -70,6 +69,4 @@ def has_cluster_dict(data, key, n):
         if np.std(values) < 0.1:
             return list(subset)
 
-
     return []
-

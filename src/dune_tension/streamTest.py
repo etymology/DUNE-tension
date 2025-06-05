@@ -1,11 +1,9 @@
-import time
 import torch
 import sounddevice as sd
 from pesto import load_model
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 from matplotlib.collections import LineCollection
-import numpy as np
 
 # === Audio and Model Config ===
 RATE = 48000
@@ -14,11 +12,11 @@ HISTORY_LEN = 200
 SAMPLE_SCALE = 4
 
 pesto_model = load_model(
-    'mir-1k_g7',
-    step_size=5.,
-    sampling_rate=RATE*SAMPLE_SCALE,
+    "mir-1k_g7",
+    step_size=5.0,
+    sampling_rate=RATE * SAMPLE_SCALE,
     streaming=True,
-    max_batch_size=1
+    max_batch_size=1,
 )
 
 # === Pitch + Confidence History ===
@@ -41,21 +39,26 @@ for i in range(HISTORY_LEN - 1):
 line_collection = LineCollection(segments, linewidth=2)
 ax.add_collection(line_collection)
 
+
 # === Update Function ===
 def update(frame):
     global pitch_history, conf_history
 
     # Record and process
-    buffer = sd.rec(BUFFER_SIZE, samplerate=RATE, channels=1, dtype='float32')
+    buffer = sd.rec(BUFFER_SIZE, samplerate=RATE, channels=1, dtype="float32")
     sd.wait()
     buffer_tensor = torch.tensor(buffer.T, dtype=torch.float32)
-    pitch, conf, amp = pesto_model(buffer_tensor, return_activations=False, convert_to_freq=True)
+    pitch, conf, amp = pesto_model(
+        buffer_tensor, return_activations=False, convert_to_freq=True
+    )
 
-    pitch_val = pitch.mean().item()/SAMPLE_SCALE if pitch.numel() > 0 else 0.0
+    pitch_val = pitch.mean().item() / SAMPLE_SCALE if pitch.numel() > 0 else 0.0
     conf_val = conf.mean().item() if conf.numel() > 0 else 0.1
 
-    if not torch.isfinite(pitch.mean()): pitch_val = 0.0
-    if not torch.isfinite(conf.mean()): conf_val = 0.1
+    if not torch.isfinite(pitch.mean()):
+        pitch_val = 0.0
+    if not torch.isfinite(conf.mean()):
+        conf_val = 0.1
 
     # Update history
     pitch_history = pitch_history[1:] + [pitch_val]
@@ -66,10 +69,7 @@ def update(frame):
     new_alphas = []
 
     for i in range(HISTORY_LEN - 1):
-        new_segments.append([
-            [i, pitch_history[i]],
-            [i + 1, pitch_history[i + 1]]
-        ])
+        new_segments.append([[i, pitch_history[i]], [i + 1, pitch_history[i + 1]]])
         alpha = max(0.05, min(conf_history[i], 1.0))  # Clamp alpha to [0.05, 1.0]
         new_alphas.append(alpha)
 
@@ -79,7 +79,8 @@ def update(frame):
     line_collection.set_segments(new_segments)
     line_collection.set_color(colors)
 
-    return line_collection,
+    return (line_collection,)
+
 
 # === Animate ===
 ani = animation.FuncAnimation(fig, update, interval=50, blit=True)

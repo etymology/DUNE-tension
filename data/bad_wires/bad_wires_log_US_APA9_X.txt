@@ -1,0 +1,8 @@
+US_APA9 - Layer X, Side A:
+  No bad wire_numbers
+  Outlier wire_numbers (far from moving average): 1, 2, 7, 15, 105, 106, 108, 109, 110, 111, 121, 122, 143, 166, 169, 170, 171, 173, 264, 276, 312, 317, 318, 343, 412, 415, 416, 418, 419, 450, 472
+
+US_APA9 - Layer X, Side B:
+  No bad wire_numbers
+  Outlier wire_numbers (far from moving average): 217, 285, 286, 309, 312, 323, 330, 333, 337, 340, 341, 345, 384, 408
+
