@@ -14,6 +14,9 @@ def test_spoof_functions():
     # Basic behaviour
     assert plc.spoof_get_xy() == (3000.0, 1300.0)
     assert plc.spoof_goto_xy(10, 20)
+    # Position should update
+    assert plc.spoof_get_xy() == (10, 20)
     assert plc.spoof_wiggle(0.5)
-    # Bounds check
+    # Bounds check should fail and not update position
     assert not plc.spoof_goto_xy(-1, -1)
+    assert plc.spoof_get_xy() == (10, 20)

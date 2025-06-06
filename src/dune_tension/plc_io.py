@@ -114,20 +114,25 @@ def is_web_server_active():
 # Spoofing utilities
 # ---------------------------------------------------------------------------
 
+# Track spoofed position so that movement functions can update it
+_SPOOF_XY = [3000.0, 1300.0]
+
+
 def spoof_get_xy() -> tuple[float, float]:
-    """Return a fixed XY position when PLC hardware is not available."""
-    return 3000.0, 1300.0
+    """Return the current spoofed XY position."""
+    return tuple(_SPOOF_XY)
 
 
 def spoof_goto_xy(x_target: float, y_target: float) -> bool:
-    """Pretend to move the winder to a position when testing."""
+    """Pretend to move the winder and update the spoofed position."""
     # Reuse bounds check from :func:`goto_xy` for consistency
     if x_target < 0 or x_target > 7174 or y_target < 0 or y_target > 2680:
-        print(
-            f"[spoof] Motion target {x_target},{y_target} out of bounds."
-        )
+        print(f"[spoof] Motion target {x_target},{y_target} out of bounds.")
         return False
+
     print(f"[spoof] Moving to {x_target},{y_target}")
+    _SPOOF_XY[0] = x_target
+    _SPOOF_XY[1] = y_target
     return True
 
 
