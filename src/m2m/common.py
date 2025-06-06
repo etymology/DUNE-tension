@@ -193,7 +193,7 @@ def GetComponent(componentUUID, connection, headers, version=0):
         component = json.loads(connection.getresponse().read().decode("utf-8"))
 
         # If the provided UUID doesn't correspond to an existing component record, print an error and exit the function immediately
-        if component == None:
+        if component is None:
             sys.exit(
                 f" GetComponent() - ERROR: there is no component record with component UUID = {componentUUID} \n"
             )
@@ -226,7 +226,7 @@ def EditComponent(
         component = json.loads(connection.getresponse().read().decode("utf-8"))
 
         # If the provided UUID doesn't correspond to an existing component record, print an error and exit the function immediately
-        if component == None:
+        if component is None:
             sys.exit(
                 f" EditComponent() - ERROR: there is no component record with component UUID = {componentUUID} \n"
             )
@@ -365,7 +365,7 @@ def GetAction(actionID, connection, headers, version=0):
         action = json.loads(connection.getresponse().read().decode("utf-8"))
 
         # If the provided ID doesn't correspond to an existing action record, print an error and exit the function immediately
-        if action == None:
+        if action is None:
             sys.exit(
                 f" GetAction() - ERROR: there is no action record with action ID = {actionID} \n"
             )

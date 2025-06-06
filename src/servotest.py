@@ -3,7 +3,7 @@
 import tkinter as tk
 from threading import Thread, Event
 import time
-from maestro import Controller
+from maestro.maestro import Controller
 
 
 class ServoController:

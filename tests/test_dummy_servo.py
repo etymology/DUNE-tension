@@ -7,7 +7,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 # Provide a minimal 'serial' module for import
 sys.modules.setdefault("serial", types.ModuleType("serial"))
 
-from dune_tension.maestro import DummyController
+from maestro.maestro import DummyController
 
 
 def test_dummy_servo():

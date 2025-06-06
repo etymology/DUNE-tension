@@ -24,7 +24,7 @@ from geometry import (
     length_lookup,
 )
 from audioProcessing import analyze_sample, get_samplerate
-from plc_io import is_web_server_active, goto_xy
+from plc_io import is_web_server_active
 from data_cache import get_dataframe, update_dataframe, EXPECTED_COLUMNS
 
 
@@ -80,7 +80,12 @@ class Tensiometer:
         if not spoof_movement and web_ok:
             from plc_io import get_xy, goto_xy, wiggle
         else:
-            from plc_io import spoof_get_xy as get_xy, spoof_goto_xy as goto_xy, spoof_wiggle as wiggle
+            from plc_io import (
+                spoof_get_xy as get_xy,
+                spoof_goto_xy as goto_xy,
+                spoof_wiggle as wiggle,
+            )
+
             print(
                 "Web server is not active or spoof_movement enabled. Using dummy functions."
             )
@@ -197,9 +202,8 @@ class Tensiometer:
                     print("tension measurement interrupted!")
                     return None, wire_y
                 x, y = self.get_current_xy_position()
-                if (
-                    confidence > self.config.confidence_threshold
-                    and tension_plausible(tension)
+                if confidence > self.config.confidence_threshold and tension_plausible(
+                    tension
                 ):
                     wiggle_start_time = time.time()
                     wires.append(
@@ -230,7 +234,9 @@ class Tensiometer:
                         f"confidence: {confidence * 100:.1f}%",
                         f"y: {y:.1f}",
                     )
-        return ([] if not self.stop_event or not self.stop_event.is_set() else None), wire_y
+        return (
+            [] if not self.stop_event or not self.stop_event.is_set() else None
+        ), wire_y
 
     def _generate_result(
         self,
@@ -270,9 +276,7 @@ class Tensiometer:
                     length=length, frequency=result.frequency
                 )
                 result.tension_pass = tension_pass(result.tension, length)
-                result.confidence = np.average(
-                    [d.confidence for d in passing_wires]
-                )
+                result.confidence = np.average([d.confidence for d in passing_wires])
                 result.t_sigma = np.std([d.tension for d in passing_wires])
                 result.x = round(np.average([d.x for d in passing_wires]), 1)
                 result.y = round(np.average([d.y for d in passing_wires]), 1)
@@ -297,9 +301,7 @@ class Tensiometer:
             print("Measurement interrupted.")
             return
         if not succeed:
-            print(
-                f"Failed to move to wire {wire_number} position {wire_x},{wire_y}."
-            )
+            print(f"Failed to move to wire {wire_number} position {wire_x},{wire_y}.")
             return TensionResult(
                 layer=self.config.layer,
                 side=self.config.side,
@@ -361,9 +363,8 @@ class Tensiometer:
                     record_thread.join()
                     return
                 x, y = self.get_current_xy_position()
-                if (
-                    confidence > self.config.confidence_threshold
-                    and tension_plausible(tension)
+                if confidence > self.config.confidence_threshold and tension_plausible(
+                    tension
                 ):
                     wiggle_start_time = time.time()
                     wires.append(

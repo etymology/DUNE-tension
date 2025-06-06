@@ -50,9 +50,7 @@ def tension_plausible(tension: float) -> bool:
     return tension < MAX_PHYSICAL_TENSION and tension > MIN_PHYSICAL_TENSION
 
 
-def has_cluster_dict(
-    data: Sequence[Any], key: str, n: int
-) -> list[Any]:
+def has_cluster_dict(data: Sequence[Any], key: str, n: int) -> list[Any]:
     """Return a subset of ``data`` of size ``n`` forming a cluster.
 
     ``data`` may be a list of dictionaries or objects with attributes
@@ -65,7 +63,10 @@ def has_cluster_dict(
         return []
 
     for subset in combinations(data, n):
-        values = [item[key] if isinstance(item, dict) else getattr(item, key) for item in subset]
+        values = [
+            item[key] if isinstance(item, dict) else getattr(item, key)
+            for item in subset
+        ]
         if np.std(values) < 0.1:
             return list(subset)
 
