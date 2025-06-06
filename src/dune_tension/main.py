@@ -98,8 +98,8 @@ def load_state():
 def create_tensiometer():
     try:
         samples = int(entry_samples.get())
-        if samples < 2:
-            raise ValueError("Samples per wire must be ≥ 2")
+        if samples < 1:
+            raise ValueError("Samples per wire must be ≥ 1")
 
         conf = float(entry_confidence.get())
         if not (0.0 <= conf <= 1.0):
@@ -209,52 +209,56 @@ tk.Checkbutton(root, text="Flipped", variable=flipped_var).grid(
     row=3, column=1, sticky="w"
 )
 
+# Measurement frame
+measurement_frame = tk.LabelFrame(root, text="Measurement")
+measurement_frame.grid(row=4, column=0, columnspan=3, pady=5, sticky="we")
+
 # Samples per wire
-tk.Label(root, text="Samples per Wire (≥2):").grid(row=4, column=0, sticky="e")
-entry_samples = tk.Entry(root)
-entry_samples.grid(row=4, column=1)
+tk.Label(measurement_frame, text="Samples per Wire (≥1):").grid(row=0, column=0, sticky="e")
+entry_samples = tk.Entry(measurement_frame)
+entry_samples.grid(row=0, column=1)
 
 # Confidence threshold
-tk.Label(root, text="Confidence Threshold (0.0–1.0):").grid(row=5, column=0, sticky="e")
-entry_confidence = tk.Entry(root)
-entry_confidence.grid(row=5, column=1)
+tk.Label(measurement_frame, text="Confidence Threshold (0.0–1.0):").grid(row=1, column=0, sticky="e")
+entry_confidence = tk.Entry(measurement_frame)
+entry_confidence.grid(row=1, column=1)
 
 # Wire number
-tk.Label(root, text="Wire Number:").grid(row=6, column=0, sticky="e")
-entry_wire = tk.Entry(root)
-entry_wire.grid(row=6, column=1)
-tk.Button(root, text="Calibrate", command=measure_calibrate).grid(row=6, column=2)
+tk.Label(measurement_frame, text="Wire Number:").grid(row=2, column=0, sticky="e")
+entry_wire = tk.Entry(measurement_frame)
+entry_wire.grid(row=2, column=1)
+tk.Button(measurement_frame, text="Calibrate", command=measure_calibrate).grid(row=2, column=2)
 
 # Wire list
-tk.Label(root, text="Wire List:").grid(row=7, column=0, sticky="e")
+tk.Label(root, text="Wire List:").grid(row=5, column=0, sticky="e")
 entry_wire_list = tk.Entry(root)
-entry_wire_list.grid(row=7, column=1)
-tk.Button(root, text="Seek Wire(s)", command=measure_list).grid(row=7, column=2)
+entry_wire_list.grid(row=5, column=1)
+tk.Button(root, text="Seek Wire(s)", command=measure_list).grid(row=5, column=2)
 
 # Measure Auto
-tk.Button(root, text="Measure Auto", command=measure_auto).grid(row=8, column=0)
+tk.Button(root, text="Measure Auto", command=measure_auto).grid(row=6, column=0)
 
 # Interrupt
-tk.Button(root, text="Interrupt", command=interrupt).grid(row=8, column=1)
+tk.Button(root, text="Interrupt", command=interrupt).grid(row=6, column=1)
 
 # Servo Speed Slider
-tk.Label(root, text="Servo Speed (1–255):").grid(row=9, column=0, sticky="e")
+tk.Label(root, text="Servo Speed (1–255):").grid(row=7, column=0, sticky="e")
 speed_slider = tk.Scale(
     root, from_=1, to=255, orient=tk.HORIZONTAL, command=servo_controller.set_speed
 )
 speed_slider.set(1)
-speed_slider.grid(row=9, column=1)
+speed_slider.grid(row=7, column=1)
 
 # Servo Acceleration Slider
-tk.Label(root, text="Servo Acceleration (1–255):").grid(row=10, column=0, sticky="e")
+tk.Label(root, text="Servo Acceleration (1–255):").grid(row=8, column=0, sticky="e")
 accel_slider = tk.Scale(
     root, from_=1, to=255, orient=tk.HORIZONTAL, command=servo_controller.set_accel
 )
 accel_slider.set(1)
-accel_slider.grid(row=10, column=1)
+accel_slider.grid(row=8, column=1)
 
 # Dwell Time Slider
-tk.Label(root, text="Dwell Time (0.00–2.00s):").grid(row=11, column=0, sticky="e")
+tk.Label(root, text="Dwell Time (0.00–2.00s):").grid(row=9, column=0, sticky="e")
 dwell_slider = tk.Scale(
     root,
     from_=0,
@@ -263,7 +267,7 @@ dwell_slider = tk.Scale(
     command=lambda val: servo_controller.set_dwell_time(float(val) / 100),
 )
 dwell_slider.set(100)
-dwell_slider.grid(row=11, column=1)
+dwell_slider.grid(row=9, column=1)
 
 load_state()
 root.mainloop()
