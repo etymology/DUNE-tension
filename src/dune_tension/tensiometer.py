@@ -72,7 +72,7 @@ class Tensiometer:
 
             self.samplerate = 44100  # Default samplerate for spoofing
             self.record_audio_func = lambda duration, sample_rate: spoof_audio_sample(
-                "data/renamed_audio"
+                "audio"
             )
         else:
             from audioProcessing import record_audio

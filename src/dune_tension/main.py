@@ -46,7 +46,7 @@ class ServoController:
             time.sleep(self.dwell_time)
 
 
-if os.environ.get("SPOOF_SERVO"):
+if os.environ.get("SPOOF_SERVO") or os.environ.get("SPOOF_AUDIO"):
     servo_controller = ServoController(servo=DummyController())
 else:
     servo_controller = ServoController()
@@ -109,13 +109,14 @@ def create_tensiometer():
         messagebox.showerror("Input Error", str(e))
         raise
 
+    spoof_audio = bool(os.environ.get("SPOOF_AUDIO"))
     return Tensiometer(
         apa_name=entry_apa.get(),
         layer=layer_var.get(),
         side=side_var.get(),
         flipped=flipped_var.get(),
-        spoof=False,
-        spoof_movement=bool(os.environ.get("SPOOF_PLC")),
+        spoof=spoof_audio,
+        spoof_movement=bool(os.environ.get("SPOOF_PLC") or spoof_audio),
         stop_event=stop_event,
         samples_per_wire=samples,
         confidence_threshold=conf,
