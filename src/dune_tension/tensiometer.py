@@ -115,6 +115,9 @@ class Tensiometer:
         print("Measuring missing wires...")
         print(f"Missing wires: {wires_to_measure}")
         for wire_number in wires_to_measure:
+            if self.stop_event and self.stop_event.is_set():
+                print("Measurement interrupted.")
+                return
             print(f"Measuring wire {wire_number}...")
             x, y = get_xy_from_file(self.config, wire_number)
             self.collect_wire_data(wire_number=wire_number, wire_x=x, wire_y=y)
@@ -143,10 +146,13 @@ class Tensiometer:
             while (time.time() - start_time) < 30:
                 if self.stop_event and self.stop_event.is_set():
                     print("tension measurement interrupted!")
-                    return
+                    return None
                 audio_sample = self.record_audio_func(
                     duration=0.15, sample_rate=self.samplerate
                 )
+                if self.stop_event and self.stop_event.is_set():
+                    print("tension measurement interrupted!")
+                    return None
                 if self.config.save_audio and not self.config.spoof:
                     np.savez(
                         f"audio/{self.config.layer}{self.config.side}{wire_number}_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}",
@@ -160,6 +166,9 @@ class Tensiometer:
                     frequency, confidence, tension, tension_ok = analyze_sample(
                         audio_sample, self.samplerate, length
                     )
+                    if self.stop_event and self.stop_event.is_set():
+                        print("tension measurement interrupted!")
+                        return None
                     x, y = self.get_current_xy_position()
                     if (
                         confidence > self.config.confidence_threshold
@@ -189,7 +198,7 @@ class Tensiometer:
                             f"confidence: {confidence * 100:.1f}%",
                             f"y: {y:.1f}",
                         )
-            return []
+            return [] if not self.stop_event or not self.stop_event.is_set() else None
 
         def generate_result(passingWires):
             nonlocal wire_x, wire_y
@@ -231,7 +240,14 @@ class Tensiometer:
         length = length_lookup(self.config.layer, wire_number, zone_lookup(wire_x))
         start_time = time.time()
 
+        if self.stop_event and self.stop_event.is_set():
+            print("Measurement interrupted.")
+            return
+
         succeed = goto_xy(wire_x, wire_y)
+        if self.stop_event and self.stop_event.is_set():
+            print("Measurement interrupted.")
+            return
         if not succeed:
             print(f"Failed to move to wire {wire_number} position {wire_x},{wire_y}.")
             return {
@@ -250,6 +266,9 @@ class Tensiometer:
             }
 
         wires = collect_samples(start_time)
+        if wires is None:
+            print("Measurement interrupted.")
+            return
         result = generate_result(wires)
 
         if result["tension"] == 0:
