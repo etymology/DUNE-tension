@@ -115,7 +115,7 @@ def is_web_server_active():
 # ---------------------------------------------------------------------------
 
 # Track spoofed position so that movement functions can update it
-_SPOOF_XY = [3000.0, 1300.0]
+_SPOOF_XY = [6300.0, 200.0]
 
 
 def spoof_get_xy() -> tuple[float, float]:
@@ -128,7 +128,6 @@ def spoof_goto_xy(x_target: float, y_target: float) -> bool:
     # Reuse bounds check from :func:`goto_xy` for consistency
     if x_target < 0 or x_target > 7174 or y_target < 0 or y_target > 2680:
         print(f"[spoof] Motion target {x_target},{y_target} out of bounds.")
-        return False
 
     print(f"[spoof] Moving to {x_target},{y_target}")
     _SPOOF_XY[0] = x_target
