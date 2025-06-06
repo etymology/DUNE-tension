@@ -131,10 +131,10 @@ class Tensiometer:
         )
 
     def measure_auto(self) -> None:
-        from analyze_tension_data import analyze_tension_data
+        from analyze_tension_data import get_missing_wires
 
-        result = analyze_tension_data(self.config)
-        wires_to_measure = result.get("missing_wires", [])[self.config.side]
+        wires_dict = get_missing_wires(self.config)
+        wires_to_measure = wires_dict.get(self.config.side, [])
 
         print(f"Missing wires: {wires_to_measure}")
         if not wires_to_measure:
@@ -416,6 +416,13 @@ class Tensiometer:
         row = {col: getattr(result, col, None) for col in EXPECTED_COLUMNS}
         df.loc[len(df)] = row
         update_dataframe(self.config.data_path, df)
+
+        try:
+            from analyze_tension_data import update_tension_logs
+
+            update_tension_logs(self.config)
+        except Exception as exc:
+            print(f"Failed to update logs: {exc}")
 
         return result
 

@@ -3,6 +3,7 @@ from tkinter import messagebox
 import json
 import os
 from tensiometer import Tensiometer
+from tensiometer_functions import make_config
 from threading import Event, Thread
 import time
 from maestro import Controller, DummyController
@@ -183,6 +184,44 @@ def interrupt():
     servo_controller.stop_loop()
 
 
+def monitor_tension_logs():
+    """Check for updates to the tension data file and refresh logs."""
+    config = make_config(
+        apa_name=entry_apa.get(),
+        layer=layer_var.get(),
+        side=side_var.get(),
+        flipped=flipped_var.get(),
+    )
+
+    path = config.data_path
+    try:
+        mtime = os.path.getmtime(path)
+    except OSError:
+        mtime = None
+
+    if (
+        monitor_tension_logs.last_path != path
+        or monitor_tension_logs.last_mtime != mtime
+    ):
+        monitor_tension_logs.last_path = path
+        monitor_tension_logs.last_mtime = mtime
+        try:
+            from analyze_tension_data import update_tension_logs
+
+            update_tension_logs(config)
+            print(
+                f"Updated tension logs for {config.apa_name} layer {config.layer}"
+            )
+        except Exception as exc:
+            print(f"Failed to update logs: {exc}")
+
+    root.after(10000, monitor_tension_logs)
+
+
+monitor_tension_logs.last_path = ""
+monitor_tension_logs.last_mtime = None
+
+
 root = tk.Tk()
 root.title("Tensiometer GUI")
 
@@ -296,4 +335,5 @@ dwell_slider.grid(row=2, column=1)
 
 
 load_state()
+root.after(1000, monitor_tension_logs)
 root.mainloop()

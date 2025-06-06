@@ -40,7 +40,37 @@ def greedy_wire_ordering_with_bounds_tiebreak(existing_wires, expected_range):
     return result
 
 
+def _load_and_analyze(config: TensiometerConfig) -> Dict[str, Any]:
+    """Helper that loads the data file and performs analysis."""
+    expected_range = get_expected_range(config.layer)
+    df = preprocess_dataframe(get_dataframe(config.data_path))
+    df_sorted = df.sort_values(by="time")
+    return analyze_by_side(df_sorted, expected_range, config.layer)
+
+
 def analyze_tension_data(config: TensiometerConfig) -> Dict[str, Any]:
+    """Return analysis results and update all output files."""
+    results = _load_and_analyze(config)
+
+    log_paths = update_tension_logs(config, _results=results)
+
+    return {
+        **log_paths,
+        "bad_wires": results["bad_wires"],
+        "missing_wires": results["missing_wires"],
+    }
+
+
+def get_missing_wires(config: TensiometerConfig) -> Dict[str, List[int]]:
+    """Return a dictionary of missing wires for each side."""
+    results = _load_and_analyze(config)
+    return results["missing_wires"]
+
+
+def update_tension_logs(
+    config: TensiometerConfig, _results: Dict[str, Any] | None = None
+) -> Dict[str, str]:
+    """Update plot, summaries and bad wire logs for the given configuration."""
     output_dir = f"data/tension_plots_{config.apa_name}"
     bad_wires_log_path = (
         f"data/bad_wires/bad_wires_log_{config.apa_name}_{config.layer}.txt"
@@ -49,13 +79,10 @@ def analyze_tension_data(config: TensiometerConfig) -> Dict[str, Any]:
         f"data/tension_summaries/tension_summary_{config.apa_name}_{config.layer}.csv"
     )
 
-    expected_range = get_expected_range(config.layer)
     os.makedirs(output_dir, exist_ok=True)
 
-    df = preprocess_dataframe(get_dataframe(config.data_path))
-    df_sorted = df.sort_values(by="time")
+    results = _results if _results is not None else _load_and_analyze(config)
 
-    results = analyze_by_side(df_sorted, expected_range, config.layer)
     write_summary_csv(results["tension_series"], tension_summary_csv_path)
     save_plot(
         results["line_data"],
@@ -76,8 +103,6 @@ def analyze_tension_data(config: TensiometerConfig) -> Dict[str, Any]:
         "bad_wires_log": bad_wires_log_path,
         "tension_summary_csv": tension_summary_csv_path,
         "plot_image": f"{output_dir}/tension_plot_{config.apa_name}_layer_{config.layer}_combined.png",
-        "bad_wires": results["bad_wires"],
-        "missing_wires": results["missing_wires"],
     }
 
 
