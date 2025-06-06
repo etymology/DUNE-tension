@@ -98,8 +98,8 @@ def load_state():
 def create_tensiometer():
     try:
         samples = int(entry_samples.get())
-        if samples < 2:
-            raise ValueError("Samples per wire must be ≥ 2")
+        if samples < 1:
+            raise ValueError("Samples per wire must be ≥ 1")
 
         conf = float(entry_confidence.get())
         if not (0.0 <= conf <= 1.0):
@@ -210,7 +210,7 @@ tk.Checkbutton(root, text="Flipped", variable=flipped_var).grid(
 )
 
 # Samples per wire
-tk.Label(root, text="Samples per Wire (≥2):").grid(row=4, column=0, sticky="e")
+tk.Label(root, text="Samples per Wire (≥1):").grid(row=4, column=0, sticky="e")
 entry_samples = tk.Entry(root)
 entry_samples.grid(row=4, column=1)
 
