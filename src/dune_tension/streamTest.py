@@ -9,12 +9,11 @@ from matplotlib.collections import LineCollection
 RATE = 48000
 BUFFER_SIZE = 2048
 HISTORY_LEN = 200
-SAMPLE_SCALE = 4
 
 pesto_model = load_model(
     "mir-1k_g7",
     step_size=5.0,
-    sampling_rate=RATE * SAMPLE_SCALE,
+    sampling_rate=RATE,
     streaming=True,
     max_batch_size=1,
 )
@@ -52,7 +51,7 @@ def update(frame):
         buffer_tensor, return_activations=False, convert_to_freq=True
     )
 
-    pitch_val = pitch.mean().item() / SAMPLE_SCALE if pitch.numel() > 0 else 0.0
+    pitch_val = pitch.mean().item() if pitch.numel() > 0 else 0.0
     conf_val = conf.mean().item() if conf.numel() > 0 else 0.1
 
     if not torch.isfinite(pitch.mean()):
