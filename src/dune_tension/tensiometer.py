@@ -18,6 +18,7 @@ from tensiometer_functions import (
     make_config,
     measure_list,
     get_xy_from_file,
+    check_stop_event,
 )
 from geometry import (
     zone_lookup,
@@ -143,8 +144,7 @@ class Tensiometer:
         print("Measuring missing wires...")
         print(f"Missing wires: {wires_to_measure}")
         for wire_number in wires_to_measure:
-            if self.stop_event and self.stop_event.is_set():
-                print("Measurement interrupted.")
+            if check_stop_event(self.stop_event):
                 return
             print(f"Measuring wire {wire_number}...")
             x, y = get_xy_from_file(self.config, wire_number)
@@ -176,14 +176,12 @@ class Tensiometer:
         wiggle_start_time = time.time()
         current_wiggle = 0.5
         while (time.time() - start_time) < 30:
-            if self.stop_event and self.stop_event.is_set():
-                print("tension measurement interrupted!")
+            if check_stop_event(self.stop_event, "tension measurement interrupted!"):
                 return None, wire_y
             audio_sample = self.record_audio_func(
                 duration=0.15, sample_rate=self.samplerate
             )
-            if self.stop_event and self.stop_event.is_set():
-                print("tension measurement interrupted!")
+            if check_stop_event(self.stop_event, "tension measurement interrupted!"):
                 return None, wire_y
             if self.config.save_audio and not self.config.spoof:
                 np.savez(
@@ -198,8 +196,7 @@ class Tensiometer:
                 frequency, confidence, tension, tension_ok = analyze_sample(
                     audio_sample, self.samplerate, length
                 )
-                if self.stop_event and self.stop_event.is_set():
-                    print("tension measurement interrupted!")
+                if check_stop_event(self.stop_event, "tension measurement interrupted!"):
                     return None, wire_y
                 x, y = self.get_current_xy_position()
                 if confidence > self.config.confidence_threshold and tension_plausible(
@@ -292,13 +289,11 @@ class Tensiometer:
         length = length_lookup(self.config.layer, wire_number, zone_lookup(wire_x))
         start_time = time.time()
 
-        if self.stop_event and self.stop_event.is_set():
-            print("Measurement interrupted.")
+        if check_stop_event(self.stop_event):
             return
 
         succeed = self.goto_xy_func(wire_x, wire_y)
-        if self.stop_event and self.stop_event.is_set():
-            print("Measurement interrupted.")
+        if check_stop_event(self.stop_event):
             return
         if not succeed:
             print(f"Failed to move to wire {wire_number} position {wire_x},{wire_y}.")
@@ -343,8 +338,7 @@ class Tensiometer:
         current_wiggle = 0.5
 
         while (time.time() - start_time) < 30:
-            if self.stop_event and self.stop_event.is_set():
-                print("Measurement interrupted.")
+            if check_stop_event(self.stop_event):
                 record_stop.set()
                 record_thread.join()
                 return
@@ -357,8 +351,7 @@ class Tensiometer:
                 frequency, confidence, tension, tension_ok = analyze_sample(
                     audio_sample, self.samplerate, length
                 )
-                if self.stop_event and self.stop_event.is_set():
-                    print("Measurement interrupted.")
+                if check_stop_event(self.stop_event):
                     record_stop.set()
                     record_thread.join()
                     return
@@ -403,8 +396,7 @@ class Tensiometer:
 
         record_stop.set()
         record_thread.join()
-        if self.stop_event and self.stop_event.is_set():
-            print("Measurement interrupted.")
+        if check_stop_event(self.stop_event):
             return
 
         result = self._generate_result(wires, length, wire_number, wire_x, wire_y)
