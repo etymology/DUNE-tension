@@ -98,8 +98,8 @@ def load_state():
 def create_tensiometer():
     try:
         samples = int(entry_samples.get())
-        if samples < 2:
-            raise ValueError("Samples per wire must be ≥ 2")
+        if samples < 1:
+            raise ValueError("Samples per wire must be ≥ 1")
 
         conf = float(entry_confidence.get())
         if not (0.0 <= conf <= 1.0):
@@ -225,23 +225,21 @@ tk.Checkbutton(apa_frame, text="Flipped", variable=flipped_var).grid(
     row=3, column=1, sticky="w"
 )
 
-# --- Measurement Parameters -----------------------------------------------
-tk.Label(measure_frame, text="Samples per Wire (≥2):").grid(row=0, column=0, sticky="e")
-entry_samples = tk.Entry(measure_frame)
-entry_samples.grid(row=0, column=1)
+# Samples per wire
+tk.Label(root, text="Samples per Wire (≥1):").grid(row=4, column=0, sticky="e")
+entry_samples = tk.Entry(root)
+entry_samples.grid(row=4, column=1)
 
-tk.Label(measure_frame, text="Confidence Threshold (0.0–1.0):").grid(
-    row=1, column=0, sticky="e"
-)
-entry_confidence = tk.Entry(measure_frame)
-entry_confidence.grid(row=1, column=1)
+# Confidence threshold
+tk.Label(root, text="Confidence Threshold (0.0–1.0):").grid(row=5, column=0, sticky="e")
+entry_confidence = tk.Entry(root)
+entry_confidence.grid(row=5, column=1)
 
-tk.Label(measure_frame, text="Wire Number:").grid(row=2, column=0, sticky="e")
-entry_wire = tk.Entry(measure_frame)
-entry_wire.grid(row=2, column=1)
-tk.Button(measure_frame, text="Calibrate", command=measure_calibrate).grid(
-    row=2, column=2
-)
+# Wire number
+tk.Label(root, text="Wire Number:").grid(row=6, column=0, sticky="e")
+entry_wire = tk.Entry(root)
+entry_wire.grid(row=6, column=1)
+tk.Button(root, text="Calibrate", command=measure_calibrate).grid(row=6, column=2)
 
 tk.Label(measure_frame, text="Wire List:").grid(row=3, column=0, sticky="e")
 entry_wire_list = tk.Entry(measure_frame)
