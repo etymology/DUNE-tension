@@ -125,6 +125,7 @@ def create_tensiometer():
 
 def measure_calibrate():
     def run():
+        stop_event.clear()
         servo_controller.start_loop()
         try:
             t = create_tensiometer()
@@ -134,12 +135,14 @@ def measure_calibrate():
             print("Done calibrating wire", wire_number)
         finally:
             servo_controller.stop_loop()
+            stop_event.clear()
 
     Thread(target=run, daemon=True).start()
 
 
 def measure_auto():
     def run():
+        stop_event.clear()
         servo_controller.start_loop()
         try:
             t = create_tensiometer()
@@ -148,12 +151,14 @@ def measure_auto():
             print("Done measuring all wires")
         finally:
             servo_controller.stop_loop()
+            stop_event.clear()
 
     Thread(target=run, daemon=True).start()
 
 
 def measure_list():
     def run():
+        stop_event.clear()
         servo_controller.start_loop()
         try:
             t = create_tensiometer()
@@ -168,13 +173,14 @@ def measure_list():
             print("Done measuring wires", wire_list)
         finally:
             servo_controller.stop_loop()
+            stop_event.clear()
 
     Thread(target=run, daemon=True).start()
 
 
 def interrupt():
     stop_event.set()
-    stop_event.clear()
+    servo_controller.stop_loop()
 
 
 root = tk.Tk()
