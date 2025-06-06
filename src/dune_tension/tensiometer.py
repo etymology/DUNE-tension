@@ -1,4 +1,5 @@
 import threading
+import queue
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Optional
@@ -309,15 +310,102 @@ class Tensiometer:
                 Gcode=f"X{round(wire_x, 1)} Y{round(wire_y, 1)}",
             )
 
-        wires, wire_y = self._collect_samples(
-            wire_number,
-            length,
-            start_time,
-            wire_y,
-        )
-        if wires is None:
+        wires: list[TensionResult] = []
+        sample_queue: queue.Queue = queue.Queue()
+        record_stop = threading.Event()
+
+        def record_loop() -> None:
+            while (
+                not record_stop.is_set()
+                and not (self.stop_event and self.stop_event.is_set())
+                and (time.time() - start_time) < 30
+            ):
+                audio_sample = self.record_audio_func(
+                    duration=0.15, sample_rate=self.samplerate
+                )
+                if self.stop_event and self.stop_event.is_set():
+                    break
+                if audio_sample is not None:
+                    if self.config.save_audio and not self.config.spoof:
+                        np.savez(
+                            f"audio/{self.config.layer}{self.config.side}{wire_number}_"
+                            f"{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}",
+                            audio_sample,
+                        )
+                    sample_queue.put(audio_sample)
+
+        record_thread = threading.Thread(target=record_loop, daemon=True)
+        record_thread.start()
+
+        wiggle_start_time = time.time()
+        current_wiggle = 0.5
+
+        while (time.time() - start_time) < 30:
+            if self.stop_event and self.stop_event.is_set():
+                print("Measurement interrupted.")
+                record_stop.set()
+                record_thread.join()
+                return
+            try:
+                audio_sample = sample_queue.get(timeout=0.1)
+            except queue.Empty:
+                audio_sample = None
+
+            if audio_sample is not None:
+                frequency, confidence, tension, tension_ok = analyze_sample(
+                    audio_sample, self.samplerate, length
+                )
+                if self.stop_event and self.stop_event.is_set():
+                    print("Measurement interrupted.")
+                    record_stop.set()
+                    record_thread.join()
+                    return
+                x, y = self.get_current_xy_position()
+                if (
+                    confidence > self.config.confidence_threshold
+                    and tension_plausible(tension)
+                ):
+                    wiggle_start_time = time.time()
+                    wires.append(
+                        TensionResult(
+                            layer=self.config.layer,
+                            side=self.config.side,
+                            wire_number=wire_number,
+                            tension=tension,
+                            tension_pass=tension_ok,
+                            frequency=frequency,
+                            confidence=confidence,
+                            x=x,
+                            y=y,
+                        )
+                    )
+                    wire_y = np.average([d.y for d in wires])
+                    current_wiggle = (current_wiggle + 0.1) / 1.5
+                    if self.config.samples_per_wire == 1:
+                        break
+                    cluster = has_cluster_dict(
+                        wires, "tension", self.config.samples_per_wire
+                    )
+                    if cluster != []:
+                        wires = cluster
+                        break
+                    print(
+                        f"tension: {tension:.1f}N, frequency: {frequency:.1f}Hz, ",
+                        f"confidence: {confidence * 100:.1f}%",
+                        f"y: {y:.1f}",
+                    )
+
+            if time.time() - wiggle_start_time > 1:
+                wiggle_start_time = time.time()
+                print(f"Wiggling {current_wiggle}mm")
+                self.wiggle_func(current_wiggle)
+
+        record_stop.set()
+        record_thread.join()
+        if self.stop_event and self.stop_event.is_set():
             print("Measurement interrupted.")
             return
+
         result = self._generate_result(wires, length, wire_number, wire_x, wire_y)
 
         if result.tension == 0:
