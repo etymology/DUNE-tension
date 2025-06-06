@@ -5,6 +5,14 @@ from typing import List, Tuple
 from data_cache import get_dataframe
 
 
+def check_stop_event(stop_event: Optional[object], message: str = "Measurement interrupted.") -> bool:
+    """Print a message and return True if the stop event is set."""
+    if stop_event and stop_event.is_set():
+        print(message)
+        return True
+    return False
+
+
 @dataclass
 class TensiometerConfig:
     apa_name: str
@@ -199,7 +207,6 @@ def measure_list(
 
     for wire, x, y in ordered_triplets:
         print(f"Measuring wire {wire} at {x},{y}")
-        if stop_event and stop_event.is_set():
-            print("Measurement interrupted.")
+        if check_stop_event(stop_event):
             return
         collect_func(wire, x, y)
