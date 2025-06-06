@@ -5,15 +5,15 @@ import os
 from dune_tension.tensiometer import Tensiometer
 from threading import Event, Thread
 import time
-from maestro import Controller
+from maestro import Controller, DummyController
 
 state_file = "gui_state.json"
 stop_event = Event()
 
 
 class ServoController:
-    def __init__(self):
-        self.servo = Controller()
+    def __init__(self, servo=None):
+        self.servo = servo or Controller()
         self.servo.setRange(0, 4000, 8000)
         self.running = Event()
         self.dwell_time = 1.0
@@ -46,7 +46,10 @@ class ServoController:
             time.sleep(self.dwell_time)
 
 
-servo_controller = ServoController()
+if os.environ.get("SPOOF_SERVO") or os.environ.get("SPOOF_AUDIO"):
+    servo_controller = ServoController(servo=DummyController())
+else:
+    servo_controller = ServoController()
 
 
 def save_state():
@@ -106,12 +109,14 @@ def create_tensiometer():
         messagebox.showerror("Input Error", str(e))
         raise
 
+    spoof_audio = bool(os.environ.get("SPOOF_AUDIO"))
     return Tensiometer(
         apa_name=entry_apa.get(),
         layer=layer_var.get(),
         side=side_var.get(),
         flipped=flipped_var.get(),
-        spoof=False,
+        spoof=spoof_audio,
+        spoof_movement=bool(os.environ.get("SPOOF_PLC") or spoof_audio),
         stop_event=stop_event,
         samples_per_wire=samples,
         confidence_threshold=conf,
