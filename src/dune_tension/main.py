@@ -186,26 +186,42 @@ def interrupt():
 root = tk.Tk()
 root.title("Tensiometer GUI")
 
-# APA Name
-tk.Label(root, text="APA Name:").grid(row=0, column=0, sticky="e")
-entry_apa = tk.Entry(root)
+# --- Layout Frames ---------------------------------------------------------
+# The GUI is split into logical areas to make it easier to navigate.  "apa_frame"
+# holds general information about the APA being measured.  "measure_frame"
+# contains all measurement parameters and actions.  "servo_frame" groups the
+# servo configuration widgets.  Finally, "bottom_frame" simply keeps the three
+# main sections neatly stacked in the window.
+
+bottom_frame = tk.Frame(root)
+bottom_frame.grid(row=0, column=0, padx=10, pady=10)
+
+apa_frame = tk.LabelFrame(bottom_frame, text="APA")
+apa_frame.grid(row=0, column=0, sticky="ew", pady=5)
+
+measure_frame = tk.LabelFrame(bottom_frame, text="Measurement")
+measure_frame.grid(row=1, column=0, sticky="ew", pady=5)
+
+servo_frame = tk.LabelFrame(bottom_frame, text="Servo")
+servo_frame.grid(row=2, column=0, sticky="ew", pady=5)
+
+# --- APA Info --------------------------------------------------------------
+tk.Label(apa_frame, text="APA Name:").grid(row=0, column=0, sticky="e")
+entry_apa = tk.Entry(apa_frame)
 entry_apa.grid(row=0, column=1)
 
-# Layer
-tk.Label(root, text="Layer:").grid(row=1, column=0, sticky="e")
-layer_var = tk.StringVar(root)
+tk.Label(apa_frame, text="Layer:").grid(row=1, column=0, sticky="e")
+layer_var = tk.StringVar(apa_frame)
 layer_var.set("X")
-tk.OptionMenu(root, layer_var, "X", "V", "U", "G").grid(row=1, column=1)
+tk.OptionMenu(apa_frame, layer_var, "X", "V", "U", "G").grid(row=1, column=1)
 
-# Side
-tk.Label(root, text="Side:").grid(row=2, column=0, sticky="e")
-side_var = tk.StringVar(root)
+tk.Label(apa_frame, text="Side:").grid(row=2, column=0, sticky="e")
+side_var = tk.StringVar(apa_frame)
 side_var.set("A")
-tk.OptionMenu(root, side_var, "A", "B").grid(row=2, column=1)
+tk.OptionMenu(apa_frame, side_var, "A", "B").grid(row=2, column=1)
 
-# Flipped
 flipped_var = tk.BooleanVar()
-tk.Checkbutton(root, text="Flipped", variable=flipped_var).grid(
+tk.Checkbutton(apa_frame, text="Flipped", variable=flipped_var).grid(
     row=3, column=1, sticky="w"
 )
 
@@ -225,45 +241,53 @@ entry_wire = tk.Entry(root)
 entry_wire.grid(row=6, column=1)
 tk.Button(root, text="Calibrate", command=measure_calibrate).grid(row=6, column=2)
 
-# Wire list
-tk.Label(root, text="Wire List:").grid(row=7, column=0, sticky="e")
-entry_wire_list = tk.Entry(root)
-entry_wire_list.grid(row=7, column=1)
-tk.Button(root, text="Seek Wire(s)", command=measure_list).grid(row=7, column=2)
+tk.Label(measure_frame, text="Wire List:").grid(row=3, column=0, sticky="e")
+entry_wire_list = tk.Entry(measure_frame)
+entry_wire_list.grid(row=3, column=1)
+tk.Button(measure_frame, text="Seek Wire(s)", command=measure_list).grid(
+    row=3, column=2
+)
 
-# Measure Auto
-tk.Button(root, text="Measure Auto", command=measure_auto).grid(row=8, column=0)
+tk.Button(measure_frame, text="Measure Auto", command=measure_auto).grid(
+    row=4, column=0
+)
+tk.Button(measure_frame, text="Interrupt", command=interrupt).grid(row=4, column=1)
 
-# Interrupt
-tk.Button(root, text="Interrupt", command=interrupt).grid(row=8, column=1)
-
-# Servo Speed Slider
-tk.Label(root, text="Servo Speed (1–255):").grid(row=9, column=0, sticky="e")
+# --- Servo Parameters ------------------------------------------------------
+tk.Label(servo_frame, text="Servo Speed (1–255):").grid(row=0, column=0, sticky="e")
 speed_slider = tk.Scale(
-    root, from_=1, to=255, orient=tk.HORIZONTAL, command=servo_controller.set_speed
+    servo_frame,
+    from_=1,
+    to=255,
+    orient=tk.HORIZONTAL,
+    command=servo_controller.set_speed,
 )
 speed_slider.set(1)
-speed_slider.grid(row=9, column=1)
+speed_slider.grid(row=0, column=1)
 
-# Servo Acceleration Slider
-tk.Label(root, text="Servo Acceleration (1–255):").grid(row=10, column=0, sticky="e")
+tk.Label(servo_frame, text="Servo Acceleration (1–255):").grid(
+    row=1, column=0, sticky="e"
+)
 accel_slider = tk.Scale(
-    root, from_=1, to=255, orient=tk.HORIZONTAL, command=servo_controller.set_accel
+    servo_frame,
+    from_=1,
+    to=255,
+    orient=tk.HORIZONTAL,
+    command=servo_controller.set_accel,
 )
 accel_slider.set(1)
-accel_slider.grid(row=10, column=1)
+accel_slider.grid(row=1, column=1)
 
-# Dwell Time Slider
-tk.Label(root, text="Dwell Time (0.00–2.00s):").grid(row=11, column=0, sticky="e")
+tk.Label(servo_frame, text="Dwell Time (0.00–2.00s):").grid(row=2, column=0, sticky="e")
 dwell_slider = tk.Scale(
-    root,
+    servo_frame,
     from_=0,
     to=200,
     orient=tk.HORIZONTAL,
     command=lambda val: servo_controller.set_dwell_time(float(val) / 100),
 )
 dwell_slider.set(100)
-dwell_slider.grid(row=11, column=1)
+dwell_slider.grid(row=2, column=1)
 
 load_state()
 root.mainloop()
