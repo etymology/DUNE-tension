@@ -186,29 +186,33 @@ def interrupt():
 root = tk.Tk()
 root.title("Tensiometer GUI")
 
-# --- Layout Frames ---------------------------------------------------------
-# The GUI is split into logical areas to make it easier to navigate.  "apa_frame"
-# holds general information about the APA being measured.  "measure_frame"
-# contains all measurement parameters and actions.  "servo_frame" groups the
-# servo configuration widgets.  Finally, "bottom_frame" simply keeps the three
-# main sections neatly stacked in the window.
+# Measurement frame
+measurement_frame = tk.LabelFrame(root, text="Measurement")
+measurement_frame.grid(row=4, column=0, columnspan=3, pady=5, sticky="we")
 
-bottom_frame = tk.Frame(root)
-bottom_frame.grid(row=0, column=0, padx=10, pady=10)
+tk.Label(measurement_frame, text="Samples per Wire (≥1):").grid(row=0, column=0, sticky="e")
+entry_samples = tk.Entry(measurement_frame)
+entry_samples.grid(row=0, column=1)
+tk.Label(measurement_frame, text="Confidence Threshold (0.0–1.0):").grid(row=1, column=0, sticky="e")
+entry_confidence = tk.Entry(measurement_frame)
+entry_confidence.grid(row=1, column=1)
 
-apa_frame = tk.LabelFrame(bottom_frame, text="APA")
-apa_frame.grid(row=0, column=0, sticky="ew", pady=5)
+tk.Label(measurement_frame, text="Wire Number:").grid(row=2, column=0, sticky="e")
+entry_wire = tk.Entry(measurement_frame)
+entry_wire.grid(row=2, column=1)
+tk.Button(measurement_frame, text="Calibrate", command=measure_calibrate).grid(row=2, column=2)
+tk.Label(root, text="Wire List:").grid(row=5, column=0, sticky="e")
+entry_wire_list.grid(row=5, column=1)
+tk.Button(root, text="Seek Wire(s)", command=measure_list).grid(row=5, column=2)
+tk.Button(root, text="Measure Auto", command=measure_auto).grid(row=6, column=0)
 
-measure_frame = tk.LabelFrame(bottom_frame, text="Measurement")
-measure_frame.grid(row=1, column=0, sticky="ew", pady=5)
-
-servo_frame = tk.LabelFrame(bottom_frame, text="Servo")
-servo_frame.grid(row=2, column=0, sticky="ew", pady=5)
-
-# --- APA Info --------------------------------------------------------------
-tk.Label(apa_frame, text="APA Name:").grid(row=0, column=0, sticky="e")
-entry_apa = tk.Entry(apa_frame)
-entry_apa.grid(row=0, column=1)
+tk.Button(root, text="Interrupt", command=interrupt).grid(row=6, column=1)
+tk.Label(root, text="Servo Speed (1–255):").grid(row=7, column=0, sticky="e")
+speed_slider.grid(row=7, column=1)
+tk.Label(root, text="Servo Acceleration (1–255):").grid(row=8, column=0, sticky="e")
+accel_slider.grid(row=8, column=1)
+tk.Label(root, text="Dwell Time (0.00–2.00s):").grid(row=9, column=0, sticky="e")
+dwell_slider.grid(row=9, column=1)
 
 tk.Label(apa_frame, text="Layer:").grid(row=1, column=0, sticky="e")
 layer_var = tk.StringVar(apa_frame)
