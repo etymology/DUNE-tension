@@ -188,6 +188,57 @@ class Controller:
         self.sendCmd(cmd)
 
 
+class DummyController:
+    """Minimal stand-in for :class:`Controller` used during testing."""
+
+    def __init__(self, *_, **__):
+        self.Targets = [0] * 24
+        self.Mins = [0] * 24
+        self.Maxs = [0] * 24
+        self.position = 0
+
+    def close(self):
+        pass
+
+    def sendCmd(self, _):
+        pass
+
+    def setRange(self, chan, min_val, max_val):
+        self.Mins[chan] = min_val
+        self.Maxs[chan] = max_val
+
+    def getMin(self, chan):
+        return self.Mins[chan]
+
+    def getMax(self, chan):
+        return self.Maxs[chan]
+
+    def setTarget(self, chan, target):
+        self.Targets[chan] = target
+        self.position = target
+
+    def setSpeed(self, chan, speed):
+        pass
+
+    def setAccel(self, chan, accel):
+        pass
+
+    def getPosition(self, chan):
+        return self.position
+
+    def isMoving(self, chan):
+        return False
+
+    def getMovingState(self):
+        return False
+
+    def runScriptSub(self, subNumber):
+        pass
+
+    def stopScript(self):
+        pass
+
+
 if __name__ == "__main__":
     import serial.tools.list_ports
 
