@@ -1,6 +1,7 @@
 import sys
 from pathlib import Path
 import types
+import math
 
 # Insert src into path before importing
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
@@ -49,3 +50,15 @@ def test_spoof_audio_sample(tmp_path):
     (tmp_path / "sample.npz").write_bytes(b"fake")
     loaded = spoof_audio_sample(str(tmp_path))
     assert loaded == sample_audio
+
+
+def test_spoof_audio_sample_fallback(tmp_path):
+    """Should return fallback data when no npz files exist."""
+    loaded = spoof_audio_sample(str(tmp_path))
+    expected = []
+    sr = 41000
+    freq = 80
+    for i in range(sr):
+        phase = 2 * math.pi * freq * i / sr
+        expected.append(1.0 if math.sin(phase) >= 0 else -1.0)
+    assert loaded == expected
