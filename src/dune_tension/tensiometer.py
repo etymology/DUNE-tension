@@ -1,6 +1,6 @@
 import threading
 import queue
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Optional
 import time
@@ -34,19 +34,30 @@ class TensionResult:
     layer: str
     side: str
     wire_number: int
-    wire_length: float = 0.0
-    tension: float = 0.0
-    tension_pass: bool = False
     frequency: float = 0.0
-    zone: str = ""
     confidence: float = 0.0
-    t_sigma: float = 0.0
     x: float = 0.0
     y: float = 0.0
-    Gcode: str = ""
-    wires: str = ""
+    wires: list[float] | None = None
     ttf: float = 0.0
     time: Optional[float] = None
+
+    zone: int = field(init=False)
+    wire_length: float = field(init=False)
+    tension: float = field(init=False)
+    tension_pass: bool = field(init=False)
+    t_sigma: float = field(init=False)
+    Gcode: str = field(init=False)
+
+    def __post_init__(self) -> None:
+        self.zone = zone_lookup(self.x)
+        self.wire_length = length_lookup(self.layer, self.wire_number, self.zone)
+        self.tension = tension_lookup(self.wire_length, self.frequency)
+        self.tension_pass = tension_pass(self.tension, self.wire_length)
+        wires_list = self.wires or []
+        self.t_sigma = float(np.std(wires_list)) if hasattr(np, "std") else 0.0
+        self.wires = str(wires_list)
+        self.Gcode = f"X{round(self.x, 1)} Y{round(self.y, 1)}"
 
 
 class Tensiometer:
@@ -209,13 +220,11 @@ class Tensiometer:
                             layer=self.config.layer,
                             side=self.config.side,
                             wire_number=wire_number,
-                            wire_length=length,
-                            tension=tension,
-                            tension_pass=tension_ok,
                             frequency=frequency,
                             confidence=confidence,
                             x=x,
                             y=y,
+                            wires=[tension],
                         )
                     )
                     wire_y = np.average([d.y for d in wires])
@@ -240,48 +249,41 @@ class Tensiometer:
     def _generate_result(
         self,
         passing_wires: list[TensionResult],
-        length: float,
         wire_number: int,
         wire_x: float,
         wire_y: float,
     ) -> TensionResult:
+        if len(passing_wires) > 0:
+            if self.config.samples_per_wire == 1:
+                first = passing_wires[0]
+                frequency = first.frequency
+                confidence = first.confidence
+                x = first.x
+                y = first.y
+                wires = [float(first.tension)]
+            else:
+                frequency = calculate_kde_max([d.frequency for d in passing_wires])
+                confidence = np.average([d.confidence for d in passing_wires])
+                x = round(np.average([d.x for d in passing_wires]), 1)
+                y = round(np.average([d.y for d in passing_wires]), 1)
+                wires = [float(d.tension) for d in passing_wires]
+        else:
+            frequency = 0.0
+            confidence = 0.0
+            x = wire_x
+            y = wire_y
+            wires = []
+
         result = TensionResult(
             layer=self.config.layer,
             side=self.config.side,
             wire_number=wire_number,
-            wire_length=length,
-            zone=zone_lookup(wire_x),
-            x=wire_x,
-            y=wire_y,
-            Gcode=f"X{round(wire_x, 1)} Y{round(wire_y, 1)}",
+            frequency=frequency,
+            confidence=confidence,
+            x=x,
+            y=y,
+            wires=wires,
         )
-
-        if len(passing_wires) > 0:
-            if self.config.samples_per_wire == 1:
-                first = passing_wires[0]
-                result.frequency = first.frequency
-                result.tension = first.tension
-                result.tension_pass = first.tension_pass
-                result.confidence = first.confidence
-                result.x = first.x
-                result.y = first.y
-                result.Gcode = f"X{round(result.x, 1)} Y{round(result.y, 1)}"
-                result.wires = str([float(first.tension)])
-                result.t_sigma = 0.0
-            else:
-                result.frequency = calculate_kde_max(
-                    [d.frequency for d in passing_wires]
-                )
-                result.tension = tension_lookup(
-                    length=length, frequency=result.frequency
-                )
-                result.tension_pass = tension_pass(result.tension, length)
-                result.confidence = np.average([d.confidence for d in passing_wires])
-                result.t_sigma = np.std([d.tension for d in passing_wires])
-                result.x = round(np.average([d.x for d in passing_wires]), 1)
-                result.y = round(np.average([d.y for d in passing_wires]), 1)
-                result.Gcode = f"X{round(result.x, 1)} Y{round(result.y, 1)}"
-                result.wires = str([float(d.tension) for d in passing_wires])
 
         return result
 
@@ -304,11 +306,11 @@ class Tensiometer:
                 layer=self.config.layer,
                 side=self.config.side,
                 wire_number=wire_number,
-                wire_length=length,
-                zone=zone_lookup(wire_x),
+                frequency=0.0,
+                confidence=0.0,
                 x=wire_x,
                 y=wire_y,
-                Gcode=f"X{round(wire_x, 1)} Y{round(wire_y, 1)}",
+                wires=[],
             )
 
         wires: list[TensionResult] = []
@@ -369,12 +371,11 @@ class Tensiometer:
                             layer=self.config.layer,
                             side=self.config.side,
                             wire_number=wire_number,
-                            tension=tension,
-                            tension_pass=tension_ok,
                             frequency=frequency,
                             confidence=confidence,
                             x=x,
                             y=y,
+                            wires=[tension],
                         )
                     )
                     wire_y = np.average([d.y for d in wires])
@@ -403,7 +404,7 @@ class Tensiometer:
         if check_stop_event(self.stop_event):
             return
 
-        result = self._generate_result(wires, length, wire_number, wire_x, wire_y)
+        result = self._generate_result(wires, wire_number, wire_x, wire_y)
 
         if result.tension == 0:
             print(f"measurement failed for wire number {wire_number}.")

@@ -140,16 +140,15 @@ def test_generate_result_single_sample():
         layer="X",
         side="A",
         wire_number=1,
-        tension=2.0,
-        tension_pass=True,
-        frequency=5.0,
+        frequency=20.0,
         confidence=0.9,
         x=1.0,
         y=2.0,
+        wires=[2.0],
     )
-    result = t._generate_result([sample], length=1.0, wire_number=1, wire_x=1.5, wire_y=2.5)
+    result = t._generate_result([sample], wire_number=1, wire_x=1.5, wire_y=2.5)
     assert result.tension == 2.0
-    assert result.frequency == 5.0
+    assert result.frequency == 20.0
     assert result.tension_pass
     assert result.confidence == 0.9
     assert result.x == 1.0
@@ -163,19 +162,19 @@ def test_generate_result_single_sample():
 def test_generate_result_multi_sample():
     t = Tensiometer(apa_name="APA", layer="X", side="A", samples_per_wire=3)
     wires = [
-        TensionResult(layer="X", side="A", wire_number=1, tension=2.0, frequency=1.0, confidence=0.5, x=0.0, y=0.0),
-        TensionResult(layer="X", side="A", wire_number=1, tension=2.2, frequency=2.0, confidence=0.6, x=0.2, y=0.2),
-        TensionResult(layer="X", side="A", wire_number=1, tension=1.8, frequency=3.0, confidence=0.7, x=0.4, y=0.4),
+        TensionResult(layer="X", side="A", wire_number=1, frequency=10.0, confidence=0.5, x=0.0, y=0.0, wires=[1.0]),
+        TensionResult(layer="X", side="A", wire_number=1, frequency=20.0, confidence=0.6, x=0.2, y=0.2, wires=[2.0]),
+        TensionResult(layer="X", side="A", wire_number=1, frequency=30.0, confidence=0.7, x=0.4, y=0.4, wires=[3.0]),
     ]
-    result = t._generate_result(wires, length=1.0, wire_number=1, wire_x=2.0, wire_y=3.0)
-    assert result.frequency == 3.0  # max frequency via stub
-    assert result.tension == pytest.approx(0.3)  # frequency * 0.1 via stub
+    result = t._generate_result(wires, wire_number=1, wire_x=2.0, wire_y=3.0)
+    assert result.frequency == 30.0  # max frequency via stub
+    assert result.tension == pytest.approx(3.0)  # frequency * 0.1 via stub
     assert result.tension_pass
     assert result.confidence == pytest.approx(_avg([0.5, 0.6, 0.7]))
-    assert result.t_sigma == pytest.approx(_std([2.0, 2.2, 1.8]))
+    assert result.t_sigma == pytest.approx(_std([1.0, 2.0, 3.0]))
     assert result.x == pytest.approx(_avg([0.0, 0.2, 0.4]), rel=1e-7)
     assert result.y == pytest.approx(_avg([0.0, 0.2, 0.4]), rel=1e-7)
-    assert result.wires == str([2.0, 2.2, 1.8])
+    assert result.wires == str([1.0, 2.0, 3.0])
     assert result.wire_length == 1.0
 
 
