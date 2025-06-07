@@ -1,6 +1,5 @@
 import threading
 import queue
-from dataclasses import dataclass
 from datetime import datetime
 from typing import Optional
 import time
@@ -9,8 +8,6 @@ import numpy as np
 import pandas as pd
 from tension_calculation import (
     calculate_kde_max,
-    tension_lookup,
-    tension_pass,
     has_cluster_dict,
     tension_plausible,
 )
@@ -26,26 +23,13 @@ from geometry import (
 )
 from audioProcessing import analyze_sample, get_samplerate
 from plc_io import is_web_server_active
-from data_cache import get_dataframe, update_dataframe, EXPECTED_COLUMNS
-
-
-@dataclass
-class TensionResult:
-    layer: str
-    side: str
-    wire_number: int
-    tension: float = 0.0
-    tension_pass: bool = False
-    frequency: float = 0.0
-    zone: str = ""
-    confidence: float = 0.0
-    t_sigma: float = 0.0
-    x: float = 0.0
-    y: float = 0.0
-    Gcode: str = ""
-    wires: str = ""
-    ttf: float = 0.0
-    time: Optional[str] = None
+from data_cache import (
+    get_dataframe,
+    update_dataframe,
+    get_samples_dataframe,
+    update_samples_dataframe,
+)
+from dune_tension.results import TensionResult, RawSample, EXPECTED_COLUMNS
 
 
 class Tensiometer:
@@ -173,7 +157,30 @@ class Tensiometer:
         start_time: float,
         wire_y: float,
     ) -> tuple[list[TensionResult] | None, float]:
-        wires: list[TensionResult] = []
+        # Load any previously collected raw samples for this wire
+        samples_df = get_samples_dataframe(self.config.data_path)
+        mask = (
+            (samples_df["apa_name"] == self.config.apa_name)
+            & (samples_df["layer"] == self.config.layer)
+            & (samples_df["side"] == self.config.side)
+            & (samples_df["wire_number"] == wire_number)
+            & (samples_df["confidence"].astype(float) >= self.config.confidence_threshold)
+        )
+        wires = [
+            TensionResult(
+                apa_name=row.apa_name,
+                layer=row.layer,
+                side=row.side,
+                wire_number=int(row.wire_number),
+                frequency=float(row.frequency),
+                confidence=float(row.confidence),
+                x=float(row.x),
+                y=float(row.y),
+                wires=[],
+                time=datetime.fromisoformat(row.time) if isinstance(row.time, str) else row.time,
+            )
+            for row in samples_df[mask].itertuples()
+        ]
         wiggle_start_time = time.time()
         current_wiggle = 0.5
         while (time.time() - start_time) < 30:
@@ -208,17 +215,35 @@ class Tensiometer:
                     wiggle_start_time = time.time()
                     wires.append(
                         TensionResult(
+                            apa_name=self.config.apa_name,
                             layer=self.config.layer,
                             side=self.config.side,
                             wire_number=wire_number,
-                            tension=tension,
-                            tension_pass=tension_ok,
                             frequency=frequency,
                             confidence=confidence,
                             x=x,
                             y=y,
+                            wires=[tension],
+                            time=datetime.now(),
                         )
                     )
+                    # Store raw sample
+                    samples_df = get_samples_dataframe(self.config.data_path)
+                    raw = RawSample(
+                        apa_name=self.config.apa_name,
+                        layer=self.config.layer,
+                        side=self.config.side,
+                        wire_number=wire_number,
+                        frequency=frequency,
+                        confidence=confidence,
+                        x=x,
+                        y=y,
+                        time=datetime.now(),
+                    )
+                    samples_df.loc[len(samples_df)] = {
+                        col: getattr(raw, col) for col in raw.__dataclass_fields__.keys()
+                    }
+                    update_samples_dataframe(self.config.data_path, samples_df)
                     wire_y = np.average([d.y for d in wires])
                     current_wiggle = (current_wiggle + 0.1) / 1.5
                     if self.config.samples_per_wire == 1:
@@ -241,54 +266,49 @@ class Tensiometer:
     def _generate_result(
         self,
         passing_wires: list[TensionResult],
-        length: float,
         wire_number: int,
         wire_x: float,
         wire_y: float,
     ) -> TensionResult:
-        result = TensionResult(
-            layer=self.config.layer,
-            side=self.config.side,
-            wire_number=wire_number,
-            zone=zone_lookup(wire_x),
-            x=wire_x,
-            y=wire_y,
-            Gcode=f"X{round(wire_x, 1)} Y{round(wire_y, 1)}",
-        )
-
         if len(passing_wires) > 0:
             if self.config.samples_per_wire == 1:
                 first = passing_wires[0]
-                result.frequency = first.frequency
-                result.tension = first.tension
-                result.tension_pass = first.tension_pass
-                result.confidence = first.confidence
-                result.x = first.x
-                result.y = first.y
-                result.Gcode = f"X{round(result.x, 1)} Y{round(result.y, 1)}"
-                result.wires = str([float(first.tension)])
-                result.t_sigma = 0.0
+                frequency = first.frequency
+                confidence = first.confidence
+                wires = [first.tension]
+                x = first.x
+                y = first.y
             else:
-                result.frequency = calculate_kde_max(
-                    [d.frequency for d in passing_wires]
-                )
-                result.tension = tension_lookup(
-                    length=length, frequency=result.frequency
-                )
-                result.tension_pass = tension_pass(result.tension, length)
-                result.confidence = np.average([d.confidence for d in passing_wires])
-                result.t_sigma = np.std([d.tension for d in passing_wires])
-                result.x = round(np.average([d.x for d in passing_wires]), 1)
-                result.y = round(np.average([d.y for d in passing_wires]), 1)
-                result.Gcode = f"X{round(result.x, 1)} Y{round(result.y, 1)}"
-                result.wires = str([float(d.tension) for d in passing_wires])
+                frequency = calculate_kde_max([d.frequency for d in passing_wires])
+                confidence = np.average([d.confidence for d in passing_wires])
+                wires = [float(d.tension) for d in passing_wires]
+                x = round(np.average([d.x for d in passing_wires]), 1)
+                y = round(np.average([d.y for d in passing_wires]), 1)
+        else:
+            frequency = 0.0
+            confidence = 0.0
+            wires = []
+            x = wire_x
+            y = wire_y
+
+        result = TensionResult(
+            apa_name=self.config.apa_name,
+            layer=self.config.layer,
+            side=self.config.side,
+            wire_number=wire_number,
+            frequency=frequency,
+            confidence=confidence,
+            x=x,
+            y=y,
+            wires=wires,
+            time=datetime.now(),
+        )
 
         return result
 
     def collect_wire_data(
         self, wire_number: int, wire_x: float, wire_y: float
     ) -> Optional[TensionResult]:
-        # Main logic
         length = length_lookup(self.config.layer, wire_number, zone_lookup(wire_x))
         start_time = time.time()
 
@@ -301,108 +321,29 @@ class Tensiometer:
         if not succeed:
             print(f"Failed to move to wire {wire_number} position {wire_x},{wire_y}.")
             return TensionResult(
+                apa_name=self.config.apa_name,
                 layer=self.config.layer,
                 side=self.config.side,
                 wire_number=wire_number,
-                zone=zone_lookup(wire_x),
+                frequency=0.0,
+                confidence=0.0,
                 x=wire_x,
                 y=wire_y,
-                Gcode=f"X{round(wire_x, 1)} Y{round(wire_y, 1)}",
+                wires=[],
+                time=datetime.now(),
             )
 
-        wires: list[TensionResult] = []
-        sample_queue: queue.Queue = queue.Queue()
-        record_stop = threading.Event()
+        wires, wire_y = self._collect_samples(
+            wire_number=wire_number,
+            length=length,
+            start_time=start_time,
+            wire_y=wire_y,
+        )
 
-        def record_loop() -> None:
-            while (
-                not record_stop.is_set()
-                and not (self.stop_event and self.stop_event.is_set())
-                and (time.time() - start_time) < 30
-            ):
-                audio_sample = self.record_audio_func(
-                    duration=0.15, sample_rate=self.samplerate
-                )
-                if self.stop_event and self.stop_event.is_set():
-                    break
-                if audio_sample is not None:
-                    if self.config.save_audio and not self.config.spoof:
-                        np.savez(
-                            f"audio/{self.config.layer}{self.config.side}{wire_number}_"
-                            f"{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}",
-                            audio_sample,
-                        )
-                    sample_queue.put(audio_sample)
-
-        record_thread = threading.Thread(target=record_loop, daemon=True)
-        record_thread.start()
-
-        wiggle_start_time = time.time()
-        current_wiggle = 0.5
-
-        while (time.time() - start_time) < 30:
-            if check_stop_event(self.stop_event):
-                record_stop.set()
-                record_thread.join()
-                return
-            try:
-                audio_sample = sample_queue.get(timeout=0.1)
-            except queue.Empty:
-                audio_sample = None
-
-            if audio_sample is not None:
-                frequency, confidence, tension, tension_ok = analyze_sample(
-                    audio_sample, self.samplerate, length
-                )
-                if check_stop_event(self.stop_event):
-                    record_stop.set()
-                    record_thread.join()
-                    return
-                x, y = self.get_current_xy_position()
-                if confidence > self.config.confidence_threshold and tension_plausible(
-                    tension
-                ):
-                    wiggle_start_time = time.time()
-                    wires.append(
-                        TensionResult(
-                            layer=self.config.layer,
-                            side=self.config.side,
-                            wire_number=wire_number,
-                            tension=tension,
-                            tension_pass=tension_ok,
-                            frequency=frequency,
-                            confidence=confidence,
-                            x=x,
-                            y=y,
-                        )
-                    )
-                    wire_y = np.average([d.y for d in wires])
-                    current_wiggle = (current_wiggle + 0.1) / 1.5
-                    if self.config.samples_per_wire == 1:
-                        break
-                    cluster = has_cluster_dict(
-                        wires, "tension", self.config.samples_per_wire
-                    )
-                    if cluster != []:
-                        wires = cluster
-                        break
-                    print(
-                        f"tension: {tension:.1f}N, frequency: {frequency:.1f}Hz, ",
-                        f"confidence: {confidence * 100:.1f}%",
-                        f"y: {y:.1f}",
-                    )
-
-            if time.time() - wiggle_start_time > 1:
-                wiggle_start_time = time.time()
-                print(f"Wiggling {current_wiggle}mm")
-                self.wiggle_func(current_wiggle)
-
-        record_stop.set()
-        record_thread.join()
-        if check_stop_event(self.stop_event):
+        if wires is None:
             return
 
-        result = self._generate_result(wires, length, wire_number, wire_x, wire_y)
+        result = self._generate_result(wires, wire_number, wire_x, wire_y)
 
         if result.tension == 0:
             print(f"measurement failed for wire number {wire_number}.")
@@ -414,10 +355,14 @@ class Tensiometer:
             f"Took {ttf} seconds to finish."
         )
         result.ttf = ttf
-        result.time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        result.time = datetime.now()
 
         df = get_dataframe(self.config.data_path)
         row = {col: getattr(result, col, None) for col in EXPECTED_COLUMNS}
+        if isinstance(row.get("time"), datetime):
+            row["time"] = row["time"].isoformat()
+        if isinstance(row.get("wires"), list):
+            row["wires"] = str(row["wires"])
         df.loc[len(df)] = row
         update_dataframe(self.config.data_path, df)
 

@@ -1,4 +1,5 @@
 import os
+import sqlite3
 import numpy as np
 import pandas as pd
 from datetime import datetime
@@ -44,19 +45,20 @@ expected_columns = [
     "time",
 ]
 
-# Load all tension dataframes indexed by apa_name and layer
-csv_files = glob(os.path.join(csv_dir, "tension_data_*.csv"))
+# Load tension data from the single SQLite database and index by apa_name/layer
 csv_data = {}
-for path in csv_files:
-    base = os.path.basename(path)
-    parts = base.replace(".csv", "").replace("tension_data_", "").rsplit("_", 1)
-    apa_name = parts[0]
-    layer = parts[1]
-    df = pd.read_csv(path, usecols=["time", "wire_number", "side"])
-    df["parsed_time"] = pd.to_datetime(
-        df["time"], format="%Y-%m-%d_%H-%M-%S", errors="coerce"
+db_path = os.path.join(csv_dir, "tension_data.db")
+if os.path.exists(db_path):
+    with sqlite3.connect(db_path) as conn:
+        df_all = pd.read_sql_query(
+            "SELECT apa_name, layer, time, wire_number, side FROM tension_data",
+            conn,
+        )
+    df_all["parsed_time"] = pd.to_datetime(
+        df_all["time"], format="%Y-%m-%d_%H-%M-%S", errors="coerce"
     )
-    csv_data[(apa_name, layer)] = df
+    for (apa, lyr), group in df_all.groupby(["apa_name", "layer"]):
+        csv_data[(apa, lyr)] = group
 
 # Process each audio file
 audio_files = glob(os.path.join(audio_dir, "*.npz"))
