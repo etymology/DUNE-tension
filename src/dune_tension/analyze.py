@@ -3,10 +3,16 @@ import numpy as np
 import seaborn as sns
 import matplotlib.pyplot as plt
 from collections import defaultdict
-from data_cache import get_dataframe
+from data_cache import get_dataframe, EXPECTED_COLUMNS
 import os
 from typing import Dict, List, Tuple, Any
 from tensiometer_functions import TensiometerConfig
+from tension_calculation import (
+    has_cluster_dict,
+    tension_plausible,
+    calculate_kde_max,
+)
+from tensiometer import TensionResult
 
 
 def greedy_wire_ordering_with_bounds_tiebreak(existing_wires, expected_range):
@@ -43,8 +49,9 @@ def greedy_wire_ordering_with_bounds_tiebreak(existing_wires, expected_range):
 def _load_and_analyze(config: TensiometerConfig) -> Dict[str, Any]:
     """Helper that loads the data file and performs analysis."""
     expected_range = get_expected_range(config.layer)
-    df = preprocess_dataframe(get_dataframe(config.data_path))
-    df_sorted = df.sort_values(by="time")
+    raw_df = preprocess_dataframe(get_dataframe(config.data_path))
+    agg_df = aggregate_samples(raw_df, config)
+    df_sorted = agg_df.sort_values(by="time")
     return analyze_by_side(df_sorted, expected_range, config.layer)
 
 
@@ -121,6 +128,60 @@ def preprocess_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     df = df.dropna(subset=["wire_number", "tension"])
     df = df[df["tension"] > 0]
     return df
+
+
+def aggregate_samples(df: pd.DataFrame, config: TensiometerConfig) -> pd.DataFrame:
+    """Aggregate raw samples into one result per wire."""
+    rows = []
+    grouped = df.groupby(["layer", "side", "wire_number"])
+    for (layer, side, wire_number), group in grouped:
+        candidates = group[
+            (group["confidence"] >= config.confidence_threshold)
+            & group["tension"].apply(tension_plausible)
+        ]
+        samples = [
+            TensionResult(
+                layer=layer,
+                side=side,
+                wire_number=int(wire_number),
+                frequency=row["frequency"],
+                confidence=row["confidence"],
+                x=row["x"],
+                y=row["y"],
+                wires=[row["tension"]],
+            )
+            for _, row in candidates.iterrows()
+        ]
+        cluster = has_cluster_dict(samples, "tension", config.samples_per_wire)
+        if not cluster:
+            continue
+
+        if config.samples_per_wire == 1:
+            freq = cluster[0].frequency
+            conf = cluster[0].confidence
+            x_val = cluster[0].x
+            y_val = cluster[0].y
+        else:
+            freq = calculate_kde_max([s.frequency for s in cluster])
+            conf = np.average([s.confidence for s in cluster])
+            x_val = round(np.average([s.x for s in cluster]), 1)
+            y_val = round(np.average([s.y for s in cluster]), 1)
+        tensions = [float(s.tension) for s in cluster]
+        res = TensionResult(
+            layer=layer,
+            side=side,
+            wire_number=int(wire_number),
+            frequency=freq,
+            confidence=conf,
+            x=x_val,
+            y=y_val,
+            wires=tensions,
+        )
+        res.ttf = float(group["ttf"].max()) if "ttf" in group.columns else 0.0
+        res.time = float(group["time"].max()) if "time" in group.columns else None
+        rows.append({col: getattr(res, col, None) for col in EXPECTED_COLUMNS})
+
+    return pd.DataFrame(rows, columns=EXPECTED_COLUMNS)
 
 
 def analyze_by_side(
