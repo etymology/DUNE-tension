@@ -410,6 +410,7 @@ btn_specs = [
     ("\u2199", -1, -1, 2, 0),
     ("\u2193", 0, -1, 2, 1),
     ("\u2198", 1, -1, 2, 2),
+
 ]
 for label, dx, dy, r, c in btn_specs:
     tk.Button(
