@@ -118,6 +118,7 @@ def preprocess_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     df["wire_number"] = pd.to_numeric(df["wire_number"], errors="coerce")
     df["tension"] = pd.to_numeric(df["tension"], errors="coerce")
     df["tension_pass"] = df["tension_pass"].astype(str) == "True"
+    df["side"] = df["side"].astype(str)
     df = df.dropna(subset=["wire_number", "tension"])
     df = df[df["tension"] > 0]
     return df
@@ -139,6 +140,7 @@ def analyze_by_side(
     grouped_by_side = latest_df.groupby("side")
 
     for side, group in grouped_by_side:
+        side = str(side)
         group_sorted = group.sort_values(by="wire_number")
         wire_numbers = group_sorted["wire_number"].astype(int).values
         if len(wire_numbers) == 0:
