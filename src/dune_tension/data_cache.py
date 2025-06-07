@@ -1,7 +1,7 @@
 import pandas as pd
 import sqlite3
 from pathlib import Path
-from dune_tension.results import EXPECTED_COLUMNS, RAW_SAMPLE_COLUMNS
+from results import EXPECTED_COLUMNS, RAW_SAMPLE_COLUMNS
 
 # Global cache
 _dataframe_cache: dict[str, pd.DataFrame] = {}

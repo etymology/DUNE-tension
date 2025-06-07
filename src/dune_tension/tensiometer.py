@@ -29,7 +29,7 @@ from data_cache import (
     get_samples_dataframe,
     update_samples_dataframe,
 )
-from dune_tension.results import TensionResult, RawSample, EXPECTED_COLUMNS
+from results import TensionResult, RawSample, EXPECTED_COLUMNS
 
 
 class Tensiometer:
