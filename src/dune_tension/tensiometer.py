@@ -131,7 +131,7 @@ class Tensiometer:
         )
 
     def measure_auto(self) -> None:
-        from analyze_tension_data import get_missing_wires
+        from analyze import get_missing_wires
 
         wires_dict = get_missing_wires(self.config)
         wires_to_measure = wires_dict.get(self.config.side, [])
@@ -418,7 +418,7 @@ class Tensiometer:
         update_dataframe(self.config.data_path, df)
 
         try:
-            from analyze_tension_data import update_tension_logs
+            from analyze import update_tension_logs
 
             update_tension_logs(self.config)
         except Exception as exc:

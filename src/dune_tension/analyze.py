@@ -72,9 +72,7 @@ def update_tension_logs(
 ) -> Dict[str, str]:
     """Update plot, summaries and bad wire logs for the given configuration."""
     output_dir = "data/tension_plots"
-    bad_wires_log_path = (
-        f"data/bad_wires/bad_wires_log_{config.apa_name}_{config.layer}.txt"
-    )
+    badwires_path = f"data/bad_wires/badwires_{config.apa_name}_{config.layer}.txt"
     tension_summary_csv_path = (
         f"data/tension_summaries/tension_summary_{config.apa_name}_{config.layer}.csv"
     )
@@ -91,8 +89,8 @@ def update_tension_logs(
         config.layer,
         output_dir,
     )
-    write_bad_wires_log(
-        bad_wires_log_path,
+    write_badwires(
+        badwires_path,
         config.apa_name,
         config.layer,
         results["bad_wires_by_group"],
@@ -100,7 +98,7 @@ def update_tension_logs(
     )
 
     return {
-        "bad_wires_log": bad_wires_log_path,
+        "badwires": badwires_path,
         "tension_summary_csv": tension_summary_csv_path,
         "plot_image": f"{output_dir}/tension_plot_{config.apa_name}_{config.layer}.png",
     }
@@ -251,7 +249,7 @@ def save_plot(
     plt.close()
 
 
-def write_bad_wires_log(
+def write_badwires(
     path: str,
     apa_name: str,
     layer: str,
@@ -293,10 +291,14 @@ if __name__ == "__main__":
     for apa_name, layer in tasks:
         print(f"Processing APA {apa_name}, Layer {layer}...")
         try:
-            results = analyze_tension_data(apa_name, layer)
+            config = TensiometerConfig(
+                apa_name=apa_name,
+                layer=layer,
+            )  # type: ignore
+            results = analyze_tension_data(config)
             print("  Plot:", results["plot_image"])
             print("  Summary CSV:", results["tension_summary_csv"])
-            print("  Bad Wires Log:", results["bad_wires_log"])
+            print("  Bad Wires Log:", results["badwires"])
         except FileNotFoundError:
             print(f"  ❌ File not found for {apa_name}, Layer {layer}. Skipping.")
         except Exception as e:

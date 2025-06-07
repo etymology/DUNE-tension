@@ -206,7 +206,7 @@ def monitor_tension_logs():
         monitor_tension_logs.last_path = path
         monitor_tension_logs.last_mtime = mtime
         try:
-            from analyze_tension_data import update_tension_logs
+            from analyze import update_tension_logs
 
             update_tension_logs(config)
             print(
