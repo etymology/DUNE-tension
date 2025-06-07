@@ -297,6 +297,38 @@ class Tensiometer:
         if check_stop_event(self.stop_event):
             return
 
+        # Check if this wire already has enough samples stored
+        df = get_dataframe(self.config.data_path)
+        df_wire = df[
+            (df["layer"] == self.config.layer)
+            & (df["side"] == self.config.side)
+            & (df["wire_number"] == wire_number)
+        ]
+        df_wire = df_wire[
+            (df_wire["confidence"] >= self.config.confidence_threshold)
+            & df_wire["tension"].apply(tension_plausible)
+        ]
+        if not df_wire.empty:
+            samples = [
+                TensionResult(
+                    layer=self.config.layer,
+                    side=self.config.side,
+                    wire_number=wire_number,
+                    frequency=row["frequency"],
+                    confidence=row["confidence"],
+                    x=row["x"],
+                    y=row["y"],
+                    wires=[row["tension"]],
+                )
+                for _, row in df_wire.iterrows()
+            ]
+            cluster = has_cluster_dict(samples, "tension", self.config.samples_per_wire)
+            if cluster:
+                print(
+                    f"Wire {wire_number} already has {len(cluster)} valid samples. Skipping collection."
+                )
+                return self._generate_result(cluster, wire_number, wire_x, wire_y)
+
         succeed = self.goto_xy_func(wire_x, wire_y)
         if check_stop_event(self.stop_event):
             return
@@ -343,6 +375,7 @@ class Tensiometer:
         wiggle_start_time = time.time()
         current_wiggle = 0.5
 
+        df = get_dataframe(self.config.data_path)
         while (time.time() - start_time) < 30:
             if check_stop_event(self.stop_event):
                 record_stop.set()
@@ -366,26 +399,49 @@ class Tensiometer:
                     tension
                 ):
                     wiggle_start_time = time.time()
-                    wires.append(
+                    sample = TensionResult(
+                        layer=self.config.layer,
+                        side=self.config.side,
+                        wire_number=wire_number,
+                        frequency=frequency,
+                        confidence=confidence,
+                        x=x,
+                        y=y,
+                        wires=[tension],
+                    )
+                    sample.time = time.time()
+                    wires.append(sample)
+                    row = {col: getattr(sample, col, None) for col in EXPECTED_COLUMNS}
+                    df.loc[len(df)] = row
+                    update_dataframe(self.config.data_path, df)
+                    wire_y = np.average([d.y for d in wires])
+                    current_wiggle = (current_wiggle + 0.1) / 1.5
+                    df_wire = df[
+                        (df["layer"] == self.config.layer)
+                        & (df["side"] == self.config.side)
+                        & (df["wire_number"] == wire_number)
+                    ]
+                    df_wire = df_wire[
+                        (df_wire["confidence"] >= self.config.confidence_threshold)
+                        & df_wire["tension"].apply(tension_plausible)
+                    ]
+                    samples = [
                         TensionResult(
                             layer=self.config.layer,
                             side=self.config.side,
                             wire_number=wire_number,
-                            frequency=frequency,
-                            confidence=confidence,
-                            x=x,
-                            y=y,
-                            wires=[tension],
+                            frequency=row["frequency"],
+                            confidence=row["confidence"],
+                            x=row["x"],
+                            y=row["y"],
+                            wires=[row["tension"]],
                         )
-                    )
-                    wire_y = np.average([d.y for d in wires])
-                    current_wiggle = (current_wiggle + 0.1) / 1.5
-                    if self.config.samples_per_wire == 1:
-                        break
+                        for _, row in df_wire.iterrows()
+                    ]
                     cluster = has_cluster_dict(
-                        wires, "tension", self.config.samples_per_wire
+                        samples, "tension", self.config.samples_per_wire
                     )
-                    if cluster != []:
+                    if cluster:
                         wires = cluster
                         break
                     print(
@@ -416,11 +472,6 @@ class Tensiometer:
             f"Took {ttf} seconds to finish."
         )
         result.ttf = ttf
-
-        df = get_dataframe(self.config.data_path)
-        row = {col: getattr(result, col, None) for col in EXPECTED_COLUMNS}
-        df.loc[len(df)] = row
-        update_dataframe(self.config.data_path, df)
 
         try:
             from analyze import update_tension_logs
