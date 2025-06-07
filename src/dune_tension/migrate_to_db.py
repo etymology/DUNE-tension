@@ -67,6 +67,13 @@ def migrate_csvs(csv_dir: str = "data/tension_data", db_path: str | None = None)
         for _, row in df.iterrows():
             time_val = parse_time(str(row.get("time", "")))
             wires = parse_wires(row.get("wires", ""))
+            # ``ttf`` might be missing or contain garbage from malformed CSV rows
+            ttf_val = row.get("ttf", 0.0)
+            try:
+                ttf = float(ttf_val)
+            except Exception:
+                ttf = 0.0
+
             tr = TensionResult(
                 apa_name=apa_name,
                 layer=str(row.get("layer", layer)),
@@ -77,7 +84,7 @@ def migrate_csvs(csv_dir: str = "data/tension_data", db_path: str | None = None)
                 x=float(row.get("x", 0.0)),
                 y=float(row.get("y", 0.0)),
                 wires=wires,
-                ttf=float(row.get("ttf", 0.0)),
+                ttf=ttf,
                 time=time_val,
             )
             item = {col: getattr(tr, col) for col in EXPECTED_COLUMNS}
