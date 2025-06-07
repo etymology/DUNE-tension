@@ -56,7 +56,7 @@ def analyze_tension_data(config: TensiometerConfig) -> Dict[str, Any]:
 
     return {
         **log_paths,
-        "bad_wires": results["bad_wires"],
+        "badwires": results["badwires"],
         "missing_wires": results["missing_wires"],
     }
 
@@ -72,7 +72,7 @@ def update_tension_logs(
 ) -> Dict[str, str]:
     """Update plot, summaries and bad wire logs for the given configuration."""
     output_dir = "data/tension_plots"
-    badwires_path = f"data/bad_wires/badwires_{config.apa_name}_{config.layer}.txt"
+    badwires_path = f"data/badwires/badwires_{config.apa_name}_{config.layer}.txt"
     tension_summary_csv_path = (
         f"data/tension_summaries/tension_summary_{config.apa_name}_{config.layer}.csv"
     )
@@ -93,7 +93,7 @@ def update_tension_logs(
         badwires_path,
         config.apa_name,
         config.layer,
-        results["bad_wires_by_group"],
+        results["badwires_by_group"],
         results["outlier_wires_by_group"],
     )
 
@@ -126,7 +126,7 @@ def preprocess_dataframe(df: pd.DataFrame) -> pd.DataFrame:
 def analyze_by_side(
     df_sorted: pd.DataFrame, expected_range: range, layer: str, k: float = 2.0
 ) -> Dict[str, Any]:
-    bad_wires_by_group: Dict[Tuple[str, str], List[int]] = defaultdict(list)
+    badwires_by_group: Dict[Tuple[str, str], List[int]] = defaultdict(list)
     outlier_wires_by_group: Dict[Tuple[str, str], List[int]] = defaultdict(list)
     tension_series: Dict[str, Dict[int, float]] = {"A": {}, "B": {}}
     missing_wires: Dict[str, List[int]] = {"A": [], "B": []}
@@ -167,8 +167,8 @@ def analyze_by_side(
         )
         missing_wires[side] = missing
 
-        bad_wires = sorted((expected_set - existing_set) | (expected_set & failed))
-        bad_wires_by_group[(layer, side)] = bad_wires
+        badwires = sorted((expected_set - existing_set) | (expected_set & failed))
+        badwires_by_group[(layer, side)] = badwires
 
         for _, row in group_sorted.iterrows():
             tension_series[side][int(row["wire_number"])] = row["tension"]
@@ -178,13 +178,13 @@ def analyze_by_side(
         hist_data.append(group_sorted[["tension", "side_label"]])
 
     return {
-        "bad_wires_by_group": bad_wires_by_group,
+        "badwires_by_group": badwires_by_group,
         "outlier_wires_by_group": outlier_wires_by_group,
         "tension_series": tension_series,
         "missing_wires": missing_wires,
         "line_data": line_data,
         "hist_data": hist_data,
-        "bad_wires": bad_wires,
+        "badwires": badwires,
     }
 
 
@@ -253,16 +253,16 @@ def write_badwires(
     path: str,
     apa_name: str,
     layer: str,
-    bad_wires_by_group: Dict[Tuple[str, str], List[int]],
+    badwires_by_group: Dict[Tuple[str, str], List[int]],
     outlier_wires_by_group: Dict[Tuple[str, str], List[int]],
 ) -> None:
     with open(path, "w") as f:
-        for (layer_val, side), bad_wires in bad_wires_by_group.items():
+        for (layer_val, side), badwires in badwires_by_group.items():
             f.write(f"{apa_name} - Layer {layer_val}, Side {side}:\n")
-            if bad_wires:
+            if badwires:
                 f.write(
                     "  Bad wire_numbers (missing or no tension_pass=True): "
-                    + ", ".join(map(str, bad_wires))
+                    + ", ".join(map(str, badwires))
                     + "\n"
                 )
             else:
