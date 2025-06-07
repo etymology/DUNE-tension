@@ -71,7 +71,7 @@ def update_tension_logs(
     config: TensiometerConfig, _results: Dict[str, Any] | None = None
 ) -> Dict[str, str]:
     """Update plot, summaries and bad wire logs for the given configuration."""
-    output_dir = f"data/tension_plots_{config.apa_name}"
+    output_dir = "data/tension_plots"
     bad_wires_log_path = (
         f"data/bad_wires/bad_wires_log_{config.apa_name}_{config.layer}.txt"
     )
@@ -102,7 +102,7 @@ def update_tension_logs(
     return {
         "bad_wires_log": bad_wires_log_path,
         "tension_summary_csv": tension_summary_csv_path,
-        "plot_image": f"{output_dir}/tension_plot_{config.apa_name}_layer_{config.layer}_combined.png",
+        "plot_image": f"{output_dir}/tension_plot_{config.apa_name}_{config.layer}.png",
     }
 
 

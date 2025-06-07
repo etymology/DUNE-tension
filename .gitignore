@@ -6,3 +6,4 @@ audio/*
 venv/*
 images/*
 data/renamed_audio/*
+.venv/*
