@@ -199,6 +199,21 @@ def analyze_by_side(
     )
     grouped_by_side = latest_df.groupby("side")
 
+    expected_set = set(expected_range)
+    all_badwires: set[int] = set()
+
+    # Handle sides with no measurements at all
+    present_sides = set(str(s) for s in latest_df.get("side", []))
+    for side in ["A", "B"]:
+        if side not in present_sides:
+            missing_wires[side] = sorted(expected_set)
+            badwires_by_group[(layer, side)] = sorted(expected_set)
+            line_data.append(
+                pd.DataFrame(columns=["wire_number", "tension", "side_label"])
+            )
+            hist_data.append(pd.DataFrame(columns=["tension", "side_label"]))
+            all_badwires.update(expected_set)
+
     for side, group in grouped_by_side:
         group_sorted = group.sort_values(by="wire_number")
         wire_numbers = group_sorted["wire_number"].astype(int).values
@@ -223,13 +238,18 @@ def analyze_by_side(
         tension_ok = group_all.groupby("wire_number")["tension_pass"].any()
         failed = set(tension_ok[~tension_ok].index.astype(int))
 
-        missing = greedy_wire_ordering_with_bounds_tiebreak(
-            list(existing_set), list(expected_set)
+        missing = (
+            greedy_wire_ordering_with_bounds_tiebreak(
+                list(existing_set), list(expected_set)
+            )
+            if existing_set
+            else list(sorted(expected_set))
         )
         missing_wires[side] = missing
 
         badwires = sorted((expected_set - existing_set) | (expected_set & failed))
         badwires_by_group[(layer, side)] = badwires
+        all_badwires.update(badwires)
 
         for _, row in group_sorted.iterrows():
             tension_series[side][int(row["wire_number"])] = row["tension"]
@@ -245,7 +265,7 @@ def analyze_by_side(
         "missing_wires": missing_wires,
         "line_data": line_data,
         "hist_data": hist_data,
-        "badwires": badwires,
+        "badwires": sorted(all_badwires),
     }
 
 
