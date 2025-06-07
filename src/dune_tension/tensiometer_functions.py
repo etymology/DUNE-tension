@@ -5,7 +5,9 @@ from typing import List, Tuple
 from data_cache import get_dataframe
 
 
-def check_stop_event(stop_event: Optional[object], message: str = "Measurement interrupted.") -> bool:
+def check_stop_event(
+    stop_event: Optional[object], message: str = "Measurement interrupted."
+) -> bool:
     """Print a message and return True if the stop event is set."""
     if stop_event and stop_event.is_set():
         print(message)
@@ -116,6 +118,7 @@ def get_xy_from_file(
     )
 
     if df_side.empty:
+        print(f"No data found for side {config.side} in layer {config.layer}.")
         return None
 
     wire_numbers = df_side["wire_number"].values
@@ -210,3 +213,4 @@ def measure_list(
         if check_stop_event(stop_event):
             return
         collect_func(wire, x, y)
+    print("Done measuring wires", wire_list)

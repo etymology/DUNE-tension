@@ -65,10 +65,10 @@ def _read_csv(path):
     if not p.exists():
         raise FileNotFoundError(path)
     lines = [line.strip() for line in p.read_text().splitlines() if line.strip()]
-    headers = lines[0].split(',')
+    headers = lines[0].split(",")
     cols = {h: [] for h in headers}
     for line in lines[1:]:
-        for h, val in zip(headers, line.split(',')):
+        for h, val in zip(headers, line.split(",")):
             try:
                 cols[h].append(float(val))
             except ValueError:
@@ -119,6 +119,7 @@ sys.modules["data_cache"] = dc_stub
 # tensiometer_functions
 tf_stub = types.ModuleType("tensiometer_functions")
 
+
 def _make_config(**kwargs):
     cfg = types.SimpleNamespace(**kwargs)
     cfg.data_path = f"{cfg.apa_name}_{cfg.layer}.csv"
@@ -128,7 +129,7 @@ def _make_config(**kwargs):
 tf_stub.make_config = _make_config
 tf_stub.measure_list = lambda **k: None
 tf_stub.get_xy_from_file = lambda cfg, num: (0.0, 0.0)
-tf_stub.check_stop_event = lambda evt, msg='': False
+tf_stub.check_stop_event = lambda evt, msg="": False
 sys.modules["tensiometer_functions"] = tf_stub
 
 from dune_tension.tensiometer import Tensiometer, TensionResult
@@ -147,7 +148,9 @@ def test_generate_result_single_sample():
         x=1.0,
         y=2.0,
     )
-    result = t._generate_result([sample], length=1.0, wire_number=1, wire_x=1.5, wire_y=2.5)
+    result = t._generate_result(
+        [sample], length=1.0, wire_number=1, wire_x=1.5, wire_y=2.5
+    )
     assert result.tension == 2.0
     assert result.frequency == 5.0
     assert result.tension_pass
@@ -162,11 +165,40 @@ def test_generate_result_single_sample():
 def test_generate_result_multi_sample():
     t = Tensiometer(apa_name="APA", layer="X", side="A", samples_per_wire=3)
     wires = [
-        TensionResult(layer="X", side="A", wire_number=1, tension=2.0, frequency=1.0, confidence=0.5, x=0.0, y=0.0),
-        TensionResult(layer="X", side="A", wire_number=1, tension=2.2, frequency=2.0, confidence=0.6, x=0.2, y=0.2),
-        TensionResult(layer="X", side="A", wire_number=1, tension=1.8, frequency=3.0, confidence=0.7, x=0.4, y=0.4),
+        TensionResult(
+            layer="X",
+            side="A",
+            wire_number=1,
+            tension=2.0,
+            frequency=1.0,
+            confidence=0.5,
+            x=0.0,
+            y=0.0,
+        ),
+        TensionResult(
+            layer="X",
+            side="A",
+            wire_number=1,
+            tension=2.2,
+            frequency=2.0,
+            confidence=0.6,
+            x=0.2,
+            y=0.2,
+        ),
+        TensionResult(
+            layer="X",
+            side="A",
+            wire_number=1,
+            tension=1.8,
+            frequency=3.0,
+            confidence=0.7,
+            x=0.4,
+            y=0.4,
+        ),
     ]
-    result = t._generate_result(wires, length=1.0, wire_number=1, wire_x=2.0, wire_y=3.0)
+    result = t._generate_result(
+        wires, length=1.0, wire_number=1, wire_x=2.0, wire_y=3.0
+    )
     assert result.frequency == 3.0  # max frequency via stub
     assert result.tension == pytest.approx(0.3)  # frequency * 0.1 via stub
     assert result.tension_pass

@@ -8,50 +8,83 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src" / "dune_tension"))
 
 serial_stub = types.ModuleType("serial")
+
+
 class _Serial:
     def __init__(self, *a, **k):
         pass
+
+
 serial_stub.Serial = _Serial
+
+
 class _SerialException(Exception):
     pass
+
+
 serial_stub.SerialException = _SerialException
 sys.modules["serial"] = serial_stub
 
 # Minimal tkinter stub to avoid display errors during import
 tk_stub = types.ModuleType("tkinter")
 
+
 class _Widget:
     def __init__(self, *a, **k):
         pass
+
     def grid(self, *a, **k):
         pass
+
     def insert(self, *a, **k):
         pass
+
     def set(self, *a, **k):
         pass
+
     def get(self):
         return ""
+
     def after(self, *a, **k):
         pass
+
     def mainloop(self):
         pass
+
     def title(self, *a, **k):
         pass
+
     def protocol(self, *a, **k):
         pass
+
     def destroy(self, *a, **k):
         pass
 
-for cls in ["Tk", "Frame", "LabelFrame", "Label", "Entry", "OptionMenu", "Checkbutton", "Button", "Scale"]:
+
+for cls in [
+    "Tk",
+    "Frame",
+    "LabelFrame",
+    "Label",
+    "Entry",
+    "OptionMenu",
+    "Checkbutton",
+    "Button",
+    "Scale",
+]:
     setattr(tk_stub, cls, type(cls, (_Widget,), {}))
+
 
 class _Var:
     def __init__(self, value=None):
         self._value = value
+
     def set(self, v):
         self._value = v
+
     def get(self):
         return self._value
+
 
 tk_stub.StringVar = _Var
 tk_stub.BooleanVar = _Var
@@ -62,10 +95,12 @@ messagebox_stub.showerror = lambda *a, **k: None
 sys.modules["tkinter"] = tk_stub
 sys.modules["tkinter.messagebox"] = messagebox_stub
 
+
 # Provide a minimal tensiometer stub so main can be imported without heavy deps
 class _TensiometerStub:
     def __init__(self, *_, **__):
         pass
+
 
 tensiometer_stub = types.ModuleType("tensiometer")
 tensiometer_stub.Tensiometer = _TensiometerStub
@@ -73,10 +108,14 @@ sys.modules["tensiometer"] = tensiometer_stub
 
 # Minimal tensiometer_functions stub with make_config
 tfunc_stub = types.ModuleType("tensiometer_functions")
+
+
 def _make_config(**kwargs):
     cfg = types.SimpleNamespace(**kwargs)
     cfg.data_path = f"{cfg.apa_name}_{cfg.layer}.csv"
     return cfg
+
+
 tfunc_stub.make_config = _make_config
 sys.modules["tensiometer_functions"] = tfunc_stub
 
@@ -87,6 +126,7 @@ from dune_tension.maestro import DummyController
 class DummyGetter:
     def __init__(self, value):
         self._value = value
+
     def get(self):
         return self._value
 
@@ -94,6 +134,7 @@ class DummyGetter:
 class DummyRoot:
     def __init__(self):
         self.after_args = None
+
     def after(self, delay, func):
         self.after_args = (delay, func)
 
@@ -102,15 +143,19 @@ class RecordController(DummyController):
     def __init__(self):
         super().__init__()
         self.calls = []
+
     def setTarget(self, chan, target):
         super().setTarget(chan, target)
         self.calls.append(target)
 
+
 def test_create_tensiometer_flags(monkeypatch):
     called_args = {}
+
     class DummyTensiometer:
         def __init__(self, **kwargs):
             called_args.update(kwargs)
+
     monkeypatch.setattr(main, "Tensiometer", DummyTensiometer)
     monkeypatch.setattr(main, "entry_apa", DummyGetter("APA"))
     monkeypatch.setattr(main, "layer_var", DummyGetter("X"))
@@ -156,10 +201,12 @@ def test_servo_controller_run_loop():
 
 def test_monitor_tension_logs(monkeypatch):
     updates = []
+
     class DummyConfig:
         apa_name = "APA"
         layer = "X"
         data_path = "dummy.csv"
+
     monkeypatch.setattr(main, "entry_apa", DummyGetter("APA"))
     monkeypatch.setattr(main, "layer_var", DummyGetter("X"))
     monkeypatch.setattr(main, "side_var", DummyGetter("A"))

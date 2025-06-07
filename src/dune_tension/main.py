@@ -5,7 +5,6 @@ import os
 from tensiometer import Tensiometer
 from tensiometer_functions import make_config
 from threading import Event, Thread
-import time
 from maestro import DummyController, ServoController
 
 try:
@@ -16,6 +15,7 @@ try:
         spoof_goto_xy,
     )
 except Exception:  # pragma: no cover - fallback for missing deps
+
     def _get_xy():
         return (0.0, 0.0)
 
@@ -27,6 +27,7 @@ except Exception:  # pragma: no cover - fallback for missing deps
 
     def spoof_goto_xy(x, y):
         return True
+
 
 state_file = "gui_state.json"
 stop_event = Event()
@@ -142,7 +143,6 @@ def measure_auto():
             t = create_tensiometer()
             save_state()
             t.measure_auto()
-            print("Done measuring all wires")
         finally:
             servo_controller.stop_loop()
             stop_event.clear()
@@ -164,7 +164,6 @@ def measure_list():
             save_state()
             print(f"Measuring wires: {wire_list}")
             t.measure_list(wire_list, preserve_order=False)
-            print("Done measuring wires", wire_list)
         finally:
             servo_controller.stop_loop()
             stop_event.clear()
@@ -202,13 +201,11 @@ def monitor_tension_logs():
             from analyze import update_tension_logs
 
             update_tension_logs(config)
-            print(
-                f"Updated tension logs for {config.apa_name} layer {config.layer}"
-            )
+            print(f"Updated tension logs for {config.apa_name} layer {config.layer}")
         except Exception as exc:
             print(f"Failed to update logs: {exc}")
 
-    root.after(10000, monitor_tension_logs)
+    root.after(50000, monitor_tension_logs)
 
 
 monitor_tension_logs.last_path = ""
@@ -255,6 +252,7 @@ def _on_close() -> None:
         root.destroy()
     except Exception:
         pass
+
 
 root.protocol("WM_DELETE_WINDOW", _on_close)
 
@@ -399,7 +397,6 @@ btn_specs = [
     ("\u2199", -1, -1, 2, 0),
     ("\u2193", 0, -1, 2, 1),
     ("\u2198", 1, -1, 2, 2),
-
 ]
 for label, dx, dy, r, c in btn_specs:
     tk.Button(

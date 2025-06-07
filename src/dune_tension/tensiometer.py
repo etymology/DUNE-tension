@@ -45,7 +45,7 @@ class TensionResult:
     Gcode: str = ""
     wires: str = ""
     ttf: float = 0.0
-    time: Optional[float] = None
+    time: Optional[str] = None
 
 
 class Tensiometer:
@@ -149,6 +149,7 @@ class Tensiometer:
             print(f"Measuring wire {wire_number}...")
             x, y = get_xy_from_file(self.config, wire_number)
             self.collect_wire_data(wire_number=wire_number, wire_x=x, wire_y=y)
+        print("Done measuring all wires")
 
     def measure_list(self, wire_list: list[int], preserve_order: bool) -> None:
         measure_list(
@@ -196,7 +197,9 @@ class Tensiometer:
                 frequency, confidence, tension, tension_ok = analyze_sample(
                     audio_sample, self.samplerate, length
                 )
-                if check_stop_event(self.stop_event, "tension measurement interrupted!"):
+                if check_stop_event(
+                    self.stop_event, "tension measurement interrupted!"
+                ):
                     return None, wire_y
                 x, y = self.get_current_xy_position()
                 if confidence > self.config.confidence_threshold and tension_plausible(
@@ -411,6 +414,7 @@ class Tensiometer:
             f"Took {ttf} seconds to finish."
         )
         result.ttf = ttf
+        result.time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
         df = get_dataframe(self.config.data_path)
         row = {col: getattr(result, col, None) for col in EXPECTED_COLUMNS}

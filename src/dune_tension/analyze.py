@@ -243,9 +243,7 @@ def save_plot(
     plt.grid(True, linestyle=":", linewidth=0.5, color="gray")
 
     plt.tight_layout()
-    plt.savefig(
-        f"{output_dir}/tension_plot_{apa_name}_layer_{layer}_combined.png", dpi=300
-    )
+    plt.savefig(f"{output_dir}/tension_plot_{apa_name}_{layer}.png", dpi=300)
     plt.close()
 
 

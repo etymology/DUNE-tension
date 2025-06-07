@@ -22,7 +22,9 @@ def rename_first_array(npz_file: Path) -> None:
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(
-        description=("Rename the first array field in npz files to 'audio' and add a samplerate field."),
+        description=(
+            "Rename the first array field in npz files to 'audio' and add a samplerate field."
+        ),
     )
     parser.add_argument(
         "directory",
