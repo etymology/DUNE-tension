@@ -246,6 +246,18 @@ def manual_increment(dx: float, dy: float):
 root = tk.Tk()
 root.title("Tensiometer GUI")
 
+
+def _on_close() -> None:
+    """Gracefully shut down threads and destroy the root window."""
+    stop_event.set()
+    servo_controller.stop_loop()
+    try:
+        root.destroy()
+    except Exception:
+        pass
+
+root.protocol("WM_DELETE_WINDOW", _on_close)
+
 # --- Layout Frames ---------------------------------------------------------
 # The GUI is split into logical areas to make it easier to navigate.  "apa_frame"
 # holds general information about the APA being measured.  "measure_frame"

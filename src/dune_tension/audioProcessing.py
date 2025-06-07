@@ -288,7 +288,7 @@ def spoof_audio_sample(npz_dir: str) -> np.ndarray:
     if data is None:
         # Generate a one second 80 Hz square wave at 41 kHz
         sample_rate = 41000
-        freq = 60
+        freq = 80
         total_samples = sample_rate
         wave = []
         for i in range(total_samples):

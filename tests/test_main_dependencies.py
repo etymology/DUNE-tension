@@ -37,6 +37,10 @@ class _Widget:
         pass
     def title(self, *a, **k):
         pass
+    def protocol(self, *a, **k):
+        pass
+    def destroy(self, *a, **k):
+        pass
 
 for cls in ["Tk", "Frame", "LabelFrame", "Label", "Entry", "OptionMenu", "Checkbutton", "Button", "Scale"]:
     setattr(tk_stub, cls, type(cls, (_Widget,), {}))
