@@ -34,6 +34,7 @@ class TensionResult:
     layer: str
     side: str
     wire_number: int
+    wire_length: float = 0.0
     tension: float = 0.0
     tension_pass: bool = False
     frequency: float = 0.0
@@ -208,6 +209,7 @@ class Tensiometer:
                             layer=self.config.layer,
                             side=self.config.side,
                             wire_number=wire_number,
+                            wire_length=length,
                             tension=tension,
                             tension_pass=tension_ok,
                             frequency=frequency,
@@ -247,6 +249,7 @@ class Tensiometer:
             layer=self.config.layer,
             side=self.config.side,
             wire_number=wire_number,
+            wire_length=length,
             zone=zone_lookup(wire_x),
             x=wire_x,
             y=wire_y,
@@ -301,6 +304,7 @@ class Tensiometer:
                 layer=self.config.layer,
                 side=self.config.side,
                 wire_number=wire_number,
+                wire_length=length,
                 zone=zone_lookup(wire_x),
                 x=wire_x,
                 y=wire_y,

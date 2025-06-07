@@ -9,6 +9,7 @@ EXPECTED_COLUMNS = [
     "layer",
     "side",
     "wire_number",
+    "wire_length",
     "tension",
     "tension_pass",
     "frequency",
