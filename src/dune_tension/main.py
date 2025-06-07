@@ -8,6 +8,26 @@ from threading import Event, Thread
 import time
 from maestro import Controller, DummyController
 
+try:
+    from plc_io import (
+        get_xy as _get_xy,
+        goto_xy as _goto_xy,
+        spoof_get_xy,
+        spoof_goto_xy,
+    )
+except Exception:  # pragma: no cover - fallback for missing deps
+    def _get_xy():
+        return (0.0, 0.0)
+
+    def _goto_xy(x, y):
+        return True
+
+    def spoof_get_xy():
+        return (0.0, 0.0)
+
+    def spoof_goto_xy(x, y):
+        return True
+
 state_file = "gui_state.json"
 stop_event = Event()
 
@@ -51,6 +71,14 @@ if os.environ.get("SPOOF_SERVO") or os.environ.get("SPOOF_AUDIO"):
     servo_controller = ServoController(servo=DummyController())
 else:
     servo_controller = ServoController()
+
+# Determine which PLC functions to use for manual movement
+if os.environ.get("SPOOF_PLC") or os.environ.get("SPOOF_AUDIO"):
+    _get_xy_func = spoof_get_xy
+    _goto_xy_func = spoof_goto_xy
+else:
+    _get_xy_func = _get_xy
+    _goto_xy_func = _goto_xy
 
 
 def save_state():
@@ -222,6 +250,25 @@ monitor_tension_logs.last_path = ""
 monitor_tension_logs.last_mtime = None
 
 
+def manual_goto():
+    """Move the winder to the X,Y position entered in :data:`entry_xy`."""
+    text = entry_xy.get()
+    try:
+        x_str, y_str = text.split(",")
+        x_val = float(x_str.strip())
+        y_val = float(y_str.strip())
+    except ValueError:
+        print(f"Invalid coordinates: {text}")
+        return
+    _goto_xy_func(x_val, y_val)
+
+
+def manual_increment(dx: float, dy: float):
+    """Move the winder by 0.1 mm increments in the specified direction."""
+    cur_x, cur_y = _get_xy_func()
+    _goto_xy_func(cur_x + dx * 0.1, cur_y + dy * 0.1)
+
+
 root = tk.Tk()
 root.title("Tensiometer GUI")
 
@@ -332,6 +379,36 @@ dwell_slider = tk.Scale(
 )
 dwell_slider.set(100)
 dwell_slider.grid(row=2, column=1)
+
+# --- Manual Move -----------------------------------------------------------
+manual_move_frame = tk.LabelFrame(bottom_frame, text="Manual Move")
+manual_move_frame.grid(row=3, column=0, sticky="ew", pady=5)
+
+tk.Label(manual_move_frame, text="X,Y:").grid(row=0, column=0, sticky="e")
+entry_xy = tk.Entry(manual_move_frame)
+entry_xy.grid(row=0, column=1)
+tk.Button(manual_move_frame, text="Go", command=manual_goto).grid(row=0, column=2)
+
+pad_frame = tk.Frame(manual_move_frame)
+pad_frame.grid(row=1, column=0, columnspan=3)
+
+btn_specs = [
+    ("\u2196", -1, -1, 0, 0),
+    ("\u2191", 0, -1, 0, 1),
+    ("\u2197", 1, -1, 0, 2),
+    ("\u2190", -1, 0, 1, 0),
+    ("\u2192", 1, 0, 1, 2),
+    ("\u2199", -1, 1, 2, 0),
+    ("\u2193", 0, 1, 2, 1),
+    ("\u2198", 1, 1, 2, 2),
+]
+for label, dx, dy, r, c in btn_specs:
+    tk.Button(
+        pad_frame,
+        text=label,
+        command=lambda dx=dx, dy=dy: manual_increment(dx, dy),
+        width=2,
+    ).grid(row=r, column=c)
 
 
 load_state()
