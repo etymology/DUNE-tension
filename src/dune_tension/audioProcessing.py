@@ -1,5 +1,14 @@
 # audioProcessing.py
 import numpy as np
+
+# Avoid using Tk based backends which can conflict with the Tkinter GUI when
+# pitch detection runs in a background thread.
+# Force matplotlib to use a non-interactive backend.  This avoids initialization
+# of Tk when running in the GUI and keeps unit tests that stub out the
+# ``matplotlib`` module from failing.  ``MPLBACKEND`` is respected by matplotlib
+# if set before importing ``pyplot``.
+import os
+os.environ.setdefault("MPLBACKEND", "Agg")
 import matplotlib.pyplot as plt
 import crepe
 from tension_calculation import (
