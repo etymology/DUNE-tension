@@ -45,7 +45,13 @@ def migrate_csvs(csv_dir: str = "data/tension_data", db_path: str | None = None)
         if "_" not in name:
             continue
         apa_name, layer = name.split("_", 1)
-        df = pd.read_csv(csv_path)
+        try:
+            df = pd.read_csv(csv_path)
+        except Exception:
+            # Fallback for legacy files that may have malformed rows or
+            # inconsistent column counts.  The Python CSV engine is more
+            # permissive and ``on_bad_lines='skip'`` will drop unreadable lines.
+            df = pd.read_csv(csv_path, engine="python", on_bad_lines="skip")
 
         # Some legacy CSV files are missing newer columns such as ``wires`` or
         # ``ttf``. Ensure all expected keys exist so row.get() works uniformly
