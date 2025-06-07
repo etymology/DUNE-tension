@@ -33,9 +33,9 @@ class TensiometerConfig:
     data_path: str = field(init=False)
 
     def __post_init__(self):
-        self.data_path = (
-            f"data/tension_data/tension_data_{self.apa_name}_{self.layer}.db"
-        )
+        # All tension measurements are now stored in a single SQLite file
+        # rather than separate files for each APA/layer pair.
+        self.data_path = "data/tension_data/tension_data.db"
 
 
 def make_config(
@@ -100,7 +100,11 @@ def get_xy_from_file(
     import numpy as np
     from geometry import refine_position
 
-    df = get_dataframe(config.data_path)
+    df_all = get_dataframe(config.data_path)
+    df = df_all[
+        (df_all["apa_name"] == config.apa_name)
+        & (df_all["layer"] == config.layer)
+    ]
     virtual_side = (
         {"A": "B", "B": "A"}[config.side.upper()]
         if config.flipped

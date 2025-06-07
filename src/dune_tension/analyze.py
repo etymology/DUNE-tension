@@ -43,7 +43,11 @@ def greedy_wire_ordering_with_bounds_tiebreak(existing_wires, expected_range):
 def _load_and_analyze(config: TensiometerConfig) -> Dict[str, Any]:
     """Helper that loads the data file and performs analysis."""
     expected_range = get_expected_range(config.layer)
-    df = preprocess_dataframe(get_dataframe(config.data_path))
+    df_all = preprocess_dataframe(get_dataframe(config.data_path))
+    df = df_all[
+        (df_all["apa_name"] == config.apa_name)
+        & (df_all["layer"] == config.layer)
+    ]
     df_sorted = df.sort_values(by="time")
     return analyze_by_side(df_sorted, expected_range, config.layer)
 
