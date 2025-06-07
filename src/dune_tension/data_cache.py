@@ -18,7 +18,6 @@ EXPECTED_COLUMNS = [
     "t_sigma",
     "x",
     "y",
-    "Gcode",
     "wires",
     "ttf",
     "time",

@@ -47,7 +47,6 @@ class TensionResult:
     tension: float = field(init=False)
     tension_pass: bool = field(init=False)
     t_sigma: float = field(init=False)
-    Gcode: str = field(init=False)
 
     def __post_init__(self) -> None:
         self.zone = zone_lookup(self.x)
@@ -57,7 +56,6 @@ class TensionResult:
         wires_list = self.wires or []
         self.t_sigma = float(np.std(wires_list)) if hasattr(np, "std") else 0.0
         self.wires = str(wires_list)
-        self.Gcode = f"X{round(self.x, 1)} Y{round(self.y, 1)}"
 
 
 class Tensiometer:
