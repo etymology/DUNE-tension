@@ -266,7 +266,16 @@ def manual_goto():
 def manual_increment(dx: float, dy: float):
     """Move the winder by 0.1 mm increments in the specified direction."""
     cur_x, cur_y = _get_xy_func()
-    _goto_xy_func(cur_x + dx * 0.1, cur_y + dy * 0.1)
+
+    # Determine x-axis orientation based on side/flipped state
+    if (side_var.get() == "A" and not flipped_var.get()) or (
+        side_var.get() == "B" and flipped_var.get()
+    ):
+        x_sign = 1.0
+    else:
+        x_sign = -1.0
+
+    _goto_xy_func(cur_x + x_sign * dx * 0.1, cur_y + dy * 0.1)
 
 
 root = tk.Tk()
@@ -393,14 +402,14 @@ pad_frame = tk.Frame(manual_move_frame)
 pad_frame.grid(row=1, column=0, columnspan=3)
 
 btn_specs = [
-    ("\u2196", -1, -1, 0, 0),
-    ("\u2191", 0, -1, 0, 1),
-    ("\u2197", 1, -1, 0, 2),
+    ("\u2196", -1, 1, 0, 0),
+    ("\u2191", 0, 1, 0, 1),
+    ("\u2197", 1, 1, 0, 2),
     ("\u2190", -1, 0, 1, 0),
     ("\u2192", 1, 0, 1, 2),
-    ("\u2199", -1, 1, 2, 0),
-    ("\u2193", 0, 1, 2, 1),
-    ("\u2198", 1, 1, 2, 2),
+    ("\u2199", -1, -1, 2, 0),
+    ("\u2193", 0, -1, 2, 1),
+    ("\u2198", 1, -1, 2, 2),
 ]
 for label, dx, dy, r, c in btn_specs:
     tk.Button(

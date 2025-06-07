@@ -176,3 +176,31 @@ def test_monitor_tension_logs(monkeypatch):
     monkeypatch.setattr(main.os.path, "getmtime", lambda p: 2)
     main.monitor_tension_logs()
     assert len(updates) == 2
+
+
+def test_manual_increment_orientation(monkeypatch):
+    moves = []
+    monkeypatch.setattr(main, "_get_xy_func", lambda: (0.0, 0.0))
+    monkeypatch.setattr(main, "_goto_xy_func", lambda x, y: moves.append((x, y)))
+
+    def do_test(side, flipped, expected):
+        moves.clear()
+        monkeypatch.setattr(main, "side_var", DummyGetter(side))
+        monkeypatch.setattr(main, "flipped_var", DummyGetter(flipped))
+        main.manual_increment(1, 0)
+        assert moves[-1] == (expected, 0.0)
+
+    # right is +x for A not flipped and B flipped
+    do_test("A", False, 0.1)
+    do_test("B", True, 0.1)
+
+    # otherwise reversed
+    do_test("A", True, -0.1)
+    do_test("B", False, -0.1)
+
+    # verify Y increments unaffected
+    moves.clear()
+    monkeypatch.setattr(main, "side_var", DummyGetter("A"))
+    monkeypatch.setattr(main, "flipped_var", DummyGetter(False))
+    main.manual_increment(0, 1)
+    assert moves[-1] == (0.0, 0.1)
