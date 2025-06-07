@@ -46,6 +46,24 @@ def migrate_csvs(csv_dir: str = "data/tension_data", db_path: str | None = None)
             continue
         apa_name, layer = name.split("_", 1)
         df = pd.read_csv(csv_path)
+
+        # Some legacy CSV files are missing newer columns such as ``wires`` or
+        # ``ttf``. Ensure all expected keys exist so row.get() works uniformly
+        # below.  Use sensible defaults when a column is absent.
+        missing_defaults = {
+            "side": "",
+            "wire_number": 0,
+            "frequency": 0.0,
+            "confidence": 0.0,
+            "x": 0.0,
+            "y": 0.0,
+            "wires": "",
+            "ttf": 0.0,
+            "time": "",
+        }
+        for col, default in missing_defaults.items():
+            if col not in df.columns:
+                df[col] = default
         for _, row in df.iterrows():
             time_val = parse_time(str(row.get("time", "")))
             wires = parse_wires(row.get("wires", ""))
