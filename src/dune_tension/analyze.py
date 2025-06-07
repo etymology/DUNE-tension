@@ -8,7 +8,7 @@ from data_cache import (
     get_samples_dataframe,
     update_dataframe,
 )
-from dune_tension.results import RawSample, TensionResult
+from results import RawSample, TensionResult
 import os
 from typing import Dict, List, Tuple, Any
 from tensiometer_functions import TensiometerConfig
@@ -285,7 +285,7 @@ def write_badwires(
                     + "\n"
                 )
             else:
-            f.write("  No outlier wire_numbers\n")
+                f.write("  No outlier wire_numbers\n")
         f.write("\n")
 
 
