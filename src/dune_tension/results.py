@@ -39,3 +39,21 @@ class TensionResult:
 
 
 EXPECTED_COLUMNS = [f.name for f in fields(TensionResult)]
+
+
+@dataclass
+class RawSample:
+    """Individual sample recorded before clustering."""
+
+    apa_name: str
+    layer: str
+    side: str
+    wire_number: int
+    frequency: float
+    confidence: float
+    x: float
+    y: float
+    time: datetime
+
+
+RAW_SAMPLE_COLUMNS = [f.name for f in fields(RawSample)]

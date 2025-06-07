@@ -113,6 +113,8 @@ sys.modules["plc_io"] = plc_stub
 dc_stub = types.ModuleType("data_cache")
 dc_stub.get_dataframe = lambda path: None
 dc_stub.update_dataframe = lambda path, df: None
+dc_stub.get_samples_dataframe = lambda path: None
+dc_stub.update_samples_dataframe = lambda path, df: None
 dc_stub.EXPECTED_COLUMNS = []
 sys.modules["data_cache"] = dc_stub
 

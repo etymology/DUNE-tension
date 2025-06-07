@@ -23,8 +23,13 @@ from geometry import (
 )
 from audioProcessing import analyze_sample, get_samplerate
 from plc_io import is_web_server_active
-from data_cache import get_dataframe, update_dataframe
-from dune_tension.results import TensionResult, EXPECTED_COLUMNS
+from data_cache import (
+    get_dataframe,
+    update_dataframe,
+    get_samples_dataframe,
+    update_samples_dataframe,
+)
+from dune_tension.results import TensionResult, RawSample, EXPECTED_COLUMNS
 
 
 class Tensiometer:
@@ -152,7 +157,30 @@ class Tensiometer:
         start_time: float,
         wire_y: float,
     ) -> tuple[list[TensionResult] | None, float]:
-        wires: list[TensionResult] = []
+        # Load any previously collected raw samples for this wire
+        samples_df = get_samples_dataframe(self.config.data_path)
+        mask = (
+            (samples_df["apa_name"] == self.config.apa_name)
+            & (samples_df["layer"] == self.config.layer)
+            & (samples_df["side"] == self.config.side)
+            & (samples_df["wire_number"] == wire_number)
+            & (samples_df["confidence"].astype(float) >= self.config.confidence_threshold)
+        )
+        wires = [
+            TensionResult(
+                apa_name=row.apa_name,
+                layer=row.layer,
+                side=row.side,
+                wire_number=int(row.wire_number),
+                frequency=float(row.frequency),
+                confidence=float(row.confidence),
+                x=float(row.x),
+                y=float(row.y),
+                wires=[],
+                time=datetime.fromisoformat(row.time) if isinstance(row.time, str) else row.time,
+            )
+            for row in samples_df[mask].itertuples()
+        ]
         wiggle_start_time = time.time()
         current_wiggle = 0.5
         while (time.time() - start_time) < 30:
@@ -199,6 +227,23 @@ class Tensiometer:
                             time=datetime.now(),
                         )
                     )
+                    # Store raw sample
+                    samples_df = get_samples_dataframe(self.config.data_path)
+                    raw = RawSample(
+                        apa_name=self.config.apa_name,
+                        layer=self.config.layer,
+                        side=self.config.side,
+                        wire_number=wire_number,
+                        frequency=frequency,
+                        confidence=confidence,
+                        x=x,
+                        y=y,
+                        time=datetime.now(),
+                    )
+                    samples_df.loc[len(samples_df)] = {
+                        col: getattr(raw, col) for col in raw.__dataclass_fields__.keys()
+                    }
+                    update_samples_dataframe(self.config.data_path, samples_df)
                     wire_y = np.average([d.y for d in wires])
                     current_wiggle = (current_wiggle + 0.1) / 1.5
                     if self.config.samples_per_wire == 1:

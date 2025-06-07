@@ -3,7 +3,12 @@ import numpy as np
 import seaborn as sns
 import matplotlib.pyplot as plt
 from collections import defaultdict
-from data_cache import get_dataframe
+from data_cache import (
+    get_dataframe,
+    get_samples_dataframe,
+    update_dataframe,
+)
+from dune_tension.results import RawSample, TensionResult
 import os
 from typing import Dict, List, Tuple, Any
 from tensiometer_functions import TensiometerConfig
@@ -280,8 +285,97 @@ def write_badwires(
                     + "\n"
                 )
             else:
-                f.write("  No outlier wire_numbers\n")
-            f.write("\n")
+            f.write("  No outlier wire_numbers\n")
+        f.write("\n")
+
+
+def analyze_wire_data(config: TensiometerConfig, wire_number: int) -> TensionResult | None:
+    """Analyze raw samples for a single wire and store result in tension_data."""
+    df = get_dataframe(config.data_path)
+    samples = get_samples_dataframe(config.data_path)
+
+    mask = (
+        (samples["apa_name"] == config.apa_name)
+        & (samples["layer"] == config.layer)
+        & (samples["side"] == config.side)
+        & (samples["wire_number"] == wire_number)
+        & (samples["confidence"].astype(float) >= config.confidence_threshold)
+    )
+
+    samples_sel = samples[mask]
+
+    if len(samples_sel) >= config.samples_per_wire:
+        wires = [
+            TensionResult(
+                apa_name=row.apa_name,
+                layer=row.layer,
+                side=row.side,
+                wire_number=int(row.wire_number),
+                frequency=float(row.frequency),
+                confidence=float(row.confidence),
+                x=float(row.x),
+                y=float(row.y),
+                wires=[],
+                time=datetime.fromisoformat(row.time) if isinstance(row.time, str) else row.time,
+            )
+            for row in samples_sel.itertuples()
+        ]
+
+        cluster = has_cluster_dict(wires, "tension", config.samples_per_wire)
+        passing = cluster if cluster else wires[-config.samples_per_wire :]
+        frequency = calculate_kde_max([d.frequency for d in passing])
+        confidence = np.average([d.confidence for d in passing])
+        x = round(np.average([d.x for d in passing]), 1)
+        y = round(np.average([d.y for d in passing]), 1)
+        result = TensionResult(
+            apa_name=config.apa_name,
+            layer=config.layer,
+            side=config.side,
+            wire_number=wire_number,
+            frequency=frequency,
+            confidence=confidence,
+            x=x,
+            y=y,
+            wires=[float(d.tension) for d in passing],
+            time=datetime.now(),
+        )
+
+        row = {col: getattr(result, col, None) for col in EXPECTED_COLUMNS}
+        row["time"] = row["time"].isoformat()
+        row["wires"] = str(row["wires"])
+        df.loc[len(df)] = row
+        update_dataframe(config.data_path, df)
+        return result
+
+    sub = df[
+        (df["apa_name"] == config.apa_name)
+        & (df["layer"] == config.layer)
+        & (df["side"] == config.side)
+        & (df["wire_number"] == wire_number)
+    ]
+    if sub.empty:
+        return None
+
+    last = sub.sort_values("time").iloc[-1]
+    wires_val = []
+    if isinstance(last["wires"], str) and last["wires"]:
+        try:
+            wires_val = [float(x) for x in eval(last["wires"])]
+        except Exception:
+            wires_val = []
+
+    return TensionResult(
+        apa_name=last["apa_name"],
+        layer=last["layer"],
+        side=last["side"],
+        wire_number=int(last["wire_number"]),
+        frequency=float(last["frequency"]),
+        confidence=float(last["confidence"]),
+        x=float(last["x"]),
+        y=float(last["y"]),
+        wires=wires_val,
+        time=datetime.fromisoformat(last["time"]) if isinstance(last["time"], str) else last["time"],
+    )
 
 
 if __name__ == "__main__":
