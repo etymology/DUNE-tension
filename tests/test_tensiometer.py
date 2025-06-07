@@ -157,6 +157,7 @@ def test_generate_result_single_sample():
     assert result.zone == 1
     assert result.wires == str([2.0])
     assert result.t_sigma == 0.0
+    assert result.wire_length == 1.0
 
 
 def test_generate_result_multi_sample():
@@ -175,6 +176,7 @@ def test_generate_result_multi_sample():
     assert result.x == pytest.approx(_avg([0.0, 0.2, 0.4]), rel=1e-7)
     assert result.y == pytest.approx(_avg([0.0, 0.2, 0.4]), rel=1e-7)
     assert result.wires == str([2.0, 2.2, 1.8])
+    assert result.wire_length == 1.0
 
 
 def test_load_tension_summary(tmp_path):
