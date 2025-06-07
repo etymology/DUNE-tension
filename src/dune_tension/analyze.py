@@ -8,6 +8,7 @@ from data_cache import (
     get_samples_dataframe,
     update_dataframe,
 )
+
 from results import RawSample, TensionResult
 import os
 from typing import Dict, List, Tuple, Any
@@ -285,6 +286,7 @@ def write_badwires(
                     + "\n"
                 )
             else:
+
                 f.write("  No outlier wire_numbers\n")
         f.write("\n")
 
