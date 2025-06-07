@@ -25,7 +25,7 @@ def zone_lookup(
         if pos > x:
             return i
     # If no value greater than x, return None
-    return None
+    return 0
 
 
 # Test the function with an example input
@@ -102,4 +102,4 @@ def length_lookup(layer: str, wire_number: int, zone: int, taped=False):
             return (value - 16) / 1000
         return value / 1000
     except KeyError:
-        return None
+        return 0

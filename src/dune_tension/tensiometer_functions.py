@@ -5,7 +5,9 @@ from typing import List, Tuple
 from data_cache import get_dataframe
 
 
-def check_stop_event(stop_event: Optional[object], message: str = "Measurement interrupted.") -> bool:
+def check_stop_event(
+    stop_event: Optional[object], message: str = "Measurement interrupted."
+) -> bool:
     """Print a message and return True if the stop event is set."""
     if stop_event and stop_event.is_set():
         print(message)

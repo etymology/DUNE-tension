@@ -5,7 +5,6 @@ import os
 from tensiometer import Tensiometer
 from tensiometer_functions import make_config
 from threading import Event, Thread
-import time
 from maestro import DummyController, ServoController
 
 try:
@@ -16,6 +15,7 @@ try:
         spoof_goto_xy,
     )
 except Exception:  # pragma: no cover - fallback for missing deps
+
     def _get_xy():
         return (0.0, 0.0)
 
@@ -27,6 +27,7 @@ except Exception:  # pragma: no cover - fallback for missing deps
 
     def spoof_goto_xy(x, y):
         return True
+
 
 state_file = "gui_state.json"
 stop_event = Event()
@@ -202,9 +203,7 @@ def monitor_tension_logs():
             from analyze import update_tension_logs
 
             update_tension_logs(config)
-            print(
-                f"Updated tension logs for {config.apa_name} layer {config.layer}"
-            )
+            print(f"Updated tension logs for {config.apa_name} layer {config.layer}")
         except Exception as exc:
             print(f"Failed to update logs: {exc}")
 
@@ -387,7 +386,6 @@ btn_specs = [
     ("\u2199", -1, -1, 2, 0),
     ("\u2193", 0, -1, 2, 1),
     ("\u2198", 1, -1, 2, 2),
-
 ]
 for label, dx, dy, r, c in btn_specs:
     tk.Button(
