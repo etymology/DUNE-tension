@@ -6,7 +6,7 @@ from tensiometer import Tensiometer
 from tensiometer_functions import make_config
 from threading import Event, Thread
 import time
-from maestro import Controller, DummyController
+from maestro import DummyController, ServoController
 
 try:
     from plc_io import (
@@ -30,41 +30,6 @@ except Exception:  # pragma: no cover - fallback for missing deps
 
 state_file = "gui_state.json"
 stop_event = Event()
-
-
-class ServoController:
-    def __init__(self, servo=None):
-        self.servo = servo or Controller()
-        self.servo.setRange(0, 4000, 8000)
-        self.running = Event()
-        self.dwell_time = 1.0
-
-    def set_speed(self, val):
-        self.servo.setSpeed(0, int(val))
-
-    def set_accel(self, val):
-        self.servo.setAccel(0, int(val))
-
-    def set_dwell_time(self, val):
-        self.dwell_time = float(val)
-
-    def start_loop(self):
-        if not self.running.is_set():
-            self.running.set()
-            Thread(target=self.run_loop, daemon=True).start()
-
-    def stop_loop(self):
-        self.running.clear()
-
-    def run_loop(self):
-        while self.running.is_set():
-            self.servo.setTarget(0, 4000)
-            while self.servo.isMoving(0) and self.running.is_set():
-                time.sleep(0.01)
-            self.servo.setTarget(0, 8000)
-            while self.servo.isMoving(0) and self.running.is_set():
-                time.sleep(0.01)
-            time.sleep(self.dwell_time)
 
 
 if os.environ.get("SPOOF_SERVO") or os.environ.get("SPOOF_AUDIO"):
@@ -388,6 +353,18 @@ dwell_slider = tk.Scale(
 )
 dwell_slider.set(100)
 dwell_slider.grid(row=2, column=1)
+
+tk.Label(servo_frame, text="Focus:").grid(row=3, column=0, sticky="e")
+
+focus_slider = tk.Scale(
+    servo_frame,
+    from_=4000,
+    to=8000,
+    orient=tk.HORIZONTAL,
+    command=lambda val: servo_controller.focus_target(int(val)),
+)
+focus_slider.set(4000)
+focus_slider.grid(row=3, column=1)
 
 # --- Manual Move -----------------------------------------------------------
 manual_move_frame = tk.LabelFrame(bottom_frame, text="Manual Move")
