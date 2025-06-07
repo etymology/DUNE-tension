@@ -9,6 +9,7 @@ from tension_calculation import (
 import sounddevice as sd
 import os
 import random
+import math
 
 
 def load_audio_data(file_name):
@@ -256,25 +257,43 @@ def get_samplerate():
 
 def spoof_audio_sample(npz_dir: str) -> np.ndarray:
     """
-    Load a random .npz file from the given directory and return the 'audio' array.
+    Return an audio sample for spoofing.
+
+    The function attempts to load a random ``.npz`` file from ``npz_dir`` and
+    return the ``"audio"`` array inside.  If no valid audio sample can be
+    loaded, a built in fallback sample containing a synthesized 80 Hz square
+    wave sampled at ``41000`` Hz is returned instead.
 
     Parameters:
-        npz_dir (str): Path to the directory containing .npz files.
+        npz_dir (str): Path to the directory containing ``.npz`` files.
 
     Returns:
-        np.ndarray: The audio array from the randomly selected .npz file.
-
-    Raises:
-        ValueError: If no valid .npz files are found or the expected 'audio' key is missing.
+        np.ndarray: The loaded audio array.
     """
+
     npz_files = [f for f in os.listdir(npz_dir) if f.endswith(".npz")]
-    if not npz_files:
-        raise ValueError("No .npz files found in the directory.")
+    file_path = None
+    if npz_files:
+        file_path = os.path.join(npz_dir, random.choice(npz_files))
 
-    chosen_file = random.choice(npz_files)
-    file_path = os.path.join(npz_dir, chosen_file)
+    data = None
+    if file_path:
+        try:
+            with np.load(file_path) as loaded:
+                if "audio" in loaded:
+                    data = loaded["audio"]
+        except Exception:
+            data = None
 
-    with np.load(file_path) as data:
-        if "audio" not in data:
-            raise ValueError(f"'audio' not found in {file_path}")
-        return data["audio"]
+    if data is None:
+        # Generate a one second 80 Hz square wave at 41 kHz
+        sample_rate = 41000
+        freq = 60
+        total_samples = sample_rate
+        wave = []
+        for i in range(total_samples):
+            phase = 2 * math.pi * freq * i / sample_rate
+            wave.append(1.0 if math.sin(phase) >= 0 else -1.0)
+        data = np.array(wave)
+
+    return data

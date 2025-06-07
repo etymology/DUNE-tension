@@ -26,7 +26,7 @@ def calculate_kde_max(sample: Sequence[float]) -> float:
         kde_sample = gaussian_kde(sample)
     except np.linalg.LinAlgError as e:
         print(f"Error in KDE calculation: {e}")
-        return sample.mean()  # Fallback to mean if KDE fails
+        return sample[0]  # Fallback to 0 if KDE fails
 
     # Define a range of values for which to calculate the KDE
     x_range = np.linspace(min(sample), max(sample), 1000)
