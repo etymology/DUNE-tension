@@ -2,6 +2,16 @@ import requests
 import time
 from random import gauss
 
+# Amount of travel, in mm, assumed to be lost when reversing X direction
+BACKLASH_DEADZONE = 0.5
+
+# Track our best guess of the true position, accounting for backlash
+_TRUE_XY = [6300.0, 200.0]
+
+# Track the last X movement direction and remaining deadzone to take up
+_LAST_X_DIR = 0
+_X_DEADZONE_LEFT = 0.0
+
 TENSION_SERVER_URL = "http://192.168.137.1:5000"
 IDLE_MOVE_TYPE = 0
 IDLE_STATE = 1
@@ -67,14 +77,49 @@ def write_tag(tag_name, value):
         return {"error": str(e)}
 
 
-def goto_xy(x_target: float, y_target: float):
-    """Move the winder to a given position."""
-    # current_x, current_y = self.get_xy()
+def goto_xy(x_target: float, y_target: float, *, deadzone: float = BACKLASH_DEADZONE):
+    """Move the winder to a given position.
+
+    When reversing X direction, assume the first ``deadzone`` mm of travel does
+    not result in motion and track the true position accordingly.
+    """
+
+    global _TRUE_XY, _LAST_X_DIR, _X_DEADZONE_LEFT
+
     if x_target < 0 or x_target > 7174 or y_target < 0 or y_target > 2680:
         print(
             f"Motion target {x_target},{y_target} out of bounds. Please enter a valid position."
         )
         return False
+
+    # ------------------------------------------------------------
+    # Backlash compensation bookkeeping
+    # ------------------------------------------------------------
+    delta_x = x_target - _TRUE_XY[0]
+    direction = 1 if delta_x > 0 else -1 if delta_x < 0 else 0
+
+    if direction != 0 and direction != _LAST_X_DIR:
+        _X_DEADZONE_LEFT = deadzone
+        _LAST_X_DIR = direction
+
+    move_x = abs(delta_x)
+    actual_move_x = 0.0
+    if direction != 0:
+        if _X_DEADZONE_LEFT > 0:
+            if move_x <= _X_DEADZONE_LEFT:
+                _X_DEADZONE_LEFT -= move_x
+            else:
+                actual_move_x = direction * (move_x - _X_DEADZONE_LEFT)
+                _X_DEADZONE_LEFT = 0.0
+        else:
+            actual_move_x = delta_x
+
+    _TRUE_XY[0] += actual_move_x
+    _TRUE_XY[1] = y_target
+
+    # ------------------------------------------------------------
+    # Command the PLC move
+    # ------------------------------------------------------------
     current_state = get_state()
     while current_state != IDLE_STATE:
         current_state = get_state()
