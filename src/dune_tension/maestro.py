@@ -2,6 +2,7 @@ import serial
 from sys import version_info
 import platform
 import time
+from threading import Event, Thread
 
 PY2 = version_info[0] == 2  # Running Python 2.x?
 
@@ -237,6 +238,55 @@ class DummyController:
 
     def stopScript(self):
         pass
+
+
+class ServoController:
+    """High-level servo helper used by the GUI."""
+
+    def __init__(self, servo: Controller | DummyController | None = None) -> None:
+        self.servo = servo or DummyController()
+        self.servo.setRange(0, 4000, 8000)  # plucking servo
+        self.running: Event = Event()
+        self.dwell_time: float = 1.0
+
+        self.servo.setRange(1, 4000, 8000)  # focus servo
+        try:
+            self.servo.setSpeed(1, 100)
+            self.servo.setAccel(1, 100)
+        except Exception:
+            pass
+
+    def set_speed(self, val: int) -> None:
+        self.servo.setSpeed(0, int(val))
+
+    def set_accel(self, val: int) -> None:
+        self.servo.setAccel(0, int(val))
+
+    def set_dwell_time(self, val: float) -> None:
+        self.dwell_time = float(val)
+
+    def start_loop(self) -> None:
+        if not self.running.is_set():
+            self.running.set()
+            Thread(target=self.run_loop, daemon=True).start()
+
+    def stop_loop(self) -> None:
+        self.running.clear()
+
+    def run_loop(self) -> None:
+        while self.running.is_set():
+            self.servo.setTarget(0, 4000)
+            while self.servo.isMoving(0) and self.running.is_set():
+                time.sleep(0.01)
+            self.servo.setTarget(0, 8000)
+            while self.servo.isMoving(0) and self.running.is_set():
+                time.sleep(0.01)
+            time.sleep(self.dwell_time)
+
+    def focus_target(self, target: int) -> None:
+        self.servo.setTarget(1, target)
+        while self.servo.isMoving(1):
+            time.sleep(0.01)
 
 
 if __name__ == "__main__":
