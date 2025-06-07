@@ -1,4 +1,5 @@
 import os
+import sqlite3
 import numpy as np
 import pandas as pd
 from datetime import datetime
@@ -45,14 +46,17 @@ expected_columns = [
 ]
 
 # Load all tension dataframes indexed by apa_name and layer
-csv_files = glob(os.path.join(csv_dir, "tension_data_*.csv"))
+csv_files = glob(os.path.join(csv_dir, "tension_data_*.db"))
 csv_data = {}
 for path in csv_files:
     base = os.path.basename(path)
-    parts = base.replace(".csv", "").replace("tension_data_", "").rsplit("_", 1)
+    parts = base.replace(".db", "").replace("tension_data_", "").rsplit("_", 1)
     apa_name = parts[0]
     layer = parts[1]
-    df = pd.read_csv(path, usecols=["time", "wire_number", "side"])
+    with sqlite3.connect(path) as conn:
+        df = pd.read_sql_query(
+            "SELECT time, wire_number, side FROM tension_data", conn
+        )
     df["parsed_time"] = pd.to_datetime(
         df["time"], format="%Y-%m-%d_%H-%M-%S", errors="coerce"
     )

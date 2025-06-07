@@ -34,7 +34,7 @@ class TensiometerConfig:
 
     def __post_init__(self):
         self.data_path = (
-            f"data/tension_data/tension_data_{self.apa_name}_{self.layer}.csv"
+            f"data/tension_data/tension_data_{self.apa_name}_{self.layer}.db"
         )
 
 
