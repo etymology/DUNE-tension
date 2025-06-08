@@ -181,6 +181,11 @@ class Tensiometer:
             )
             for row in samples_df[mask].itertuples()
         ]
+        cluster = has_cluster_dict(wires, "tension", self.config.samples_per_wire)
+        if cluster != []:
+            print("already collected enough samples for this wire.")
+            wire_y = np.average([d.y for d in wires])
+            return cluster, wire_y
         wiggle_start_time = time.time()
         current_wiggle = 0.5
         while (time.time() - start_time) < 30:
@@ -238,7 +243,7 @@ class Tensiometer:
                         confidence=confidence,
                         x=x,
                         y=y,
-                        time=datetime.now(),
+                        time=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                     )
                     samples_df.loc[len(samples_df)] = {
                         col: getattr(raw, col) for col in raw.__dataclass_fields__.keys()

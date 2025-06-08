@@ -53,7 +53,7 @@ class RawSample:
     confidence: float
     x: float
     y: float
-    time: datetime
+    time: str
 
 
 RAW_SAMPLE_COLUMNS = [f.name for f in fields(RawSample)]
