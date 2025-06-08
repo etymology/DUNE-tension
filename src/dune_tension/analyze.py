@@ -1,132 +1,20 @@
-import pandas as pd
-import numpy as np
-import seaborn as sns
-import matplotlib.pyplot as plt
-from collections import defaultdict
-from dataclasses import replace
-from data_cache import (
-    get_dataframe,
-    get_samples_dataframe,
-    update_dataframe,
-)
-
-from results import RawSample, TensionResult, EXPECTED_COLUMNS
 import os
-from typing import Dict, List, Tuple, Any
-from tensiometer_functions import TensiometerConfig
 from datetime import datetime
-from tension_calculation import has_cluster, calculate_kde_max
+from typing import Dict, List
 
-def greedy_wire_ordering_with_bounds_tiebreak(existing_wires, expected_range):
-    expected = list(expected_range)
-    missing = sorted(set(expected) - set(existing_wires))
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+import seaborn as sns
 
-    if not missing:
-        return []
-
-    bounds = [min(expected), max(expected)]
-    closest_to_bounds = min(
-        existing_wires, key=lambda w: min(abs(w - b) for b in bounds)
-    )
-
-    remaining = set(missing)
-    result = []
-    current = closest_to_bounds
-
-    while remaining:
-        # Among remaining wires, find those with minimum distance to current
-        min_dist = min(abs(x - current) for x in remaining)
-        candidates = [x for x in remaining if abs(x - current) == min_dist]
-
-        # Tie-break by distance to bounds
-        next_wire = min(candidates, key=lambda x: min(abs(x - b) for b in bounds))
-
-        result.append(next_wire)
-        remaining.remove(next_wire)
-        current = next_wire
-
-    return result
-
-
-def _load_and_analyze(config: TensiometerConfig) -> Dict[str, Any]:
-    """Helper that loads the data file and performs analysis."""
-    return analyze_by_side(config)
-
-
-def analyze_tension_data(config: TensiometerConfig) -> Dict[str, Any]:
-    """Return analysis results and update all output files."""
-    results = _load_and_analyze(config)
-
-    log_paths = update_tension_logs(config, _results=results)
-
-    return {
-        **log_paths,
-        "badwires": results["badwires"],
-        "missing_wires": results["missing_wires"],
-    }
-
-
-def get_missing_wires(config: TensiometerConfig) -> Dict[str, List[int]]:
-    """Return a dictionary of missing wires for each side."""
-    samples = get_samples_dataframe(config.data_path)
-    mask = (
-        (samples["apa_name"] == config.apa_name)
-        & (samples["layer"] == config.layer)
-    )
-
-    if not samples[mask].empty:
-        for side in ["A", "B"]:
-            side_mask = mask & (samples["side"] == side)
-            if side_mask.any():
-                wires = (
-                    samples.loc[side_mask, "wire_number"].dropna().astype(int).unique()
-                )
-                cfg_side = replace(config, side=side)
-                for wire in wires:
-                    analyze_wire_data(cfg_side, int(wire))
-
-    results = _load_and_analyze(config)
-    return results["missing_wires"]
-
-
-def update_tension_logs(
-    config: TensiometerConfig, _results: Dict[str, Any] | None = None
-) -> Dict[str, str]:
-    """Update plot, summaries and bad wire logs for the given configuration."""
-    output_dir = "data/tension_plots"
-    badwires_path = f"data/badwires/badwires_{config.apa_name}_{config.layer}.txt"
-    tension_summary_csv_path = (
-        f"data/tension_summaries/tension_summary_{config.apa_name}_{config.layer}.csv"
-    )
-
-    os.makedirs(output_dir, exist_ok=True)
-
-    results = _results if _results is not None else _load_and_analyze(config)
-
-    write_summary_csv(results["tension_series"], tension_summary_csv_path)
-    save_plot(
-        results["line_data"],
-        results["hist_data"],
-        config.apa_name,
-        config.layer,
-        output_dir,
-    )
-    write_badwires(
-        badwires_path,
-        config.apa_name,
-        config.layer,
-        results["badwires_by_group"],
-        results["outlier_wires_by_group"],
-    )
-
-    return {
-        "badwires": badwires_path,
-        "tension_summary_csv": tension_summary_csv_path,
-        "plot_image": f"{output_dir}/tension_plot_{config.apa_name}_{config.layer}.png",
-    }
+from data_cache import get_samples_dataframe
+from results import TensionResult
+from tensiometer_functions import TensiometerConfig
+from tension_calculation import calculate_kde_max, has_cluster
 
 
 def get_expected_range(layer: str) -> range:
+    """Return the expected wire range for a given layer."""
     ranges = {
         "U": range(8, 1147),
         "V": range(8, 1147),
@@ -136,106 +24,96 @@ def get_expected_range(layer: str) -> range:
     return ranges.get(layer, range(0))
 
 
-def preprocess_dataframe(df: pd.DataFrame) -> pd.DataFrame:
-    df["wire_number"] = pd.to_numeric(df["wire_number"], errors="coerce")
-    df["tension"] = pd.to_numeric(df["tension"], errors="coerce")
-    df["tension_pass"] = df["tension_pass"].astype(str) == "True"
-    df["side"] = df["side"].astype(str)
-    df = df.dropna(subset=["wire_number", "tension"])
-    df = df[df["tension"] > 0]
-    return df
-
-
-def analyze_by_side(
-    config: TensiometerConfig,
-    df_sorted: pd.DataFrame | None = None,
-    k: float = 2.0,
-) -> Dict[str, Any]:
-    """Analyze completed tension measurements by side."""
-    expected_range = get_expected_range(config.layer)
-    if df_sorted is None:
-        df_all = preprocess_dataframe(get_dataframe(config.data_path))
-        df = df_all[
-            (df_all["apa_name"] == config.apa_name)
-            & (df_all["layer"] == config.layer)
-        ]
-        df_sorted = df.sort_values(by="time")
-
-    badwires_by_group: Dict[Tuple[str, str], List[int]] = defaultdict(list)
-    outlier_wires_by_group: Dict[Tuple[str, str], List[int]] = defaultdict(list)
+def _compute_tensions(
+    config: TensiometerConfig, samples: pd.DataFrame
+) -> tuple[
+    Dict[str, Dict[int, float]],
+    List[pd.DataFrame],
+    List[pd.DataFrame],
+    Dict[str, List[int]],
+]:
+    """Return tension series and plotting DataFrames grouped by side."""
     tension_series: Dict[str, Dict[int, float]] = {"A": {}, "B": {}}
-    missing_wires: Dict[str, List[int]] = {"A": [], "B": []}
     line_data: List[pd.DataFrame] = []
     hist_data: List[pd.DataFrame] = []
+    missing: Dict[str, List[int]] = {"A": [], "B": []}
 
-    latest_df = df_sorted.drop_duplicates(
-        subset=["layer", "side", "wire_number"], keep="last"
-    )
-    grouped_by_side = latest_df.groupby("side")
-
-    for side, group in grouped_by_side:
-        side = str(side)
-        group_sorted = group.sort_values(by="wire_number")
-        wire_numbers = group_sorted["wire_number"].astype(int).values
-        if len(wire_numbers) == 0:
-            continue
-
-        # Standard deviation-based outlier detection
-        tension_values = group_sorted["tension"]
-        mean_tension = tension_values.mean()
-        std_tension = tension_values.std()
-
-        outlier_mask = (tension_values < mean_tension - k * std_tension) | (
-            tension_values > mean_tension + k * std_tension
-        )
-
-        outliers = group_sorted.loc[outlier_mask, "wire_number"].astype(int).tolist()
-        outlier_wires_by_group[(config.layer, side)] = outliers
-
-        expected_set = set(expected_range)
-        existing_set = set(wire_numbers)
-        group_all = df_sorted[df_sorted["side"] == side]
-        tension_ok = group_all.groupby("wire_number")["tension_pass"].any()
-        failed = set(tension_ok[~tension_ok].index.astype(int))
-
-        missing = greedy_wire_ordering_with_bounds_tiebreak(
-            list(existing_set), list(expected_set)
-        )
-        missing_wires[side] = missing
-
-        badwires = sorted((expected_set - existing_set) | (expected_set & failed))
-        badwires_by_group[(config.layer, side)] = badwires
-
-        for _, row in group_sorted.iterrows():
-            tension_series[side][int(row["wire_number"])] = row["tension"]
-
-        group_sorted["side_label"] = f"Side {side}"
-        line_data.append(group_sorted[["wire_number", "tension", "side_label"]])
-        hist_data.append(group_sorted[["tension", "side_label"]])
-
-    return {
-        "badwires_by_group": badwires_by_group,
-        "outlier_wires_by_group": outlier_wires_by_group,
-        "tension_series": tension_series,
-        "missing_wires": missing_wires,
-        "line_data": line_data,
-        "hist_data": hist_data,
-        "badwires": badwires,
-    }
+    expected = get_expected_range(config.layer)
+    for side in ["A", "B"]:
+        side_df = samples[samples["side"] == side]
+        measured: Dict[int, float] = {}
+        for wire in expected:
+            wire_df = side_df[side_df["wire_number"] == wire]
+            if len(wire_df) < config.samples_per_wire:
+                continue
+            records = [
+                TensionResult(
+                    apa_name=row.apa_name,
+                    layer=row.layer,
+                    side=row.side,
+                    wire_number=int(row.wire_number),
+                    frequency=float(row.frequency),
+                    confidence=float(row.confidence),
+                    x=float(row.x),
+                    y=float(row.y),
+                    wires=[],
+                    time=datetime.fromisoformat(row.time)
+                    if isinstance(row.time, str)
+                    else row.time,
+                )
+                for row in wire_df.itertuples()
+            ]
+            cluster = has_cluster_dict(records, "tension", config.samples_per_wire)
+            if not cluster:
+                continue
+            freq = calculate_kde_max([r.frequency for r in cluster])
+            conf = float(np.average([r.confidence for r in cluster]))
+            x = round(float(np.average([r.x for r in cluster])), 1)
+            y = round(float(np.average([r.y for r in cluster])), 1)
+            tr = TensionResult(
+                apa_name=config.apa_name,
+                layer=config.layer,
+                side=side,
+                wire_number=wire,
+                frequency=freq,
+                confidence=conf,
+                x=x,
+                y=y,
+                wires=[float(r.tension) for r in cluster],
+                time=datetime.now(),
+            )
+            measured[wire] = tr.tension
+            line_data.append(
+                pd.DataFrame(
+                    {
+                        "wire_number": [wire],
+                        "tension": [tr.tension],
+                        "side_label": f"Side {side}",
+                    }
+                )
+            )
+            hist_data.append(
+                pd.DataFrame({"tension": [tr.tension], "side_label": f"Side {side}"})
+            )
+        tension_series[side] = measured
+        missing[side] = sorted(set(expected) - set(measured.keys()))
+    return tension_series, line_data, hist_data, missing
 
 
 def write_summary_csv(tension_series: Dict[str, Dict[int, float]], path: str) -> None:
+    """Write tension summary CSV for both sides."""
+    os.makedirs(os.path.dirname(path), exist_ok=True)
     all_wires = sorted(
         set(tension_series["A"].keys()) | set(tension_series["B"].keys())
     )
-    summary_df = pd.DataFrame(
+    df = pd.DataFrame(
         {
             "wire_number": all_wires,
             "A": [tension_series["A"].get(w, np.nan) for w in all_wires],
             "B": [tension_series["B"].get(w, np.nan) for w in all_wires],
         }
     )
-    summary_df.to_csv(path, index=False)
+    df.to_csv(path, index=False)
 
 
 def save_plot(
@@ -245,6 +123,9 @@ def save_plot(
     layer: str,
     output_dir: str,
 ) -> None:
+    os.makedirs(output_dir, exist_ok=True)
+    if not line_data:
+        return
     line_df = pd.concat(line_data)
     hist_df = pd.concat(hist_data)
 
@@ -279,152 +160,74 @@ def save_plot(
     plt.grid(True, linestyle=":", linewidth=0.5, color="gray")
 
     plt.tight_layout()
-    plt.savefig(f"{output_dir}/tension_plot_{apa_name}_{layer}.png", dpi=300)
+    plt.savefig(
+        os.path.join(output_dir, f"tension_plot_{apa_name}_{layer}.png"), dpi=300
+    )
     plt.close()
 
 
-def write_badwires(
-    path: str,
-    apa_name: str,
-    layer: str,
-    badwires_by_group: Dict[Tuple[str, str], List[int]],
-    outlier_wires_by_group: Dict[Tuple[str, str], List[int]],
+def write_missing_wires(
+    path: str, apa: str, layer: str, missing: Dict[str, List[int]]
 ) -> None:
+    """Write a simple log of wires with no measurements."""
+    os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w") as f:
-        for (layer_val, side), badwires in badwires_by_group.items():
-            f.write(f"{apa_name} - Layer {layer_val}, Side {side}:\n")
-            if badwires:
-                f.write(
-                    "  Bad wire_numbers (missing or no tension_pass=True): "
-                    + ", ".join(map(str, badwires))
-                    + "\n"
-                )
+        for side in ["A", "B"]:
+            wires = missing.get(side, [])
+            f.write(f"{apa} - Layer {layer}, Side {side}:\n")
+            if wires:
+                f.write("  Missing wire_numbers: " + ", ".join(map(str, wires)) + "\n")
             else:
-                f.write("  No bad wire_numbers\n")
-
-            outliers = sorted(set(outlier_wires_by_group.get((layer_val, side), [])))
-            if outliers:
-                f.write(
-                    "  Outlier wire_numbers (far from moving average): "
-                    + ", ".join(map(str, outliers))
-                    + "\n"
-                )
-            else:
-
-                f.write("  No outlier wire_numbers\n")
+                f.write("  All wires measured\n")
         f.write("\n")
 
 
-def analyze_wire_data(config: TensiometerConfig, wire_number: int) -> TensionResult | None:
-    """Analyze raw samples for a single wire and store result in tension_data."""
-    df = get_dataframe(config.data_path)
+def update_tension_logs(config: TensiometerConfig) -> Dict[str, str]:
+    """Generate summary CSV, plot and missing wire log for ``config``."""
     samples = get_samples_dataframe(config.data_path)
-
     mask = (
         (samples["apa_name"] == config.apa_name)
         & (samples["layer"] == config.layer)
-        & (samples["side"] == config.side)
-        & (samples["wire_number"] == wire_number)
         & (samples["confidence"].astype(float) >= config.confidence_threshold)
     )
+    df = samples[mask].copy()
+    df["wire_number"] = pd.to_numeric(df["wire_number"], errors="coerce")
+    df = df.dropna(subset=["wire_number", "frequency"])
+    df["wire_number"] = df["wire_number"].astype(int)
 
-    samples_sel = samples[mask]
+    tension_series, line_data, hist_data, missing = _compute_tensions(config, df)
 
-    if len(samples_sel) >= config.samples_per_wire:
-        wires = [
-            TensionResult(
-                apa_name=row.apa_name,
-                layer=row.layer,
-                side=row.side,
-                wire_number=int(row.wire_number),
-                frequency=float(row.frequency),
-                confidence=float(row.confidence),
-                x=float(row.x),
-                y=float(row.y),
-                wires=[],
-                time=datetime.fromisoformat(row.time) if isinstance(row.time, str) else row.time,
-            )
-            for row in samples_sel.itertuples()
-        ]
-
-        cluster = has_cluster(wires, "tension", config.samples_per_wire)
-        passing = cluster if cluster else wires[-config.samples_per_wire :]
-        frequency = calculate_kde_max([d.frequency for d in passing])
-        confidence = np.average([d.confidence for d in passing])
-        x = round(np.average([d.x for d in passing]), 1)
-        y = round(np.average([d.y for d in passing]), 1)
-        result = TensionResult(
-            apa_name=config.apa_name,
-            layer=config.layer,
-            side=config.side,
-            wire_number=wire_number,
-            frequency=frequency,
-            confidence=confidence,
-            x=x,
-            y=y,
-            wires=[float(d.tension) for d in passing],
-            time=datetime.now(),
-        )
-
-        row = {col: getattr(result, col, None) for col in EXPECTED_COLUMNS}
-        row["time"] = row["time"].isoformat()
-        row["wires"] = str(row["wires"])
-        df.loc[len(df)] = row
-        update_dataframe(config.data_path, df)
-        return result
-
-    sub = df[
-        (df["apa_name"] == config.apa_name)
-        & (df["layer"] == config.layer)
-        & (df["side"] == config.side)
-        & (df["wire_number"] == wire_number)
-    ]
-    if sub.empty:
-        return None
-
-    last = sub.sort_values("time").iloc[-1]
-    wires_val = []
-    if isinstance(last["wires"], str) and last["wires"]:
-        try:
-            wires_val = [float(x) for x in eval(last["wires"])]
-        except Exception:
-            wires_val = []
-
-    return TensionResult(
-        apa_name=last["apa_name"],
-        layer=last["layer"],
-        side=last["side"],
-        wire_number=int(last["wire_number"]),
-        frequency=float(last["frequency"]),
-        confidence=float(last["confidence"]),
-        x=float(last["x"]),
-        y=float(last["y"]),
-        wires=wires_val,
-        time=datetime.fromisoformat(last["time"]) if isinstance(last["time"], str) else last["time"],
+    output_dir = "data/tension_plots"
+    summary_path = (
+        f"data/tension_summaries/tension_summary_{config.apa_name}_{config.layer}.csv"
     )
+    bad_path = f"data/badwires/badwires_{config.apa_name}_{config.layer}.txt"
+
+    write_summary_csv(tension_series, summary_path)
+    save_plot(line_data, hist_data, config.apa_name, config.layer, output_dir)
+    write_missing_wires(bad_path, config.apa_name, config.layer, missing)
+
+    return {
+        "badwires": bad_path,
+        "tension_summary_csv": summary_path,
+        "plot_image": os.path.join(
+            output_dir, f"tension_plot_{config.apa_name}_{config.layer}.png"
+        ),
+    }
 
 
-if __name__ == "__main__":
-    tasks = [
-        # ("US_APA7", "U"),
-        # ("US_APA7", "V"),
-        # ("US_APA7", "X"),
-        ("US_APA9", "X")
-    ]
+def get_missing_wires(config: TensiometerConfig) -> Dict[str, List[int]]:
+    """Return missing wire numbers for each side for ``config``."""
+    samples = get_samples_dataframe(config.data_path)
+    mask = (
+        (samples["apa_name"] == config.apa_name)
+        & (samples["layer"] == config.layer)
+        & (samples["confidence"].astype(float) >= config.confidence_threshold)
+    )
+    df = samples[mask].copy()
+    df["wire_number"] = pd.to_numeric(df["wire_number"], errors="coerce")
+    df = df.dropna(subset=["wire_number", "frequency"])
+    df["wire_number"] = df["wire_number"].astype(int)
 
-    for apa_name, layer in tasks:
-        print(f"Processing APA {apa_name}, Layer {layer}...")
-        try:
-            config = TensiometerConfig(
-                apa_name=apa_name,
-                layer=layer,
-            )  # type: ignore
-            results = analyze_tension_data(config)
-            print("  Plot:", results["plot_image"])
-            print("  Summary CSV:", results["tension_summary_csv"])
-            print("  Bad Wires Log:", results["badwires"])
-        except FileNotFoundError:
-            print(f"  ❌ File not found for {apa_name}, Layer {layer}. Skipping.")
-        except Exception as e:
-            print(f"  ❌ Error processing {apa_name}, Layer {layer}: {e}")
-        print()
+    _, _, _, missing = _compute_tensions(config, df)
+    return missing
