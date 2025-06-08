@@ -8,9 +8,10 @@ import numpy as np
 import pandas as pd
 from tension_calculation import (
     calculate_kde_max,
-    has_cluster_dict,
+    has_cluster,
     tension_plausible,
 )
+
 from tensiometer_functions import (
     make_config,
     measure_list,
