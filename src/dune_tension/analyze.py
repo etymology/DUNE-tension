@@ -3,6 +3,7 @@ import numpy as np
 import seaborn as sns
 import matplotlib.pyplot as plt
 from collections import defaultdict
+from dataclasses import replace
 from data_cache import (
     get_dataframe,
     get_samples_dataframe,
@@ -48,14 +49,7 @@ def greedy_wire_ordering_with_bounds_tiebreak(existing_wires, expected_range):
 
 def _load_and_analyze(config: TensiometerConfig) -> Dict[str, Any]:
     """Helper that loads the data file and performs analysis."""
-    expected_range = get_expected_range(config.layer)
-    df_all = preprocess_dataframe(get_dataframe(config.data_path))
-    df = df_all[
-        (df_all["apa_name"] == config.apa_name)
-        & (df_all["layer"] == config.layer)
-    ]
-    df_sorted = df.sort_values(by="time")
-    return analyze_by_side(df_sorted, expected_range, config.layer)
+    return analyze_by_side(config)
 
 
 def analyze_tension_data(config: TensiometerConfig) -> Dict[str, Any]:
@@ -73,6 +67,23 @@ def analyze_tension_data(config: TensiometerConfig) -> Dict[str, Any]:
 
 def get_missing_wires(config: TensiometerConfig) -> Dict[str, List[int]]:
     """Return a dictionary of missing wires for each side."""
+    samples = get_samples_dataframe(config.data_path)
+    mask = (
+        (samples["apa_name"] == config.apa_name)
+        & (samples["layer"] == config.layer)
+    )
+
+    if not samples[mask].empty:
+        for side in ["A", "B"]:
+            side_mask = mask & (samples["side"] == side)
+            if side_mask.any():
+                wires = (
+                    samples.loc[side_mask, "wire_number"].dropna().astype(int).unique()
+                )
+                cfg_side = replace(config, side=side)
+                for wire in wires:
+                    analyze_wire_data(cfg_side, int(wire))
+
     results = _load_and_analyze(config)
     return results["missing_wires"]
 
@@ -135,8 +146,20 @@ def preprocess_dataframe(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def analyze_by_side(
-    df_sorted: pd.DataFrame, expected_range: range, layer: str, k: float = 2.0
+    config: TensiometerConfig,
+    df_sorted: pd.DataFrame | None = None,
+    k: float = 2.0,
 ) -> Dict[str, Any]:
+    """Analyze completed tension measurements by side."""
+    expected_range = get_expected_range(config.layer)
+    if df_sorted is None:
+        df_all = preprocess_dataframe(get_dataframe(config.data_path))
+        df = df_all[
+            (df_all["apa_name"] == config.apa_name)
+            & (df_all["layer"] == config.layer)
+        ]
+        df_sorted = df.sort_values(by="time")
+
     badwires_by_group: Dict[Tuple[str, str], List[int]] = defaultdict(list)
     outlier_wires_by_group: Dict[Tuple[str, str], List[int]] = defaultdict(list)
     tension_series: Dict[str, Dict[int, float]] = {"A": {}, "B": {}}
@@ -166,7 +189,7 @@ def analyze_by_side(
         )
 
         outliers = group_sorted.loc[outlier_mask, "wire_number"].astype(int).tolist()
-        outlier_wires_by_group[(layer, side)] = outliers
+        outlier_wires_by_group[(config.layer, side)] = outliers
 
         expected_set = set(expected_range)
         existing_set = set(wire_numbers)
@@ -180,7 +203,7 @@ def analyze_by_side(
         missing_wires[side] = missing
 
         badwires = sorted((expected_set - existing_set) | (expected_set & failed))
-        badwires_by_group[(layer, side)] = badwires
+        badwires_by_group[(config.layer, side)] = badwires
 
         for _, row in group_sorted.iterrows():
             tension_series[side][int(row["wire_number"])] = row["tension"]
