@@ -13,10 +13,10 @@ class TensionResult:
     layer: str
     side: str
     wire_number: int
-    frequency: float = 0.0
-    confidence: float = 0.0
-    x: float = 0.0
-    y: float = 0.0
+    frequency: float
+    confidence: float
+    x: float
+    y: float
     wires: List[float] | None = None
     ttf: float = 0.0
     time: datetime | None = None

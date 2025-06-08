@@ -10,11 +10,12 @@ from data_cache import (
     update_dataframe,
 )
 
-from results import RawSample, TensionResult
+from results import RawSample, TensionResult, EXPECTED_COLUMNS
 import os
 from typing import Dict, List, Tuple, Any
 from tensiometer_functions import TensiometerConfig
-
+from datetime import datetime
+from tension_calculation import has_cluster, calculate_kde_max
 
 def greedy_wire_ordering_with_bounds_tiebreak(existing_wires, expected_range):
     expected = list(expected_range)
@@ -346,7 +347,7 @@ def analyze_wire_data(config: TensiometerConfig, wire_number: int) -> TensionRes
             for row in samples_sel.itertuples()
         ]
 
-        cluster = has_cluster_dict(wires, "tension", config.samples_per_wire)
+        cluster = has_cluster(wires, "tension", config.samples_per_wire)
         passing = cluster if cluster else wires[-config.samples_per_wire :]
         frequency = calculate_kde_max([d.frequency for d in passing])
         confidence = np.average([d.confidence for d in passing])

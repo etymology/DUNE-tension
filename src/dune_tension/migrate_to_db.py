@@ -82,7 +82,7 @@ def migrate_csvs(csv_dir: str = "data/tension_data", db_path: str | None = None)
 
             tr = TensionResult(
                 apa_name=apa_name,
-                layer=str(row.get("layer", layer)),
+                layer=layer,
                 side=str(row.get("side", "")),
                 wire_number=int(row.get("wire_number", 0)),
                 frequency=float(row.get("frequency", 0.0)),

@@ -8,7 +8,7 @@ import numpy as np
 import pandas as pd
 from tension_calculation import (
     calculate_kde_max,
-    has_cluster_dict,
+    has_cluster,
     tension_plausible,
 )
 from tensiometer_functions import (
@@ -181,7 +181,7 @@ class Tensiometer:
             )
             for row in samples_df[mask].itertuples()
         ]
-        cluster = has_cluster_dict(wires, "tension", self.config.samples_per_wire)
+        cluster = has_cluster(wires, "tension", self.config.samples_per_wire)
         if cluster != []:
             print("already collected enough samples for this wire.")
             wire_y = np.average([d.y for d in wires])
@@ -254,7 +254,7 @@ class Tensiometer:
                     if self.config.samples_per_wire == 1:
                         return wires[:1], wire_y
 
-                    cluster = has_cluster_dict(
+                    cluster = has_cluster(
                         wires, "tension", self.config.samples_per_wire
                     )
                     if cluster != []:
