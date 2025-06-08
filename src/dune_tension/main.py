@@ -105,6 +105,7 @@ def create_tensiometer():
         raise
 
     spoof_audio = bool(os.environ.get("SPOOF_AUDIO"))
+    pitch_method = os.environ.get("PITCH_METHOD", "crepe")
     return Tensiometer(
         apa_name=entry_apa.get(),
         layer=layer_var.get(),
@@ -115,6 +116,7 @@ def create_tensiometer():
         stop_event=stop_event,
         samples_per_wire=samples,
         confidence_threshold=conf,
+        pitch_method=pitch_method,
     )
 
 

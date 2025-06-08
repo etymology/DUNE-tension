@@ -45,6 +45,7 @@ class Tensiometer:
         save_audio: bool = True,
         spoof: bool = False,
         spoof_movement: bool = False,
+        pitch_method: str = "crepe",
     ) -> None:
         self.config = make_config(
             apa_name=apa_name,
@@ -55,6 +56,7 @@ class Tensiometer:
             confidence_threshold=confidence_threshold,
             save_audio=save_audio,
             spoof=spoof,
+            pitch_method=pitch_method,
         )
         self.stop_event = stop_event or threading.Event()
         try:
@@ -207,7 +209,10 @@ class Tensiometer:
                 self.wiggle_func(current_wiggle)
             if audio_sample is not None:
                 frequency, confidence, tension, tension_ok = analyze_sample(
-                    audio_sample, self.samplerate, length
+                    audio_sample,
+                    self.samplerate,
+                    length,
+                    pitch_method=self.config.pitch_method,
                 )
                 if check_stop_event(
                     self.stop_event, "tension measurement interrupted!"

@@ -113,6 +113,7 @@ tfunc_stub = types.ModuleType("tensiometer_functions")
 def _make_config(**kwargs):
     cfg = types.SimpleNamespace(**kwargs)
     cfg.data_path = f"{cfg.apa_name}_{cfg.layer}.csv"
+    cfg.pitch_method = kwargs.get("pitch_method", "crepe")
     return cfg
 
 

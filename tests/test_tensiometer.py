@@ -98,7 +98,12 @@ sys.modules["tension_calculation"] = tc_stub
 ap_stub = types.ModuleType("audioProcessing")
 ap_stub.get_samplerate = lambda: None
 ap_stub.spoof_audio_sample = lambda p: []
-ap_stub.analyze_sample = lambda sample, sr, length: (sr, 1.0, 2.0, True)
+ap_stub.analyze_sample = lambda sample, sr, length, pitch_method="crepe": (
+    sr,
+    1.0,
+    2.0,
+    True,
+)
 sys.modules["audioProcessing"] = ap_stub
 
 # plc_io
@@ -125,6 +130,7 @@ tf_stub = types.ModuleType("tensiometer_functions")
 def _make_config(**kwargs):
     cfg = types.SimpleNamespace(**kwargs)
     cfg.data_path = f"{cfg.apa_name}_{cfg.layer}.csv"
+    cfg.pitch_method = kwargs.get("pitch_method", "crepe")
     return cfg
 
 

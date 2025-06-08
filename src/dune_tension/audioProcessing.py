@@ -299,8 +299,31 @@ def record_audio(duration, sample_rate, plot=False, normalize=False):
         return None
 
 
-def analyze_sample(audio_sample, sample_rate, wire_length):
-    frequency, confidence = get_pitch_crepe(audio_sample, sample_rate)
+def analyze_sample(
+    audio_sample,
+    sample_rate,
+    wire_length,
+    pitch_method: str = "crepe",
+) -> tuple[float, float, float, bool]:
+    """Analyze a single audio sample and return frequency, confidence, tension.
+
+    Parameters
+    ----------
+    audio_sample:
+        The recorded waveform data.
+    sample_rate:
+        Sampling rate of ``audio_sample``.
+    wire_length:
+        Length of the wire being measured.
+    pitch_method:
+        Which pitch detection backend to use.  ``"crepe"`` (default) or
+        ``"pesto"``.
+    """
+
+    if pitch_method == "pesto":
+        frequency, confidence = get_pitch_pesto(audio_sample, sample_rate)
+    else:
+        frequency, confidence = get_pitch_crepe(audio_sample, sample_rate)
     tension = tension_lookup(length=wire_length, frequency=frequency)
     tension_ok = tension_pass(tension, wire_length)
     if not tension_ok and tension_pass(tension / 4, wire_length):
