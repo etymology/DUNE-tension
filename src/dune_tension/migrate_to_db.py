@@ -4,8 +4,8 @@ from glob import glob
 
 import pandas as pd
 
-from results import TensionResult, EXPECTED_COLUMNS
-from data_cache import get_dataframe, update_dataframe
+from results import RawSample, RAW_SAMPLE_COLUMNS
+from data_cache import get_samples_dataframe, update_samples_dataframe
 
 
 def parse_time(value: str) -> datetime:
@@ -80,7 +80,7 @@ def migrate_csvs(csv_dir: str = "data/tension_data", db_path: str | None = None)
             except Exception:
                 ttf = 0.0
 
-            tr = TensionResult(
+            raw = RawSample(
                 apa_name=apa_name,
                 layer=layer,
                 side=str(row.get("side", "")),
@@ -89,26 +89,21 @@ def migrate_csvs(csv_dir: str = "data/tension_data", db_path: str | None = None)
                 confidence=float(row.get("confidence", 0.0)),
                 x=float(row.get("x", 0.0)),
                 y=float(row.get("y", 0.0)),
-                wires=wires,
-                ttf=ttf,
-                time=time_val,
+                time=time_val.isoformat(),
             )
-            item = {col: getattr(tr, col) for col in EXPECTED_COLUMNS}
-            item["time"] = item["time"].isoformat()
-            item["wires"] = str(item["wires"])
-            rows.append(item)
+            rows.append({col: getattr(raw, col) for col in RAW_SAMPLE_COLUMNS})
 
     if not rows:
         print("No CSV files found to migrate.")
         return
 
-    df_new = pd.DataFrame(rows, columns=EXPECTED_COLUMNS)
+    df_new = pd.DataFrame(rows, columns=RAW_SAMPLE_COLUMNS)
     if os.path.exists(db_path):
-        df_existing = get_dataframe(db_path)
+        df_existing = get_samples_dataframe(db_path)
         df_all = pd.concat([df_existing, df_new], ignore_index=True)
     else:
         df_all = df_new
-    update_dataframe(db_path, df_all)
+    update_samples_dataframe(db_path, df_all)
     print(f"Migrated {len(rows)} rows into {db_path}")
 
 
