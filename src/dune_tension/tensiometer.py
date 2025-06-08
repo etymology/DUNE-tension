@@ -6,11 +6,11 @@ import time
 
 import numpy as np
 import pandas as pd
-from tension_calculation import (
-    calculate_kde_max,
-    has_cluster,
-    tension_plausible,
-)
+from tension_calculation import calculate_kde_max, tension_plausible
+try:
+    from tension_calculation import has_cluster
+except ImportError:  # fallback for older stubs
+    from tension_calculation import has_cluster_dict as has_cluster
 from tensiometer_functions import (
     make_config,
     measure_list,
