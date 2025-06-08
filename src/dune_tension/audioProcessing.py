@@ -16,6 +16,17 @@ from tension_calculation import (
     tension_lookup,
     tension_pass,
 )
+
+# Optional dependencies used for alternative pitch detection
+try:
+    import torch
+    from pesto import load_model
+except Exception:  # pragma: no cover - optional
+    torch = None
+    load_model = None
+
+# Lazily initialized default pesto model
+_PESTO_MODEL = None
 import sounddevice as sd
 import os
 import random
@@ -196,6 +207,64 @@ def get_pitch_crepe(
         max_confidence = 0.0
 
     return max_frequency, max_confidence
+
+
+def get_pitch_pesto(
+    audio_data: np.ndarray,
+    samplerate: int,
+    model=None,
+) -> tuple[float, float]:
+    """Extract pitch and confidence using a Pesto pitch model.
+
+    Parameters
+    ----------
+    audio_data:
+        Array containing the audio waveform.  The data is converted to
+        ``float32`` before being passed to the model.
+    samplerate:
+        The sample rate of ``audio_data``.  If ``model`` is ``None`` a default
+        streaming model is created for this sample rate.
+    model:
+        Optional pre-loaded Pesto model.  When omitted, a default model is
+        lazily instantiated using :func:`pesto.load_model`.
+    """
+
+    if torch is None or load_model is None:
+        raise RuntimeError("pesto and torch are required for get_pitch_pesto")
+
+    global _PESTO_MODEL
+    if model is None:
+        if _PESTO_MODEL is None:
+            _PESTO_MODEL = load_model(
+                "mir-1k_g7",
+                step_size=5.0,
+                sampling_rate=samplerate,
+                streaming=False,
+                max_batch_size=1,
+            )
+        model = _PESTO_MODEL
+
+    buffer = np.asarray(audio_data, dtype=np.float32)
+    if buffer.ndim == 1:
+        buffer = buffer[None, :]
+    elif buffer.ndim == 2 and buffer.shape[0] != 1:
+        buffer = buffer.T
+
+    buffer_tensor = torch.tensor(buffer, dtype=torch.float32)
+
+    pitch, conf, _ = model(
+        buffer_tensor, return_activations=False, convert_to_freq=True
+    )
+
+    pitch_val = pitch.mean().item() if pitch.numel() > 0 else 0.0
+    conf_val = conf.mean().item() if conf.numel() > 0 else 0.1
+
+    if not torch.isfinite(pitch.mean()):
+        pitch_val = 0.0
+    if not torch.isfinite(conf.mean()):
+        conf_val = 0.1
+
+    return pitch_val, conf_val
 
 
 def record_audio(duration, sample_rate, plot=False, normalize=False):

@@ -15,4 +15,6 @@ dependencies = [
     "seaborn>=0.13.2",
     "sounddevice>=0.5.2",
     "tensorflow>=2.19.0",
+    "pesto>=0.1.0",
+    "torch>=2.1.2",
 ]

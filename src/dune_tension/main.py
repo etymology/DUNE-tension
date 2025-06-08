@@ -226,7 +226,12 @@ def manual_goto():
 
 
 def manual_increment(dx: float, dy: float):
-    """Move the winder by 0.1 mm increments in the specified direction."""
+    """Move the winder by 0.1 mm increments in the specified direction.
+
+    The winder's PLC can return positions with long floating point values.
+    To keep movements predictable, always round the target coordinates to the
+    nearest 0.1 mm before sending the command.
+    """
     cur_x, cur_y = _get_xy_func()
 
     # Determine x-axis orientation based on side/flipped state
@@ -237,11 +242,20 @@ def manual_increment(dx: float, dy: float):
     else:
         x_sign = -1.0
 
-    _goto_xy_func(cur_x + x_sign * dx * 0.1, cur_y + dy * 0.1)
+    new_x = cur_x + x_sign * dx * 0.1
+    new_y = cur_y + dy * 0.1
+
+    # Round to the nearest 0.1 mm to avoid accumulating floating point errors
+    new_x = round(new_x, 1)
+    new_y = round(new_y, 1)
+
+    _goto_xy_func(new_x, new_y)
 
 
 root = tk.Tk()
 root.title("Tensiometer GUI")
+if hasattr(root, "columnconfigure"):
+    root.columnconfigure(0, weight=1)
 
 
 def _on_close() -> None:
@@ -264,7 +278,9 @@ root.protocol("WM_DELETE_WINDOW", _on_close)
 # main sections neatly stacked in the window.
 
 bottom_frame = tk.Frame(root)
-bottom_frame.grid(row=0, column=0, padx=10, pady=10)
+bottom_frame.grid(row=0, column=0, padx=10, pady=10, sticky="nsew")
+if hasattr(bottom_frame, "columnconfigure"):
+    bottom_frame.columnconfigure(0, weight=1)
 
 apa_frame = tk.LabelFrame(bottom_frame, text="APA")
 apa_frame.grid(row=0, column=0, sticky="ew", pady=5)
@@ -274,6 +290,8 @@ measure_frame.grid(row=1, column=0, sticky="ew", pady=5)
 
 servo_frame = tk.LabelFrame(bottom_frame, text="Servo")
 servo_frame.grid(row=2, column=0, sticky="ew", pady=5)
+if hasattr(servo_frame, "columnconfigure"):
+    servo_frame.columnconfigure(1, weight=1)
 
 # --- APA Info --------------------------------------------------------------
 tk.Label(apa_frame, text="APA Name:").grid(row=0, column=0, sticky="e")
@@ -374,7 +392,7 @@ focus_slider = tk.Scale(
     command=lambda val: servo_controller.focus_target(int(val)),
 )
 focus_slider.set(4000)
-focus_slider.grid(row=3, column=1)
+focus_slider.grid(row=3, column=1, sticky="ew")
 
 # --- Manual Move -----------------------------------------------------------
 manual_move_frame = tk.LabelFrame(bottom_frame, text="Manual Move")
