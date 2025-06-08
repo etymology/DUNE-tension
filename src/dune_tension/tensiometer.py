@@ -8,7 +8,7 @@ import numpy as np
 import pandas as pd
 from tension_calculation import (
     calculate_kde_max,
-    has_cluster,
+    has_cluster_dict,
     tension_plausible,
 )
 from tensiometer_functions import (
@@ -24,12 +24,10 @@ from geometry import (
 from audioProcessing import analyze_sample, get_samplerate
 from plc_io import is_web_server_active
 from data_cache import (
-    get_dataframe,
-    update_dataframe,
     get_samples_dataframe,
     update_samples_dataframe,
 )
-from results import TensionResult, RawSample, EXPECTED_COLUMNS
+from results import TensionResult, RawSample
 
 
 class Tensiometer:
@@ -181,7 +179,7 @@ class Tensiometer:
             )
             for row in samples_df[mask].itertuples()
         ]
-        cluster = has_cluster(wires, "tension", self.config.samples_per_wire)
+        cluster = has_cluster_dict(wires, "tension", self.config.samples_per_wire)
         if cluster != []:
             print("already collected enough samples for this wire.")
             wire_y = np.average([d.y for d in wires])
@@ -254,7 +252,7 @@ class Tensiometer:
                     if self.config.samples_per_wire == 1:
                         return wires[:1], wire_y
 
-                    cluster = has_cluster(
+                    cluster = has_cluster_dict(
                         wires, "tension", self.config.samples_per_wire
                     )
                     if cluster != []:
@@ -362,14 +360,7 @@ class Tensiometer:
         result.ttf = ttf
         result.time = datetime.now()
 
-        df = get_dataframe(self.config.data_path)
-        row = {col: getattr(result, col, None) for col in EXPECTED_COLUMNS}
-        if isinstance(row.get("time"), datetime):
-            row["time"] = row["time"].isoformat()
-        if isinstance(row.get("wires"), list):
-            row["wires"] = str(row["wires"])
-        df.loc[len(df)] = row
-        update_dataframe(self.config.data_path, df)
+
 
         try:
             from analyze import update_tension_logs

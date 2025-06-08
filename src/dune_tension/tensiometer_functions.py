@@ -2,7 +2,7 @@ from dataclasses import dataclass, field
 from typing import Optional, Callable
 import math
 from typing import List, Tuple
-from data_cache import get_dataframe
+from data_cache import get_samples_dataframe
 
 
 def check_stop_event(
@@ -100,7 +100,7 @@ def get_xy_from_file(
     import numpy as np
     from geometry import refine_position
 
-    df_all = get_dataframe(config.data_path)
+    df_all = get_samples_dataframe(config.data_path)
     df = df_all[
         (df_all["apa_name"] == config.apa_name)
         & (df_all["layer"] == config.layer)
