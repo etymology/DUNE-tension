@@ -226,7 +226,12 @@ def manual_goto():
 
 
 def manual_increment(dx: float, dy: float):
-    """Move the winder by 0.1 mm increments in the specified direction."""
+    """Move the winder by 0.1 mm increments in the specified direction.
+
+    The winder's PLC can return positions with long floating point values.
+    To keep movements predictable, always round the target coordinates to the
+    nearest 0.1 mm before sending the command.
+    """
     cur_x, cur_y = _get_xy_func()
 
     # Determine x-axis orientation based on side/flipped state
@@ -237,7 +242,14 @@ def manual_increment(dx: float, dy: float):
     else:
         x_sign = -1.0
 
-    _goto_xy_func(cur_x + x_sign * dx * 0.1, cur_y + dy * 0.1)
+    new_x = cur_x + x_sign * dx * 0.1
+    new_y = cur_y + dy * 0.1
+
+    # Round to the nearest 0.1 mm to avoid accumulating floating point errors
+    new_x = round(new_x, 1)
+    new_y = round(new_y, 1)
+
+    _goto_xy_func(new_x, new_y)
 
 
 root = tk.Tk()
