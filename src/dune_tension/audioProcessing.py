@@ -8,6 +8,7 @@ import numpy as np
 # ``matplotlib`` module from failing.  ``MPLBACKEND`` is respected by matplotlib
 # if set before importing ``pyplot``.
 import os
+
 os.environ.setdefault("MPLBACKEND", "Agg")
 import matplotlib.pyplot as plt
 import crepe

@@ -1,9 +1,7 @@
 import threading
-import queue
 from datetime import datetime
 from typing import Optional
 import time
-
 import numpy as np
 import pandas as pd
 from tension_calculation import (
@@ -164,7 +162,10 @@ class Tensiometer:
             & (samples_df["layer"] == self.config.layer)
             & (samples_df["side"] == self.config.side)
             & (samples_df["wire_number"] == wire_number)
-            & (samples_df["confidence"].astype(float) >= self.config.confidence_threshold)
+            & (
+                samples_df["confidence"].astype(float)
+                >= self.config.confidence_threshold
+            )
         )
         wires = [
             TensionResult(
@@ -177,7 +178,9 @@ class Tensiometer:
                 x=float(row.x),
                 y=float(row.y),
                 wires=[],
-                time=datetime.fromisoformat(row.time) if isinstance(row.time, str) else row.time,
+                time=datetime.fromisoformat(row.time)
+                if isinstance(row.time, str)
+                else row.time,
             )
             for row in samples_df[mask].itertuples()
         ]
@@ -246,7 +249,8 @@ class Tensiometer:
                         time=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                     )
                     samples_df.loc[len(samples_df)] = {
-                        col: getattr(raw, col) for col in raw.__dataclass_fields__.keys()
+                        col: getattr(raw, col)
+                        for col in raw.__dataclass_fields__.keys()
                     }
                     update_samples_dataframe(self.config.data_path, samples_df)
                     wire_y = np.average([d.y for d in wires])

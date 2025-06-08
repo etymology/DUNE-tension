@@ -90,7 +90,7 @@ tc_stub = types.ModuleType("tension_calculation")
 tc_stub.calculate_kde_max = lambda freqs: max(freqs)
 tc_stub.tension_lookup = lambda length, frequency: frequency * 0.1
 tc_stub.tension_pass = lambda tension, length: True
-tc_stub.has_cluster_dict = lambda data, key, n: data[:n] if len(data) >= n else []
+tc_stub.has_cluster = lambda data, key, n: data[:n] if len(data) >= n else []
 tc_stub.tension_plausible = lambda t: True
 sys.modules["tension_calculation"] = tc_stub
 
@@ -150,9 +150,7 @@ def test_generate_result_single_sample():
         y=2.0,
         wires=[2.0],
     )
-    result = t._generate_result(
-        [sample], wire_number=1, wire_x=1.5, wire_y=2.5
-    )
+    result = t._generate_result([sample], wire_number=1, wire_x=1.5, wire_y=2.5)
     assert result.tension == 0.5
     assert result.frequency == 5.0
     assert result.tension_pass
@@ -201,9 +199,7 @@ def test_generate_result_multi_sample():
             wires=[1.8],
         ),
     ]
-    result = t._generate_result(
-        wires, wire_number=1, wire_x=2.0, wire_y=3.0
-    )
+    result = t._generate_result(wires, wire_number=1, wire_x=2.0, wire_y=3.0)
     assert result.frequency == 3.0  # max frequency via stub
     assert result.tension == pytest.approx(0.3)  # frequency * 0.1 via stub
     assert result.tension_pass

@@ -102,8 +102,7 @@ def get_xy_from_file(
 
     df_all = get_dataframe(config.data_path)
     df = df_all[
-        (df_all["apa_name"] == config.apa_name)
-        & (df_all["layer"] == config.layer)
+        (df_all["apa_name"] == config.apa_name) & (df_all["layer"] == config.layer)
     ]
     virtual_side = (
         {"A": "B", "B": "A"}[config.side.upper()]

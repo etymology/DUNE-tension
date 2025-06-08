@@ -11,17 +11,13 @@ _dataframe_cache: dict[str, pd.DataFrame] = {}
 
 def _ensure_data_table(conn: sqlite3.Connection) -> None:
     columns_sql = ", ".join(f"{col} TEXT" for col in EXPECTED_COLUMNS)
-    conn.execute(
-        f"CREATE TABLE IF NOT EXISTS tension_data ({columns_sql})"
-    )
+    conn.execute(f"CREATE TABLE IF NOT EXISTS tension_data ({columns_sql})")
     conn.commit()
 
 
 def _ensure_samples_table(conn: sqlite3.Connection) -> None:
     columns_sql = ", ".join(f"{col} TEXT" for col in RAW_SAMPLE_COLUMNS)
-    conn.execute(
-        f"CREATE TABLE IF NOT EXISTS tension_samples ({columns_sql})"
-    )
+    conn.execute(f"CREATE TABLE IF NOT EXISTS tension_samples ({columns_sql})")
     conn.commit()
 
 

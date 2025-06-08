@@ -33,7 +33,9 @@ def parse_wires(val: str) -> list[float]:
             return []
 
 
-def migrate_csvs(csv_dir: str = "data/tension_data", db_path: str | None = None) -> None:
+def migrate_csvs(
+    csv_dir: str = "data/tension_data", db_path: str | None = None
+) -> None:
     """Migrate all ``tension_data_*.csv`` files into a single SQLite DB."""
     if db_path is None:
         db_path = os.path.join(csv_dir, "tension_data.db")

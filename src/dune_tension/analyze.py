@@ -63,7 +63,7 @@ def _compute_tensions(
                 )
                 for row in wire_df.itertuples()
             ]
-            cluster = has_cluster_dict(records, "tension", config.samples_per_wire)
+            cluster = has_cluster(records, "tension", config.samples_per_wire)
             if not cluster:
                 continue
             freq = calculate_kde_max([r.frequency for r in cluster])
