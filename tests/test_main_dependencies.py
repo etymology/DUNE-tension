@@ -167,6 +167,7 @@ def test_create_tensiometer_flags(monkeypatch):
     monkeypatch.setattr(main.messagebox, "showerror", lambda *a, **k: None)
     monkeypatch.delenv("SPOOF_AUDIO", raising=False)
     monkeypatch.delenv("SPOOF_PLC", raising=False)
+    monkeypatch.delenv("SPOOF_SERVO", raising=False)
     main.create_tensiometer()
     assert called_args["spoof"] is False
     assert called_args["spoof_movement"] is False
@@ -176,12 +177,13 @@ def test_create_tensiometer_flags(monkeypatch):
     monkeypatch.setenv("SPOOF_AUDIO", "1")
     main.create_tensiometer()
     assert called_args["spoof"] is True
-    assert called_args["spoof_movement"] is True
+    assert called_args["spoof_movement"] is False
     assert called_args["plot_audio"] is True
 
     called_args.clear()
     monkeypatch.delenv("SPOOF_AUDIO")
     monkeypatch.setenv("SPOOF_PLC", "1")
+    monkeypatch.delenv("SPOOF_SERVO", raising=False)
     main.create_tensiometer()
     assert called_args["spoof"] is False
     assert called_args["spoof_movement"] is True

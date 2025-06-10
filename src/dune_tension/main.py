@@ -33,13 +33,13 @@ state_file = "gui_state.json"
 stop_event = Event()
 
 
-if os.environ.get("SPOOF_SERVO") or os.environ.get("SPOOF_AUDIO"):
+if os.environ.get("SPOOF_SERVO"):
     servo_controller = ServoController(servo=DummyController())
 else:
     servo_controller = ServoController()
 
 # Determine which PLC functions to use for manual movement
-if os.environ.get("SPOOF_PLC") or os.environ.get("SPOOF_AUDIO"):
+if os.environ.get("SPOOF_PLC"):
     _get_xy_func = spoof_get_xy
     _goto_xy_func = spoof_goto_xy
 else:
@@ -113,7 +113,7 @@ def create_tensiometer():
         side=side_var.get(),
         flipped=flipped_var.get(),
         spoof=spoof_audio,
-        spoof_movement=bool(os.environ.get("SPOOF_PLC") or spoof_audio),
+        spoof_movement=bool(os.environ.get("SPOOF_PLC")),
         stop_event=stop_event,
         samples_per_wire=samples,
         confidence_threshold=conf,
