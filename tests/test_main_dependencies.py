@@ -163,18 +163,21 @@ def test_create_tensiometer_flags(monkeypatch):
     monkeypatch.setattr(main, "flipped_var", DummyGetter(False))
     monkeypatch.setattr(main, "entry_samples", DummyGetter("2"))
     monkeypatch.setattr(main, "entry_confidence", DummyGetter("0.8"))
+    monkeypatch.setattr(main, "plot_audio_var", DummyGetter(True))
     monkeypatch.setattr(main.messagebox, "showerror", lambda *a, **k: None)
     monkeypatch.delenv("SPOOF_AUDIO", raising=False)
     monkeypatch.delenv("SPOOF_PLC", raising=False)
     main.create_tensiometer()
     assert called_args["spoof"] is False
     assert called_args["spoof_movement"] is False
+    assert called_args["plot_audio"] is True
 
     called_args.clear()
     monkeypatch.setenv("SPOOF_AUDIO", "1")
     main.create_tensiometer()
     assert called_args["spoof"] is True
     assert called_args["spoof_movement"] is True
+    assert called_args["plot_audio"] is True
 
     called_args.clear()
     monkeypatch.delenv("SPOOF_AUDIO")
@@ -182,6 +185,7 @@ def test_create_tensiometer_flags(monkeypatch):
     main.create_tensiometer()
     assert called_args["spoof"] is False
     assert called_args["spoof_movement"] is True
+    assert called_args["plot_audio"] is True
 
 
 def test_servo_controller_run_loop():
@@ -213,6 +217,7 @@ def test_monitor_tension_logs(monkeypatch):
     monkeypatch.setattr(main, "side_var", DummyGetter("A"))
     monkeypatch.setattr(main, "flipped_var", DummyGetter(False))
     monkeypatch.setattr(main, "root", DummyRoot())
+    monkeypatch.setattr(main, "plot_audio_var", DummyGetter(True))
     def dummy_make_config(**kwargs):
         called_args.update(kwargs)
         return DummyConfig
@@ -231,6 +236,7 @@ def test_monitor_tension_logs(monkeypatch):
     assert updates and updates[-1] is DummyConfig
     assert called_args["samples_per_wire"] == 5
     assert called_args["confidence_threshold"] == 0.9
+    assert called_args["plot_audio"] is True
     assert main.monitor_tension_logs.last_mtime == 1
     main.monitor_tension_logs()
     assert len(updates) == 1

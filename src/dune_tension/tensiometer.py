@@ -42,6 +42,7 @@ class Tensiometer:
         samples_per_wire: int = 3,
         confidence_threshold: float = 0.7,
         save_audio: bool = True,
+        plot_audio: bool = False,
         spoof: bool = False,
         spoof_movement: bool = False,
     ) -> None:
@@ -54,6 +55,7 @@ class Tensiometer:
             confidence_threshold=confidence_threshold,
             save_audio=save_audio,
             spoof=spoof,
+            plot_audio=plot_audio,
         )
         self.stop_event = stop_event or threading.Event()
         try:
@@ -225,7 +227,7 @@ class Tensiometer:
             )
             if check_stop_event(self.stop_event, "tension measurement interrupted!"):
                 return None, wire_y
-            if audio_sample is not None:
+            if audio_sample is not None and self.config.plot_audio:
                 self._plot_audio(audio_sample)
             if self.config.save_audio and not self.config.spoof:
                 np.savez(

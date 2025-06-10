@@ -68,6 +68,7 @@ def save_state():
         "servo_speed": speed_slider.get(),
         "servo_accel": accel_slider.get(),
         "servo_dwell": dwell_slider.get(),
+        "plot_audio": plot_audio_var.get(),
     }
     with open(state_file, "w") as f:
         json.dump(state, f)
@@ -88,6 +89,7 @@ def load_state():
             speed_slider.set(state.get("servo_speed", 1))
             accel_slider.set(state.get("servo_accel", 1))
             dwell_slider.set(state.get("servo_dwell", 100))
+            plot_audio_var.set(state.get("plot_audio", False))
 
 
 def create_tensiometer():
@@ -115,6 +117,7 @@ def create_tensiometer():
         stop_event=stop_event,
         samples_per_wire=samples,
         confidence_threshold=conf,
+        plot_audio=plot_audio_var.get(),
     )
 
 
@@ -199,6 +202,7 @@ def monitor_tension_logs():
         flipped=flipped_var.get(),
         samples_per_wire=samples,
         confidence_threshold=conf,
+        plot_audio=plot_audio_var.get(),
     )
 
     path = config.data_path
@@ -352,6 +356,11 @@ entry_wire_list = tk.Entry(measure_frame)
 entry_wire_list.grid(row=3, column=1)
 tk.Button(measure_frame, text="Seek Wire(s)", command=measure_list).grid(
     row=3, column=2
+)
+
+plot_audio_var = tk.BooleanVar()
+tk.Checkbutton(measure_frame, text="Plot Audio", variable=plot_audio_var).grid(
+    row=4, column=2, sticky="w"
 )
 
 tk.Button(measure_frame, text="Measure Auto", command=measure_auto).grid(
