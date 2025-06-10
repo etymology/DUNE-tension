@@ -96,9 +96,15 @@ class Tensiometer:
     def _plot_audio(self, audio_sample) -> None:
         """Display a simple plot of the recorded audio sample."""
         try:
+            import matplotlib
             import matplotlib.pyplot as plt  # Local import to avoid optional dep
         except Exception as exc:  # pragma: no cover - plotting is optional
             print(f"Failed to import matplotlib for plotting: {exc}")
+            return
+
+        backend = matplotlib.get_backend().lower()
+        if backend in matplotlib.rcsetup.non_interactive_bk:  # pragma: no cover - environment dependent
+            print(f"Matplotlib backend '{backend}' is non-interactive; skipping plot display.")
             return
 
         try:
@@ -109,7 +115,9 @@ class Tensiometer:
             plt.ylabel("Amplitude")
             plt.grid(True)
             plt.tight_layout()
-            plt.show()
+            plt.show(block=False)
+            plt.pause(0.001)
+            plt.close()
         except Exception as exc:  # pragma: no cover - plotting is optional
             print(f"Failed to plot audio sample: {exc}")
 
