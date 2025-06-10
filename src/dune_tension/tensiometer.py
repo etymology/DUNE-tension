@@ -20,6 +20,7 @@ from geometry import (
     length_lookup,
 )
 from audioProcessing import analyze_sample, get_samplerate
+
 from plc_io import is_web_server_active
 from data_cache import (
     get_dataframe,
@@ -91,6 +92,26 @@ class Tensiometer:
             self.record_audio_func = lambda duration, sample_rate: record_audio(
                 0.15, sample_rate=sample_rate, normalize=True
             )
+
+    def _plot_audio(self, audio_sample) -> None:
+        """Display a simple plot of the recorded audio sample."""
+        try:
+            import matplotlib.pyplot as plt  # Local import to avoid optional dep
+        except Exception as exc:  # pragma: no cover - plotting is optional
+            print(f"Failed to import matplotlib for plotting: {exc}")
+            return
+
+        try:
+            plt.figure(figsize=(10, 4))
+            plt.plot(audio_sample)
+            plt.title("Recorded Audio Sample")
+            plt.xlabel("Sample Index")
+            plt.ylabel("Amplitude")
+            plt.grid(True)
+            plt.tight_layout()
+            plt.show()
+        except Exception as exc:  # pragma: no cover - plotting is optional
+            print(f"Failed to plot audio sample: {exc}")
 
     def measure_calibrate(self, wire_number: int) -> Optional[TensionResult]:
         xy = self.get_current_xy_position()
@@ -199,6 +220,8 @@ class Tensiometer:
             )
             if check_stop_event(self.stop_event, "tension measurement interrupted!"):
                 return None, wire_y
+            if audio_sample is not None:
+                self._plot_audio(audio_sample)
             if self.config.save_audio and not self.config.spoof:
                 np.savez(
                     f"audio/{self.config.layer}{self.config.side}{wire_number}_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}",
