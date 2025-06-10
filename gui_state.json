@@ -1,1 +1,1 @@
-{"apa_name": "USAPA999", "layer": "G", "side": "B", "flipped": false, "wire_number": "", "wire_list": "330,331,332,333,334,335,336", "samples_per_wire": 5, "confidence_threshold": 0.0, "servo_speed": 177, "servo_accel": 147, "servo_dwell": 100}
+{"apa_name": "USAPA999", "layer": "G", "side": "B", "flipped": false, "wire_number": "", "wire_list": "330,331,332,333,334,335,336", "samples_per_wire": 1, "confidence_threshold": 0.5, "servo_speed": 177, "servo_accel": 147, "servo_dwell": 100}
