@@ -5,7 +5,7 @@ import os
 from tensiometer import Tensiometer
 from tensiometer_functions import make_config
 from threading import Event, Thread
-from maestro import DummyController, ServoController
+from maestro import DummyController, ServoController, Controller
 
 try:
     from plc_io import (
@@ -36,7 +36,7 @@ stop_event = Event()
 if os.environ.get("SPOOF_SERVO"):
     servo_controller = ServoController(servo=DummyController())
 else:
-    servo_controller = ServoController()
+    servo_controller = ServoController(Controller())
 
 # Determine which PLC functions to use for manual movement
 if os.environ.get("SPOOF_PLC"):

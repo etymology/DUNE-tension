@@ -220,6 +220,7 @@ def test_monitor_tension_logs(monkeypatch):
     monkeypatch.setattr(main, "flipped_var", DummyGetter(False))
     monkeypatch.setattr(main, "root", DummyRoot())
     monkeypatch.setattr(main, "plot_audio_var", DummyGetter(True))
+
     def dummy_make_config(**kwargs):
         called_args.update(kwargs)
         return DummyConfig
