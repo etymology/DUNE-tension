@@ -29,6 +29,7 @@ class TensiometerConfig:
     confidence_threshold: float
     save_audio: bool
     spoof: bool
+    plot_audio: bool = False
 
     data_path: str = field(init=False)
 
@@ -47,6 +48,7 @@ def make_config(
     confidence_threshold: float = 0.7,
     save_audio: bool = True,
     spoof: bool = False,
+    plot_audio: bool = False,
 ) -> TensiometerConfig:
     if layer in ["X", "G"]:
         dx, dy = 0.0, 2300 / 480
@@ -71,6 +73,7 @@ def make_config(
         confidence_threshold,
         save_audio,
         spoof,
+        plot_audio,
     )
 
 
