@@ -178,11 +178,27 @@ def interrupt():
 
 def monitor_tension_logs():
     """Check for updates to the tension data file and refresh logs."""
+    try:
+        samples = int(entry_samples.get())
+        if samples < 1:
+            raise ValueError
+    except Exception:
+        samples = 3
+
+    try:
+        conf = float(entry_confidence.get())
+        if not (0.0 <= conf <= 1.0):
+            raise ValueError
+    except Exception:
+        conf = 0.7
+
     config = make_config(
         apa_name=entry_apa.get(),
         layer=layer_var.get(),
         side=side_var.get(),
         flipped=flipped_var.get(),
+        samples_per_wire=samples,
+        confidence_threshold=conf,
     )
 
     path = config.data_path
