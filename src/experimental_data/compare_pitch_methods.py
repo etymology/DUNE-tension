@@ -1,5 +1,6 @@
 import os
 from pathlib import Path
+import concurrent.futures
 import numpy as np
 import pandas as pd
 
@@ -19,14 +20,29 @@ def compare_methods(
     input_dir: str = "audio",
     output: str = "data/pitch_comparison.csv",
     diff_out: str = "data/pitch_diff.csv",
+    timeout: float | None = 60.0,
 ) -> None:
-    """Analyze all npz files in ``input_dir`` with CREPE and Pesto."""
+    """Analyze all npz files in ``input_dir`` with CREPE and Pesto.
+
+    ``timeout`` sets the maximum number of seconds allowed for each pitch
+    extraction method. If a method does not finish within the timeout, its
+    results are recorded as ``NaN``.
+    """
     rows = []
     folder = Path(input_dir)
     for npz_file in sorted(folder.glob("*.npz")):
         audio, sr = load_audio(npz_file)
-        crepe_f, crepe_c = get_pitch_crepe(audio, sr)
-        pesto_f, pesto_c = get_pitch_pesto(audio, sr)
+        with concurrent.futures.ThreadPoolExecutor() as exe:
+            f_crepe = exe.submit(get_pitch_crepe, audio, sr)
+            f_pesto = exe.submit(get_pitch_pesto, audio, sr)
+            try:
+                crepe_f, crepe_c = f_crepe.result(timeout=timeout)
+            except concurrent.futures.TimeoutError:
+                crepe_f, crepe_c = np.nan, np.nan
+            try:
+                pesto_f, pesto_c = f_pesto.result(timeout=timeout)
+            except concurrent.futures.TimeoutError:
+                pesto_f, pesto_c = np.nan, np.nan
         rows.append(
             {
                 "file": npz_file.name,
