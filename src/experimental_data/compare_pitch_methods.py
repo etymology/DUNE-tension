@@ -28,11 +28,18 @@ def compare_methods(
 
     ``timeout`` sets the maximum number of seconds allowed for each pitch
     extraction method. If a method does not finish within the timeout, its
-    results are recorded as ``NaN``.
+    results are recorded as ``NaN``. Results and per-file differences are
+    appended to their CSV outputs as processing progresses so partial data is
+    preserved if execution stops early.
     """
-    rows = []
     folder = Path(input_dir)
     start = time.monotonic()
+    out_path = Path(output)
+    diff_path = Path(diff_out)
+    os.makedirs(out_path.parent, exist_ok=True)
+    os.makedirs(diff_path.parent, exist_ok=True)
+    first_write = not out_path.exists()
+    first_diff_write = not diff_path.exists()
     for npz_file in sorted(folder.glob("*.npz")):
         if batch_timeout is not None and time.monotonic() - start >= batch_timeout:
             break
@@ -57,44 +64,42 @@ def compare_methods(
                 pesto_f, pesto_c = f_pesto.result(timeout=per_timeout)
             except concurrent.futures.TimeoutError:
                 pesto_f, pesto_c = np.nan, np.nan
-        rows.append(
+        rows = [
             {
                 "file": npz_file.name,
                 "method": "crepe",
                 "frequency": crepe_f,
                 "confidence": crepe_c,
-            }
-        )
-        rows.append(
+            },
             {
                 "file": npz_file.name,
                 "method": "pesto",
                 "frequency": pesto_f,
                 "confidence": pesto_c,
-            }
+            },
+        ]
+        pd.DataFrame(rows).to_csv(
+            out_path,
+            mode="a",
+            index=False,
+            header=first_write,
         )
+        first_write = False
 
-    df = pd.DataFrame(rows)
-    os.makedirs(Path(output).parent, exist_ok=True)
-    df.to_csv(output, index=False)
-
-    diffs = []
-    for file, group in df.groupby("file"):
-        if {"crepe", "pesto"} <= set(group["method"]):
-            crepe_row = group[group["method"] == "crepe"].iloc[0]
-            pesto_row = group[group["method"] == "pesto"].iloc[0]
-            diffs.append(
-                {
-                    "file": file,
-                    "frequency_difference": crepe_row["frequency"]
-                    - pesto_row["frequency"],
-                    "confidence_difference": crepe_row["confidence"]
-                    - pesto_row["confidence"],
-                }
+        if not (np.isnan(crepe_f) or np.isnan(pesto_f)):
+            diff_row = {
+                "file": npz_file.name,
+                "frequency_difference": crepe_f - pesto_f,
+                "confidence_difference": crepe_c - pesto_c,
+            }
+            pd.DataFrame([diff_row]).to_csv(
+                diff_path,
+                mode="a",
+                index=False,
+                header=first_diff_write,
             )
-    if diffs:
-        diff_df = pd.DataFrame(diffs)
-        diff_df.to_csv(diff_out, index=False)
+            first_diff_write = False
+
 
 
 if __name__ == "__main__":
