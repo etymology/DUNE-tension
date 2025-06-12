@@ -53,8 +53,26 @@ def is_in_bounds(x, y):
 def refine_position(
     x: float, y: float, dx: float, dy: float
 ) -> tuple[float, float] | None:
+    """Refine ``(x, y)`` along ``(dx, dy)`` staying in bounds.
+
+    The function searches in both ``+n`` and ``-n`` directions for a
+    position that is inside the allowed geometry and as far as possible
+    from the comb and ``Y`` limits.  Among all valid candidates the one
+    that maximises the minimal distance to the lines ``x = c`` for
+    ``c`` in :data:`comb_positions` and ``y = Y_MIN``/``Y_MAX`` is
+    chosen.  If no candidate is valid the original coordinates are
+    returned unchanged.
+    """
+
+    def score(pos: tuple[float, float]) -> float:
+        """Return the minimal distance of ``pos`` to any limiting line."""
+        px, py = pos
+        distances = [abs(px - c) for c in comb_positions]
+        distances.append(abs(py - Y_MAX))
+        distances.append(abs(py - Y_MIN))
+        return min(distances)
+
     candidates = []
-    y_target = (Y_MIN + Y_MAX) / 2
 
     for n in range(1000):
         # Generate forward and reverse candidates
@@ -69,8 +87,8 @@ def refine_position(
     if not candidates:
         return (x, y)
 
-    # Return candidate with the minimum difference to y_target
-    return min(candidates, key=lambda pos: abs(y_target - pos[1]))
+    # Choose the candidate furthest from limiting lines
+    return max(candidates, key=score)
 
 
 def length_lookup(layer: str, wire_number: int, zone: int, taped=False):
