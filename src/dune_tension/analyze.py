@@ -182,6 +182,33 @@ def write_missing_wires(
         f.write("\n")
 
 
+def _order_missing_wires(missing: List[int], measured: List[int]) -> List[int]:
+    """Return ``missing`` ordered close to ``measured`` then by proximity."""
+    if not missing:
+        return []
+
+    if measured:
+        start = min(
+            missing,
+            key=lambda w: (min(abs(w - m) for m in measured), w),
+        )
+    else:
+        start = min(missing)
+
+    remaining = set(missing)
+    ordered = [start]
+    remaining.remove(start)
+    current = start
+
+    while remaining:
+        next_wire = min(remaining, key=lambda w: (abs(w - current), w))
+        ordered.append(next_wire)
+        remaining.remove(next_wire)
+        current = next_wire
+
+    return ordered
+
+
 def update_tension_logs(config: TensiometerConfig) -> Dict[str, str]:
     """Generate summary CSV, plot and missing wire log for ``config``."""
     samples = get_samples_dataframe(config.data_path)
@@ -229,5 +256,11 @@ def get_missing_wires(config: TensiometerConfig) -> Dict[str, List[int]]:
     df = df.dropna(subset=["wire_number", "frequency"])
     df["wire_number"] = df["wire_number"].astype(int)
 
-    _, _, _, missing = _compute_tensions(config, df)
+    tension_series, _, _, missing = _compute_tensions(config, df)
+
+    for side in ["A", "B"]:
+        missing_side = missing.get(side, [])
+        measured = list(tension_series.get(side, {}).keys())
+        missing[side] = _order_missing_wires(missing_side, measured)
+
     return missing
