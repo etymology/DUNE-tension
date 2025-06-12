@@ -2,7 +2,7 @@ import serial
 from sys import version_info
 import platform
 import time
-from threading import Event, Thread
+from threading import Event, Thread, RLock
 
 PY2 = version_info[0] == 2  # Running Python 2.x?
 
@@ -72,18 +72,21 @@ class Controller:
         # Servo minimum and maximum targets can be restricted to protect components.
         self.Mins = [0] * 24
         self.Maxs = [0] * 24
+        self.lock = RLock()
 
     # Cleanup by closing USB serial port
     def close(self):
-        self.usb.close()
+        with self.lock:
+            self.usb.close()
 
     # Send a Pololu command out the serial pnoort
     def sendCmd(self, cmd):
-        cmdStr = self.PololuCmd + cmd
-        if PY2:
-            self.usb.write(cmdStr)
-        else:
-            self.usb.write(bytes(cmdStr, "latin-1"))
+        with self.lock:
+            cmdStr = self.PololuCmd + cmd
+            if PY2:
+                self.usb.write(cmdStr)
+            else:
+                self.usb.write(bytes(cmdStr, "latin-1"))
 
     # Set channels min and max value range.  Use this as a safety to protect
     # from accidentally moving outside known safe parameters. A setting of 0
@@ -113,14 +116,13 @@ class Controller:
     # If channel is configured for digital output, values < 6000 = Low ouput
     def setTarget(self, chan, target):
         # if Min is defined and Target is below, force to Min
-        if self.Mins[chan] > 0 and target < self.Mins[chan]:
-            target = self.Mins[chan]
-        # if Max is defined and Target is above, force to Max
-        if self.Maxs[chan] > 0 and target > self.Maxs[chan]:
-            target = self.Maxs[chan]
-        self.sendCmd(self._make_command(target, 0x04, chan))
-        # Record Target value
-        self.Targets[chan] = target
+        with self.lock:
+            if self.Mins[chan] > 0 and target < self.Mins[chan]:
+                target = self.Mins[chan]
+            if self.Maxs[chan] > 0 and target > self.Maxs[chan]:
+                target = self.Maxs[chan]
+            self.sendCmd(self._make_command(target, 0x04, chan))
+            self.Targets[chan] = target
 
     # Set speed of channel
     # Speed is measured as 0.25microseconds/10milliseconds
@@ -128,14 +130,16 @@ class Controller:
     # of 1 will take 1 minute, and a speed of 60 would take 1 second.
     # Speed of 0 is unrestricted.
     def setSpeed(self, chan, speed):
-        self.sendCmd(self._make_command(speed, 0x07, chan))
+        with self.lock:
+            self.sendCmd(self._make_command(speed, 0x07, chan))
 
     # Set acceleration of channel
     # This provide soft starts and finishes when servo moves to target position.
     # Valid values are from 0 to 255. 0=unrestricted, 1 is slowest start.
     # A value of 1 will take the servo about 3s to move between 1ms to 2ms range.
     def setAccel(self, chan, accel):
-        self.sendCmd(self._make_command(accel, 0x09, chan))
+        with self.lock:
+            self.sendCmd(self._make_command(accel, 0x09, chan))
 
     def _make_command(self, message, preface, chan):
         lsb = message & 127
@@ -151,9 +155,10 @@ class Controller:
     # it is not stalled or slowed.
     def getPosition(self, chan):
         cmd = chr(0x10) + chr(chan)
-        self.sendCmd(cmd)
-        lsb = ord(self.usb.read())
-        msb = ord(self.usb.read())
+        with self.lock:
+            self.sendCmd(cmd)
+            lsb = ord(self.usb.read())
+            msb = ord(self.usb.read())
         return (msb << 8) + lsb
 
     # Test to see if a servo has reached the set target position.  This only provides
@@ -171,8 +176,9 @@ class Controller:
     # Not available with Micro Maestro.
     def getMovingState(self):
         cmd = chr(0x13)
-        self.sendCmd(cmd)
-        return self.usb.read() != chr(0)
+        with self.lock:
+            self.sendCmd(cmd)
+            return self.usb.read() != chr(0)
 
     # Run a Maestro Script subroutine in the currently active script. Scripts can
     # have multiple subroutines, which get numbered sequentially from 0 on up. Code your
@@ -181,12 +187,14 @@ class Controller:
         cmd = chr(0x27) + chr(subNumber)
         # can pass a param with command 0x28
         # cmd = chr(0x28) + chr(subNumber) + chr(lsb) + chr(msb)
-        self.sendCmd(cmd)
+        with self.lock:
+            self.sendCmd(cmd)
 
     # Stop the current Maestro Script
     def stopScript(self):
         cmd = chr(0x24)
-        self.sendCmd(cmd)
+        with self.lock:
+            self.sendCmd(cmd)
 
 
 class DummyController:

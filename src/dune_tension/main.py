@@ -5,7 +5,7 @@ import os
 from tensiometer import Tensiometer
 from tensiometer_functions import make_config
 from threading import Event, Thread
-from maestro import DummyController, ServoController
+from maestro import DummyController, ServoController, Controller
 
 try:
     from plc_io import (
@@ -33,13 +33,13 @@ state_file = "gui_state.json"
 stop_event = Event()
 
 
-if os.environ.get("SPOOF_SERVO") or os.environ.get("SPOOF_AUDIO"):
+if os.environ.get("SPOOF_SERVO"):
     servo_controller = ServoController(servo=DummyController())
 else:
-    servo_controller = ServoController()
+    servo_controller = ServoController(Controller())
 
 # Determine which PLC functions to use for manual movement
-if os.environ.get("SPOOF_PLC") or os.environ.get("SPOOF_AUDIO"):
+if os.environ.get("SPOOF_PLC"):
     _get_xy_func = spoof_get_xy
     _goto_xy_func = spoof_goto_xy
 else:
@@ -68,6 +68,7 @@ def save_state():
         "servo_speed": speed_slider.get(),
         "servo_accel": accel_slider.get(),
         "servo_dwell": dwell_slider.get(),
+        "plot_audio": plot_audio_var.get(),
     }
     with open(state_file, "w") as f:
         json.dump(state, f)
@@ -88,6 +89,7 @@ def load_state():
             speed_slider.set(state.get("servo_speed", 1))
             accel_slider.set(state.get("servo_accel", 1))
             dwell_slider.set(state.get("servo_dwell", 100))
+            plot_audio_var.set(state.get("plot_audio", False))
 
 
 def create_tensiometer():
@@ -111,10 +113,11 @@ def create_tensiometer():
         side=side_var.get(),
         flipped=flipped_var.get(),
         spoof=spoof_audio,
-        spoof_movement=bool(os.environ.get("SPOOF_PLC") or spoof_audio),
+        spoof_movement=bool(os.environ.get("SPOOF_PLC")),
         stop_event=stop_event,
         samples_per_wire=samples,
         confidence_threshold=conf,
+        plot_audio=plot_audio_var.get(),
     )
 
 
@@ -178,11 +181,28 @@ def interrupt():
 
 def monitor_tension_logs():
     """Check for updates to the tension data file and refresh logs."""
+    try:
+        samples = int(entry_samples.get())
+        if samples < 1:
+            raise ValueError
+    except Exception:
+        samples = 3
+
+    try:
+        conf = float(entry_confidence.get())
+        if not (0.0 <= conf <= 1.0):
+            raise ValueError
+    except Exception:
+        conf = 0.7
+
     config = make_config(
         apa_name=entry_apa.get(),
         layer=layer_var.get(),
         side=side_var.get(),
         flipped=flipped_var.get(),
+        samples_per_wire=samples,
+        confidence_threshold=conf,
+        plot_audio=plot_audio_var.get(),
     )
 
     path = config.data_path
@@ -338,6 +358,11 @@ tk.Button(measure_frame, text="Seek Wire(s)", command=measure_list).grid(
     row=3, column=2
 )
 
+plot_audio_var = tk.BooleanVar()
+tk.Checkbutton(measure_frame, text="Plot Audio", variable=plot_audio_var).grid(
+    row=4, column=2, sticky="w"
+)
+
 tk.Button(measure_frame, text="Measure Auto", command=measure_auto).grid(
     row=4, column=0
 )
@@ -354,7 +379,7 @@ speed_slider = tk.Scale(
     command=servo_controller.set_speed,
 )
 speed_slider.set(1)
-speed_slider.grid(row=0, column=1)
+speed_slider.grid(row=0, column=1, sticky="ew")
 
 tk.Label(servo_frame, text="Servo Acceleration (1–255):").grid(
     row=1, column=0, sticky="e"
@@ -368,7 +393,7 @@ accel_slider = tk.Scale(
     command=servo_controller.set_accel,
 )
 accel_slider.set(1)
-accel_slider.grid(row=1, column=1)
+accel_slider.grid(row=1, column=1, sticky="ew")
 
 tk.Label(servo_frame, text="Dwell Time (0.00–2.00s):").grid(row=2, column=0, sticky="e")
 
@@ -380,7 +405,7 @@ dwell_slider = tk.Scale(
     command=lambda val: servo_controller.set_dwell_time(float(val) / 100),
 )
 dwell_slider.set(100)
-dwell_slider.grid(row=2, column=1)
+dwell_slider.grid(row=2, column=1, sticky="ew")
 
 tk.Label(servo_frame, text="Focus:").grid(row=3, column=0, sticky="e")
 

@@ -5,9 +5,11 @@ import numpy as np
 from scipy.stats import gaussian_kde
 
 WIRE_DENSITY = 0.000152
-MAX_PASSING_TENSION = 8
-MIN_PHYSICAL_TENSION = 2
-MAX_PHYSICAL_TENSION = 10
+MAX_PASSING_TENSION = 8  # Note the minimum depends on the wire length
+MIN_PHYSICAL_TENSION = 1.5
+MAX_PHYSICAL_TENSION = (
+    10  # considering higher than 10 not possible because of winder tension control
+)
 
 
 def calculate_kde_max(sample: Sequence[float]) -> float:
@@ -21,6 +23,8 @@ def calculate_kde_max(sample: Sequence[float]) -> float:
     float: The maximum value of the KDE.
     """
     # Perform KDE on the sample
+    if len(sample) == 1:
+        return sample[0]
 
     try:
         kde_sample = gaussian_kde(sample)

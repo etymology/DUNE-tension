@@ -163,25 +163,31 @@ def test_create_tensiometer_flags(monkeypatch):
     monkeypatch.setattr(main, "flipped_var", DummyGetter(False))
     monkeypatch.setattr(main, "entry_samples", DummyGetter("2"))
     monkeypatch.setattr(main, "entry_confidence", DummyGetter("0.8"))
+    monkeypatch.setattr(main, "plot_audio_var", DummyGetter(True))
     monkeypatch.setattr(main.messagebox, "showerror", lambda *a, **k: None)
     monkeypatch.delenv("SPOOF_AUDIO", raising=False)
     monkeypatch.delenv("SPOOF_PLC", raising=False)
+    monkeypatch.delenv("SPOOF_SERVO", raising=False)
     main.create_tensiometer()
     assert called_args["spoof"] is False
     assert called_args["spoof_movement"] is False
+    assert called_args["plot_audio"] is True
 
     called_args.clear()
     monkeypatch.setenv("SPOOF_AUDIO", "1")
     main.create_tensiometer()
     assert called_args["spoof"] is True
-    assert called_args["spoof_movement"] is True
+    assert called_args["spoof_movement"] is False
+    assert called_args["plot_audio"] is True
 
     called_args.clear()
     monkeypatch.delenv("SPOOF_AUDIO")
     monkeypatch.setenv("SPOOF_PLC", "1")
+    monkeypatch.delenv("SPOOF_SERVO", raising=False)
     main.create_tensiometer()
     assert called_args["spoof"] is False
     assert called_args["spoof_movement"] is True
+    assert called_args["plot_audio"] is True
 
 
 def test_servo_controller_run_loop():
@@ -201,6 +207,7 @@ def test_servo_controller_run_loop():
 
 def test_monitor_tension_logs(monkeypatch):
     updates = []
+    called_args = {}
 
     class DummyConfig:
         apa_name = "APA"
@@ -212,15 +219,27 @@ def test_monitor_tension_logs(monkeypatch):
     monkeypatch.setattr(main, "side_var", DummyGetter("A"))
     monkeypatch.setattr(main, "flipped_var", DummyGetter(False))
     monkeypatch.setattr(main, "root", DummyRoot())
-    monkeypatch.setattr(main, "make_config", lambda **k: DummyConfig)
+    monkeypatch.setattr(main, "plot_audio_var", DummyGetter(True))
+
+    def dummy_make_config(**kwargs):
+        called_args.update(kwargs)
+        return DummyConfig
+
+    monkeypatch.setattr(main, "make_config", dummy_make_config)
     monkeypatch.setattr(main.os.path, "getmtime", lambda p: 1)
     analyze_mod = types.ModuleType("analyze")
     analyze_mod.update_tension_logs = lambda conf: updates.append(conf)
     sys.modules["analyze"] = analyze_mod
+    monkeypatch.setattr(main, "entry_samples", DummyGetter("5"))
+    monkeypatch.setattr(main, "entry_confidence", DummyGetter("0.9"))
+
     main.monitor_tension_logs.last_path = ""
     main.monitor_tension_logs.last_mtime = None
     main.monitor_tension_logs()
     assert updates and updates[-1] is DummyConfig
+    assert called_args["samples_per_wire"] == 5
+    assert called_args["confidence_threshold"] == 0.9
+    assert called_args["plot_audio"] is True
     assert main.monitor_tension_logs.last_mtime == 1
     main.monitor_tension_logs()
     assert len(updates) == 1
