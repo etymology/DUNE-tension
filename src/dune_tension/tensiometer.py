@@ -220,7 +220,7 @@ class Tensiometer:
             return cluster, wire_y
         wiggle_start_time = time.time()
         current_wiggle = 0.5
-        while (time.time() - start_time) < 30:
+        while (time.time() - start_time) < 5:
             if check_stop_event(self.stop_event, "tension measurement interrupted!"):
                 return None, wire_y
             audio_sample = self.record_audio_func(
