@@ -119,6 +119,7 @@ class Tensiometer:
         wires_to_measure = wires_dict.get(self.config.side, [])
 
         print(f"Missing wires: {wires_to_measure}")
+
         if not wires_to_measure:
             print("All wires are already measured.")
             return

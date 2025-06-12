@@ -193,6 +193,7 @@ source = { virtual = "." }
 dependencies = [
     { name = "crepe" },
     { name = "matplotlib" },
+    { name = "nnaudio" },
     { name = "pandas" },
     { name = "pesto-pitch" },
     { name = "pyserial" },
@@ -207,6 +208,7 @@ dependencies = [
 requires-dist = [
     { name = "crepe", specifier = ">=0.0.16" },
     { name = "matplotlib", specifier = ">=3.10.3" },
+    { name = "nnaudio", specifier = ">=0.3.3" },
     { name = "pandas", specifier = ">=2.3.0" },
     { name = "pesto-pitch", specifier = ">=2.0.1" },
     { name = "pyserial", specifier = ">=3.5" },
@@ -662,6 +664,20 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/6c/4f/ccdb8ad3a38e583f214547fd2f7ff1fc160c43a75af88e6aec213404b96a/networkx-3.5.tar.gz", hash = "sha256:d4c6f9cf81f52d69230866796b82afbccdec3db7ae4fbd1b65ea750feed50037", size = 2471065 }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/eb/8d/776adee7bbf76365fdd7f2552710282c79a4ead5d2a46408c9043a2b70ba/networkx-3.5-py3-none-any.whl", hash = "sha256:0030d386a9a06dee3565298b4a734b68589749a544acbb6c412dc9e2489ec6ec", size = 2034406 },
+]
+
+[[package]]
+name = "nnaudio"
+version = "0.3.3"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "numpy" },
+    { name = "scipy" },
+    { name = "torch" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/95/0d/ed73a11588aa8f21c166676d01cc84ad1ce2be6059c2461c793da434ed33/nnAudio-0.3.3.tar.gz", hash = "sha256:076697199811314d41714d563d9d72ed0808e7c2da2dacf11dd4e3069d4ec054", size = 38882 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/f2/8f/799c8cd59a710c58a5e4b7bbcc9a631025cd794b3a316fa9d30e297d5050/nnAudio-0.3.3-py3-none-any.whl", hash = "sha256:4ea1fdc4638b9cf53c9b58ca11a9d474105a2b58da8bb5f6e75416ba5ada5e46", size = 43604 },
 ]
 
 [[package]]
