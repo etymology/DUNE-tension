@@ -165,7 +165,7 @@ class Tensiometer:
         )
 
         wires_to_measure[:] = [
-            x for x in wires_to_measure if (x >= 50 if low_numbered_high else x <= 1000)
+            x for x in wires_to_measure if (x >= 150 if low_numbered_high else x <= 1146-150)
         ]
 
         print("Measuring missing wires...")

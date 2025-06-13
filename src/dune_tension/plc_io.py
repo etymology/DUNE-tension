@@ -19,7 +19,7 @@ XY_MOVE_TYPE = 2
 XY_STATE = 3
 
 
-def read_tag(tag_name, *, timeout: float = 1.0, retry_interval: float = 0.1) -> float:
+def read_tag(tag_name, *, timeout: float = 10.0, retry_interval: float = 0.1) -> float:
     """Read the value of a PLC tag with basic retry logic.
 
     Occasionally the PLC server returns malformed JSON where the list under
@@ -29,6 +29,20 @@ def read_tag(tag_name, *, timeout: float = 1.0, retry_interval: float = 0.1) -> 
     """
 
     url = f"{TENSION_SERVER_URL}/tags/{tag_name}"
+
+    # try:
+    #     response = requests.get(url)
+    #     if response.status_code == 200:
+    #         resp = response.json()[tag_name]
+    #         return resp[1]
+    #     else:
+    #         return {
+    #             "error": "Failed to read tag",
+    #             "status_code": response.status_code,
+    #         }
+    # except requests.exceptions.RequestException as e:
+    #     return {"error": str(e)}
+
     end_time = time.monotonic() + timeout
     last_error: dict | None = None
 
