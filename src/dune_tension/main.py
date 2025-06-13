@@ -4,6 +4,7 @@ import json
 import os
 from tensiometer import Tensiometer
 from tensiometer_functions import make_config
+from data_cache import clear_wire_range
 from threading import Event, Thread
 from maestro import DummyController, ServoController, Controller
 
@@ -172,6 +173,61 @@ def measure_list():
             stop_event.clear()
 
     Thread(target=run, daemon=True).start()
+
+
+def _parse_ranges(text: str) -> list[tuple[int, int]]:
+    """Return list of ``(start, end)`` tuples parsed from ``text``."""
+    ranges: list[tuple[int, int]] = []
+    for part in text.split(','):
+        part = part.strip()
+        if not part:
+            continue
+        if '-' in part:
+            try:
+                a, b = part.split('-', 1)
+                start = int(a)
+                end = int(b)
+            except ValueError:
+                continue
+        else:
+            try:
+                start = end = int(part)
+            except ValueError:
+                continue
+        if start > end:
+            start, end = end, start
+        ranges.append((start, end))
+    return ranges
+
+
+def clear_range() -> None:
+    ranges = _parse_ranges(entry_clear_range.get())
+    if not ranges:
+        print("No valid range specified")
+        return
+
+    try:
+        samples = int(entry_samples.get())
+    except Exception:
+        samples = 3
+    try:
+        conf = float(entry_confidence.get())
+    except Exception:
+        conf = 0.7
+
+    cfg = make_config(
+        apa_name=entry_apa.get(),
+        layer=layer_var.get(),
+        side=side_var.get(),
+        flipped=flipped_var.get(),
+        samples_per_wire=samples,
+        confidence_threshold=conf,
+        plot_audio=plot_audio_var.get(),
+    )
+
+    for start, end in ranges:
+        clear_wire_range(cfg.data_path, cfg.apa_name, cfg.layer, cfg.side, start, end)
+    print(f"Cleared ranges: {entry_clear_range.get()}")
 
 
 def interrupt():
@@ -367,6 +423,11 @@ tk.Button(measure_frame, text="Measure Auto", command=measure_auto).grid(
     row=4, column=0
 )
 tk.Button(measure_frame, text="Interrupt", command=interrupt).grid(row=4, column=1)
+
+tk.Label(measure_frame, text="Clear Range:").grid(row=5, column=0, sticky="e")
+entry_clear_range = tk.Entry(measure_frame)
+entry_clear_range.grid(row=5, column=1)
+tk.Button(measure_frame, text="Clear", command=clear_range).grid(row=5, column=2)
 
 # --- Servo Parameters ------------------------------------------------------
 tk.Label(servo_frame, text="Servo Speed (1–255):").grid(row=0, column=0, sticky="e")
