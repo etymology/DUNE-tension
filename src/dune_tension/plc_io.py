@@ -19,24 +19,40 @@ XY_MOVE_TYPE = 2
 XY_STATE = 3
 
 
-def read_tag(tag_name):
+def read_tag(tag_name, *, timeout: float = 1.0, retry_interval: float = 0.1):
+    """Read the value of a PLC tag with basic retry logic.
+
+    Occasionally the PLC server returns malformed JSON where the list under
+    ``tag_name`` does not contain the expected value at index ``1``.  In this
+    situation the function will retry until ``timeout`` seconds have elapsed.
+    ``timeout`` and ``retry_interval`` are in seconds.
     """
-    Send a GET request to read the value of a PLC tag.
-    """
+
     url = f"{TENSION_SERVER_URL}/tags/{tag_name}"
-    # print(f"Attempting to read from URL: {url}")  # Debugging statement
-    try:
-        response = requests.get(url)
-        if response.status_code == 200:
-            # print(response.json())
-            return response.json()[tag_name][1]
-        else:
-            return {
-                "error": "Failed to read tag",
-                "status_code": response.status_code,
-            }
-    except requests.exceptions.RequestException as e:
-        return {"error": str(e)}
+    end_time = time.monotonic() + timeout
+    last_error: dict | None = None
+
+    while time.monotonic() < end_time:
+        try:
+            response = requests.get(url)
+            if response.status_code == 200:
+                try:
+                    data = response.json()[tag_name]
+                    if isinstance(data, (list, tuple)) and len(data) > 1:
+                        return data[1]
+                except (KeyError, TypeError, ValueError, IndexError) as exc:
+                    last_error = {"error": f"Malformed response: {exc}"}
+            else:
+                last_error = {
+                    "error": "Failed to read tag",
+                    "status_code": response.status_code,
+                }
+        except requests.exceptions.RequestException as exc:
+            last_error = {"error": str(exc)}
+
+        time.sleep(retry_interval)
+
+    return last_error if last_error is not None else {"error": "Read timeout"}
 
 
 def get_xy():
