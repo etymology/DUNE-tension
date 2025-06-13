@@ -1,1 +1,1 @@
-{"apa_name": "USAPA7", "layer": "V", "side": "B", "flipped": false, "wire_number": "402", "wire_list": "402", "samples_per_wire": 2, "confidence_threshold": 0.6, "servo_speed": 255, "servo_accel": 255, "servo_dwell": 56, "plot_audio": false}
+{"apa_name": "USAPA9", "layer": "V", "side": "B", "flipped": false, "wire_number": "400", "wire_list": "", "samples_per_wire": 3, "confidence_threshold": 0.65, "servo_speed": 255, "servo_accel": 255, "servo_dwell": 44, "plot_audio": false}

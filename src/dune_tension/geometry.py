@@ -3,17 +3,17 @@ X_LENGTH = 1.273
 COMB_SPACING = 1190
 Y_MIN = 200
 Y_MAX = 2460
-X_MIN = 1100
+X_MIN = 1000
 X_MAX = 7000
 COMB_TOLERANCE = 300
 
 comb_positions = [
-    X_MIN - COMB_TOLERANCE + 100,
+    X_MIN,
     2230,
     3420,
     4590,
     5770,
-    X_MAX + COMB_TOLERANCE - 100,
+    X_MAX,
 ]
 
 
@@ -74,7 +74,7 @@ def refine_position(
 
     candidates = []
 
-    for n in range(1000):
+    for n in range(100):
         # Generate forward and reverse candidates
         x1, y1 = x + n * dx, y - n * dy
         x2, y2 = x - n * dx, y + n * dy
