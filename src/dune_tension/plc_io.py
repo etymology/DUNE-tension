@@ -19,7 +19,7 @@ XY_MOVE_TYPE = 2
 XY_STATE = 3
 
 
-def read_tag(tag_name, *, timeout: float = 1.0, retry_interval: float = 0.1):
+def read_tag(tag_name, *, timeout: float = 1.0, retry_interval: float = 0.1) -> float:
     """Read the value of a PLC tag with basic retry logic.
 
     Occasionally the PLC server returns malformed JSON where the list under
@@ -146,7 +146,7 @@ def goto_xy(x_target: float, y_target: float, *, deadzone: float = BACKLASH_DEAD
     write_tag("MOVE_TYPE", XY_MOVE_TYPE)
 
     while get_movetype() == XY_MOVE_TYPE:
-        time.sleep(0.001)
+        time.sleep(0.1)
     return True
 
 

@@ -3,29 +3,26 @@ X_LENGTH = 1.273
 COMB_SPACING = 1190
 Y_MIN = 200
 Y_MAX = 2460
-X_MIN = 1100
+X_MIN = 1050
 X_MAX = 7000
 COMB_TOLERANCE = 300
 
 comb_positions = [
-    X_MIN - COMB_TOLERANCE + 100,
+    X_MIN,
     2230,
     3420,
     4590,
     5770,
-    X_MAX + COMB_TOLERANCE - 100,
+    X_MAX,
 ]
 
 
 def zone_lookup(
     x,
 ):
-    # Loop through the list to find the first value greater than x
     for i, pos in enumerate(comb_positions):
         if pos > x:
             return i
-    # If no value greater than x, return None
-    return None
 
 
 # Test the function with an example input
