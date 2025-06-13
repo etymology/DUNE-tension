@@ -77,6 +77,17 @@ def get_xy():
     return x, y
 
 
+def get_cached_xy() -> tuple[float, float]:
+    """Return the internally tracked XY position.
+
+    ``goto_xy`` keeps ``_TRUE_XY`` updated whenever a move command is issued.
+    This function exposes that cached value so that callers can avoid an
+    unreliable read from the PLC server.
+    """
+
+    return tuple(_TRUE_XY)
+
+
 def get_state() -> int:
     """Get the current state of the tensioning system."""
     return int(read_tag("STATE"))
@@ -166,7 +177,8 @@ def goto_xy(x_target: float, y_target: float, *, deadzone: float = BACKLASH_DEAD
 
 
 def increment(increment_x, increment_y):
-    x, y = get_xy()
+    # Use the cached position to avoid reading tags when possible
+    x, y = get_cached_xy()
     goto_xy(x + increment_x, y + increment_y)
 
 
