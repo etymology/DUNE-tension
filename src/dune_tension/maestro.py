@@ -251,7 +251,7 @@ class DummyController:
 class ServoController:
     """High-level servo helper used by the GUI."""
 
-    def __init__(self, servo: Controller | DummyController | None = None) -> None:
+    def __init__(self, servo: Controller | DummyController) -> None:
         self.servo = servo or DummyController()
         self.servo.setRange(0, 4000, 8000)  # plucking servo
         self.running: Event = Event()

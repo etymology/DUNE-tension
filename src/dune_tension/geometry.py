@@ -19,12 +19,14 @@ comb_positions = [
 ]
 
 
-def zone_lookup(
-    x,
-):
+def zone_lookup(x) -> int:
+    """
+    Determine the zone based on the x-coordinate.
+    """
     for i, pos in enumerate(comb_positions):
         if pos > x:
             return i
+    return 0
 
 
 def zone_x_target(zone: int):
@@ -92,4 +94,6 @@ def length_lookup(layer: str, wire_number: int, zone: int, taped=False):
             return (value - 16) / 1000
         return value / 1000
     except KeyError:
-        return None
+        raise ValueError(
+            f"no value found for wire {wire_number} in zone {zone} for layer {layer}"
+        )
