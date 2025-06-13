@@ -2,6 +2,7 @@ import tkinter as tk
 from tkinter import messagebox
 import json
 import os
+import sounddevice as sd
 from tensiometer import Tensiometer
 from tensiometer_functions import make_config
 from data_cache import clear_wire_range
@@ -126,6 +127,7 @@ def measure_calibrate():
     def run():
         stop_event.clear()
         servo_controller.start_loop()
+        t = None
         try:
             t = create_tensiometer()
             wire_number = int(entry_wire.get())
@@ -133,6 +135,11 @@ def measure_calibrate():
             t.measure_calibrate(wire_number)
             print("Done calibrating wire", wire_number)
         finally:
+            if t is not None:
+                try:
+                    t.close()
+                except Exception:
+                    pass
             servo_controller.stop_loop()
             stop_event.clear()
 
@@ -143,11 +150,17 @@ def measure_auto():
     def run():
         stop_event.clear()
         servo_controller.start_loop()
+        t = None
         try:
             t = create_tensiometer()
             save_state()
             t.measure_auto()
         finally:
+            if t is not None:
+                try:
+                    t.close()
+                except Exception:
+                    pass
             servo_controller.stop_loop()
             stop_event.clear()
 
@@ -158,6 +171,7 @@ def measure_list():
     def run():
         stop_event.clear()
         servo_controller.start_loop()
+        t = None
         try:
             t = create_tensiometer()
             wire_list = [
@@ -169,6 +183,11 @@ def measure_list():
             print(f"Measuring wires: {wire_list}")
             t.measure_list(wire_list, preserve_order=False)
         finally:
+            if t is not None:
+                try:
+                    t.close()
+                except Exception:
+                    pass
             servo_controller.stop_loop()
             stop_event.clear()
 
@@ -338,6 +357,10 @@ def _on_close() -> None:
     """Gracefully shut down threads and destroy the root window."""
     stop_event.set()
     servo_controller.stop_loop()
+    try:
+        sd.stop()
+    except Exception:
+        pass
     try:
         root.destroy()
     except Exception:
