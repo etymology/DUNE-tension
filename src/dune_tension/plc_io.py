@@ -1,4 +1,5 @@
 import requests
+import threading
 import time
 from random import gauss
 
@@ -170,8 +171,13 @@ def increment(increment_x, increment_y):
 
 
 def wiggle(step):
-    """Wiggle the winder by a given step size."""
-    increment(0, gauss(0, step))
+    """Wiggle the winder by a given step size in a background thread."""
+
+    def _do_wiggle() -> None:
+        increment(0, gauss(0, step))
+
+    threading.Thread(target=_do_wiggle, daemon=True).start()
+    return True
 
 
 def is_web_server_active():
