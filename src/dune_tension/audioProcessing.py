@@ -298,6 +298,11 @@ def record_audio(duration, sample_rate, plot=False, normalize=False):
     except Exception as e:
         print(f"An error occurred while recording audio: {e}")
         return None
+    finally:
+        try:
+            sd.stop()
+        except Exception:
+            pass
 
 
 def analyze_sample(audio_sample, sample_rate, wire_length):

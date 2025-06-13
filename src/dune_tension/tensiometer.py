@@ -452,3 +452,12 @@ class Tensiometer:
         b_list = df["B"].tolist()
 
         return a_list, b_list
+
+    def close(self) -> None:
+        """Stop any active audio streams used by the tensiometer."""
+        try:
+            import sounddevice as sd  # Local import to avoid mandatory dependency
+
+            sd.stop()
+        except Exception:
+            pass

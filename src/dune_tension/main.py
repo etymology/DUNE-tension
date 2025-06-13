@@ -2,6 +2,7 @@ import tkinter as tk
 from tkinter import messagebox
 import json
 import os
+import sounddevice as sd
 from tensiometer import Tensiometer
 from tensiometer_functions import make_config
 from data_cache import clear_wire_range
@@ -146,6 +147,7 @@ def measure_calibrate():
             t.measure_calibrate(wire_number)
             print("Done calibrating wire", wire_number)
         finally:
+
             stop_event.clear()
 
     Thread(target=run, daemon=True).start()
@@ -154,11 +156,13 @@ def measure_calibrate():
 def measure_auto():
     def run():
         stop_event.clear()
+
         try:
             t = create_tensiometer()
             save_state()
             t.measure_auto()
         finally:
+
             stop_event.clear()
 
     Thread(target=run, daemon=True).start()
@@ -167,6 +171,7 @@ def measure_auto():
 def measure_list():
     def run():
         stop_event.clear()
+
         try:
             t = create_tensiometer()
             wire_list = [
@@ -178,6 +183,7 @@ def measure_list():
             print(f"Measuring wires: {wire_list}")
             t.measure_list(wire_list, preserve_order=False)
         finally:
+
             stop_event.clear()
 
     Thread(target=run, daemon=True).start()
@@ -346,6 +352,10 @@ def _on_close() -> None:
     """Gracefully shut down threads and destroy the root window."""
     stop_event.set()
     servo_controller.stop_loop()
+    try:
+        sd.stop()
+    except Exception:
+        pass
     try:
         root.destroy()
     except Exception:
