@@ -1,5 +1,6 @@
 from flask import Flask, request, jsonify
 from pycomm3 import logix_driver
+from pycomm3.exceptions import CommError
 
 PLC_IP_ADDRESS = "192.168.140.13"
 SERVER_PORT = 5000
@@ -12,7 +13,23 @@ TEST_SERVER = False
 @app.route("/tags/<tag_name>", methods=["GET"])
 def read_tag(tag_name):
     """Endpoint for reading the value of a given tag."""
-    value = comm.read(tag_name)
+    global comm
+    for _ in range(2):
+        try:
+            value = comm.read(tag_name)
+            break
+        except CommError:
+            try:
+                comm.close()
+            except Exception:
+                pass
+            try:
+                comm.open()
+            except Exception:
+                pass
+    else:
+        return jsonify({"error": "PLC communication error"}), 500
+
     if value is None:
         return jsonify({"error": "Tag not found"}), 404
     return jsonify({tag_name: value})
@@ -25,8 +42,25 @@ def write_tag(tag_name):
     value = request.json.get("value")
     if value is None:
         return jsonify({"error": "No value provided"}), 400
-    if not TEST_SERVER:
-        comm.write((tag_name, value))
+
+    global comm
+    for _ in range(2):
+        try:
+            if not TEST_SERVER:
+                comm.write((tag_name, value))
+            break
+        except CommError:
+            try:
+                comm.close()
+            except Exception:
+                pass
+            try:
+                comm.open()
+            except Exception:
+                pass
+    else:
+        return jsonify({"error": "PLC communication error"}), 500
+
     return jsonify({tag_name: value})
 
 
