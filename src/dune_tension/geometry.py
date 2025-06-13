@@ -1,9 +1,12 @@
+# functions related to the geometry of the APA
+# geometry constants
 G_LENGTH = 1.285
 X_LENGTH = 1.273
 COMB_SPACING = 1190
 Y_MIN = 200
 Y_MAX = 2460
-X_MIN = 1000
+
+X_MIN = 1050
 X_MAX = 7000
 COMB_TOLERANCE = 300
 
@@ -17,78 +20,50 @@ comb_positions = [
 ]
 
 
-def zone_lookup(
-    x,
-):
-    # Loop through the list to find the first value greater than x
+def zone_lookup(x) -> int:
+    """
+    Determine the zone based on the x-coordinate.
+    """
     for i, pos in enumerate(comb_positions):
         if pos > x:
             return i
-    # If no value greater than x, return None
-    return None
-
-
-# Test the function with an example input
-zone_lookup(
-    3500
-)  # Expected to return the index 3 (since 4590 is the first value greater than 3500)
+    return 0
 
 
 def zone_x_target(zone: int):
     return [1635, 2825, 4015, 5185, 6365][zone - 1]
 
 
-def not_close_to_comb(x, tolerance=COMB_TOLERANCE):
-    # Check if x is within +/- 100 of any number in comb_positions
-    for pos in comb_positions:
-        if abs(pos - x) <= tolerance:
-            return False
-    return True
+def refine(x, y, dx, dy):
+    # Compute t where line crosses vertical boundaries x = c
+    t_boundaries = [(c - x) / dx for c in comb_positions]
 
+    # Compute t where line crosses horizontal boundaries y = Y_MIN and Y_MAX
+    t_boundaries.append((Y_MIN - y) / dy)
+    t_boundaries.append((Y_MAX - y) / dy)
 
-def is_in_bounds(x, y):
-    return (X_MIN < x < X_MAX) and (Y_MIN < y < Y_MAX) and not_close_to_comb(x)
+    # Sort boundary crossings
+    t_boundaries.sort()
 
+    # Initialize
+    max_interval = -1
+    best_t = 0  # default to original point
 
-def refine_position(
-    x: float, y: float, dx: float, dy: float
-) -> tuple[float, float] | None:
-    """Refine ``(x, y)`` along ``(dx, dy)`` staying in bounds.
+    # Find the largest interval between consecutive t values
+    for i in range(len(t_boundaries) - 1):
+        t_left = t_boundaries[i]
+        t_right = t_boundaries[i + 1]
+        interval = t_right - t_left
 
-    The function searches in both ``+n`` and ``-n`` directions for a
-    position that is inside the allowed geometry and as far as possible
-    from the comb and ``Y`` limits.  Among all valid candidates the one
-    that maximises the minimal distance to the lines ``x = c`` for
-    ``c`` in :data:`comb_positions` and ``y = Y_MIN``/``Y_MAX`` is
-    chosen.  If no candidate is valid the original coordinates are
-    returned unchanged.
-    """
+        if interval > max_interval:
+            max_interval = interval
+            best_t = 0.5 * (t_left + t_right)
 
-    def score(pos: tuple[float, float]) -> float:
-        """Return the minimal distance of ``pos`` to any limiting line."""
-        px, py = pos
-        distances = [abs(px - c) for c in comb_positions]
-        distances.append(abs(py - Y_MAX))
-        distances.append(abs(py - Y_MIN))
-        return min(distances)
+    # Compute the corresponding point
+    best_x = x + dx * best_t
+    best_y = y + dy * best_t
 
-    candidates = []
-
-    for n in range(100):
-        # Generate forward and reverse candidates
-        x1, y1 = x + n * dx, y - n * dy
-        x2, y2 = x - n * dx, y + n * dy
-
-        if is_in_bounds(x1, y1):
-            candidates.append((x1, y1))
-        if is_in_bounds(x2, y2):
-            candidates.append((x2, y2))
-
-    if not candidates:
-        return (x, y)
-
-    # Choose the candidate furthest from limiting lines
-    return max(candidates, key=score)
+    return best_x, best_y
 
 
 def length_lookup(layer: str, wire_number: int, zone: int, taped=False):
@@ -120,4 +95,6 @@ def length_lookup(layer: str, wire_number: int, zone: int, taped=False):
             return (value - 16) / 1000
         return value / 1000
     except KeyError:
-        return None
+        raise ValueError(
+            f"no value found for wire {wire_number} in zone {zone} for layer {layer}"
+        )
