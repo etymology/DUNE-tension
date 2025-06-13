@@ -108,7 +108,7 @@ def create_tensiometer():
         raise
 
     spoof_audio = bool(os.environ.get("SPOOF_AUDIO"))
-    return Tensiometer(
+    t = Tensiometer(
         apa_name=entry_apa.get(),
         layer=layer_var.get(),
         side=side_var.get(),
@@ -121,11 +121,24 @@ def create_tensiometer():
         plot_audio=plot_audio_var.get(),
     )
 
+    if hasattr(t, "collect_wire_data"):
+        original_collect = t.collect_wire_data
+
+        def wrapped_collect(*args, **kwargs):
+            servo_controller.start_loop()
+            try:
+                return original_collect(*args, **kwargs)
+            finally:
+                servo_controller.stop_loop()
+
+        t.collect_wire_data = wrapped_collect
+
+    return t
+
 
 def measure_calibrate():
     def run():
         stop_event.clear()
-        servo_controller.start_loop()
         try:
             t = create_tensiometer()
             wire_number = int(entry_wire.get())
@@ -133,7 +146,6 @@ def measure_calibrate():
             t.measure_calibrate(wire_number)
             print("Done calibrating wire", wire_number)
         finally:
-            servo_controller.stop_loop()
             stop_event.clear()
 
     Thread(target=run, daemon=True).start()
@@ -142,13 +154,11 @@ def measure_calibrate():
 def measure_auto():
     def run():
         stop_event.clear()
-        servo_controller.start_loop()
         try:
             t = create_tensiometer()
             save_state()
             t.measure_auto()
         finally:
-            servo_controller.stop_loop()
             stop_event.clear()
 
     Thread(target=run, daemon=True).start()
@@ -157,7 +167,6 @@ def measure_auto():
 def measure_list():
     def run():
         stop_event.clear()
-        servo_controller.start_loop()
         try:
             t = create_tensiometer()
             wire_list = [
@@ -169,7 +178,6 @@ def measure_list():
             print(f"Measuring wires: {wire_list}")
             t.measure_list(wire_list, preserve_order=False)
         finally:
-            servo_controller.stop_loop()
             stop_event.clear()
 
     Thread(target=run, daemon=True).start()
