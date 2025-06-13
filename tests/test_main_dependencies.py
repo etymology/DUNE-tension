@@ -119,6 +119,11 @@ def _make_config(**kwargs):
 tfunc_stub.make_config = _make_config
 sys.modules["tensiometer_functions"] = tfunc_stub
 
+# Minimal data_cache stub with clear_wire_range
+dc_stub = types.ModuleType("data_cache")
+dc_stub.clear_wire_range = lambda *a, **k: None
+sys.modules["data_cache"] = dc_stub
+
 import dune_tension.main as main
 from dune_tension.maestro import DummyController
 
@@ -274,3 +279,29 @@ def test_manual_increment_orientation(monkeypatch):
     monkeypatch.setattr(main, "flipped_var", DummyGetter(False))
     main.manual_increment(0, 1)
     assert moves[-1] == (0.0, 0.1)
+
+
+def test_parse_ranges():
+    assert main._parse_ranges("1-3,5") == [(1, 3), (5, 5)]
+
+
+def test_clear_range_invokes_cache(monkeypatch):
+    called = []
+
+    def dummy_clear(path, apa, layer, side, start, end):
+        called.append((path, apa, layer, side, start, end))
+
+    monkeypatch.setattr(main, "entry_clear_range", DummyGetter("10-12"))
+    monkeypatch.setattr(main, "entry_apa", DummyGetter("APA"))
+    monkeypatch.setattr(main, "layer_var", DummyGetter("X"))
+    monkeypatch.setattr(main, "side_var", DummyGetter("A"))
+    monkeypatch.setattr(main, "flipped_var", DummyGetter(False))
+    monkeypatch.setattr(main, "entry_samples", DummyGetter("1"))
+    monkeypatch.setattr(main, "entry_confidence", DummyGetter("0.7"))
+    monkeypatch.setattr(main, "plot_audio_var", DummyGetter(False))
+    monkeypatch.setattr(main, "clear_wire_range", dummy_clear)
+
+    main.clear_range()
+    assert called
+    _, apa, layer, side, start, end = called[-1]
+    assert (apa, layer, side, start, end) == ("APA", "X", "A", 10, 12)

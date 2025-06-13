@@ -63,3 +63,34 @@ def update_samples_dataframe(file_path: str, df: pd.DataFrame) -> None:
     with sqlite3.connect(file_path) as conn:
         _ensure_samples_table(conn)
         df.to_sql("tension_samples", conn, if_exists="replace", index=False)
+
+
+def clear_wire_range(
+    file_path: str,
+    apa_name: str,
+    layer: str,
+    side: str,
+    start: int,
+    end: int,
+) -> None:
+    """Remove all rows matching the given wire range from the database."""
+
+    # Clear summarized tension data
+    df = get_dataframe(file_path)
+    mask = ~(
+        (df["apa_name"] == apa_name)
+        & (df["layer"] == layer)
+        & (df["side"] == side)
+        & (df["wire_number"].astype(int).between(start, end))
+    )
+    update_dataframe(file_path, df[mask].reset_index(drop=True))
+
+    # Clear raw sample data
+    samples_df = get_samples_dataframe(file_path)
+    mask_s = ~(
+        (samples_df["apa_name"] == apa_name)
+        & (samples_df["layer"] == layer)
+        & (samples_df["side"] == side)
+        & (samples_df["wire_number"].astype(int).between(start, end))
+    )
+    update_samples_dataframe(file_path, samples_df[mask_s].reset_index(drop=True))
