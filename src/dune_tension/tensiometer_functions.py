@@ -3,13 +3,14 @@ from typing import Optional, Callable
 import math
 from typing import List, Tuple
 from data_cache import get_dataframe
+from threading import Event
 
 
 def check_stop_event(
-    stop_event: Optional[object], message: str = "Measurement interrupted."
+    stop_event: Event, message: str = "Measurement interrupted."
 ) -> bool:
     """Print a message and return True if the stop event is set."""
-    if stop_event and stop_event.is_set():
+    if stop_event is not None and stop_event.is_set():
         print(message)
         return True
     return False
@@ -75,26 +76,6 @@ def make_config(
         spoof,
         plot_audio,
     )
-
-
-def load_tension_summary(config: TensiometerConfig) -> tuple[list, list]:
-    import pandas as pd
-
-    file_path = (
-        f"data/tension_summaries/tension_summary_{config.apa_name}_{config.layer}.csv"
-    )
-    try:
-        df = pd.read_csv(file_path)
-    except FileNotFoundError:
-        return f"❌ File not found: {file_path}", [], []
-
-    if "A" not in df.columns or "B" not in df.columns:
-        return "⚠️ File missing required columns 'A' and 'B'", [], []
-
-    a_list = df["A"].tolist()
-    b_list = df["B"].tolist()
-    return a_list, b_list
-
 
 def get_xy_from_file(
     config: TensiometerConfig,
@@ -190,7 +171,7 @@ def measure_list(
         [TensiometerConfig, int], Optional[tuple[float, float]]
     ],
     get_current_xy_func: Callable[[], tuple[float, float]],
-    collect_func: Callable[[int, float, float], None],
+    collect_func: Callable[[int, float, float], Optional[float]],
     stop_event: Optional[object] = None,
     preserve_order: bool = False,
 ):

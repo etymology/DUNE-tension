@@ -62,15 +62,15 @@ def get_xy():
     return x, y
 
 
-def get_state() -> dict[str, list]:
+def get_state() -> int:
     """Get the current state of the tensioning system."""
-    return read_tag("STATE")
+    return int(read_tag("STATE"))
 
 
 def get_movetype() -> int:
     """Get the current move type of the tensioning system."""
     movetype = read_tag("MOVE_TYPE")
-    return movetype
+    return int(movetype)
 
 
 def write_tag(tag_name, value):

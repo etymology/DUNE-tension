@@ -42,11 +42,6 @@ def update_dataframe(file_path: str, df: pd.DataFrame) -> None:
         df.to_sql("tension_data", conn, if_exists="replace", index=False)
 
 
-def invalidate_cache(file_path: str) -> None:
-    """Remove a cached DataFrame (e.g. if file changes externally)."""
-    _dataframe_cache.pop(file_path, None)
-
-
 def get_samples_dataframe(file_path: str) -> pd.DataFrame:
     """Return DataFrame of raw samples."""
     key = f"samples:{file_path}"
