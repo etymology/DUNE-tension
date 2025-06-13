@@ -153,6 +153,21 @@ class Tensiometer:
             print("All wires are already measured.")
             return
 
+        def low_numbered_wires_high(layer, side, flipped):
+            """
+            Low-numbered wires are high if (U xor B) matches
+            whether we are in the normal configuration (not flipped).
+            """
+            return ((layer == "U") ^ (side == "B")) == (not flipped)
+
+        low_numbered_high = low_numbered_wires_high(
+            self.config.layer, self.config.side, self.config.flipped
+        )
+
+        wires_to_measure[:] = [
+            x for x in wires_to_measure if (x >= 50 if low_numbered_high else x <= 1000)
+        ]
+
         print("Measuring missing wires...")
         print(f"Missing wires: {wires_to_measure}")
         for wire_number in wires_to_measure:
