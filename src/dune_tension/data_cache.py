@@ -94,3 +94,37 @@ def clear_wire_range(
         & (samples_df["wire_number"].astype(int).between(start, end))
     )
     update_samples_dataframe(file_path, samples_df[mask_s].reset_index(drop=True))
+
+
+def clear_outliers(
+    file_path: str,
+    apa_name: str,
+    layer: str,
+    side: str,
+    sigma: float = 2.0,
+    confidence_threshold: float = 0.0,
+) -> list[int]:
+    """Remove wires with tension more than ``sigma`` standard deviations from the mean.
+
+    Returns the list of wire numbers removed.
+    """
+    df = get_dataframe(file_path)
+    mask = (
+        (df["apa_name"] == apa_name)
+        & (df["layer"] == layer)
+        & (df["side"] == side)
+        & (df["confidence"].astype(float) >= confidence_threshold)
+    )
+    subset = df[mask].copy()
+    subset["tension"] = pd.to_numeric(subset["tension"], errors="coerce")
+    subset = subset.dropna(subset=["tension", "wire_number"])
+    if subset.empty:
+        return []
+    mean = subset["tension"].mean()
+    std = subset["tension"].std()
+    if pd.isna(std) or std == 0:
+        return []
+    outliers = subset[(subset["tension"] - mean).abs() > sigma * std]["wire_number"].astype(int).tolist()
+    for wire in outliers:
+        clear_wire_range(file_path, apa_name, layer, side, wire, wire)
+    return outliers

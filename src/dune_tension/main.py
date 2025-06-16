@@ -6,7 +6,7 @@ import os
 import sounddevice as sd
 from tensiometer import Tensiometer
 from tensiometer_functions import make_config
-from data_cache import clear_wire_range
+from data_cache import clear_wire_range, clear_outliers as cache_clear_outliers
 from threading import Event, Thread
 from maestro import DummyController, ServoController, Controller
 
@@ -305,6 +305,40 @@ def clear_range() -> None:
     print(f"Cleared ranges: {entry_clear_range.get()}")
 
 
+def clear_outliers() -> None:
+    try:
+        samples = int(entry_samples.get())
+    except Exception:
+        samples = 3
+    try:
+        conf = float(entry_confidence.get())
+    except Exception:
+        conf = 0.7
+
+    cfg = make_config(
+        apa_name=entry_apa.get(),
+        layer=layer_var.get(),
+        side=side_var.get(),
+        flipped=flipped_var.get(),
+        samples_per_wire=samples,
+        confidence_threshold=conf,
+        plot_audio=plot_audio_var.get(),
+    )
+
+    removed = cache_clear_outliers(
+        cfg.data_path,
+        cfg.apa_name,
+        cfg.layer,
+        cfg.side,
+        2.0,
+        conf,
+    )
+    if removed:
+        print(f"Cleared outlier wires: {removed}")
+    else:
+        print("No outlier wires found")
+
+
 def interrupt():
     stop_event.set()
     servo_controller.stop_loop()
@@ -559,6 +593,11 @@ tk.Button(
     text="Measure Condition",
     command=measure_condition,
 ).grid(row=6, column=2)
+tk.Button(
+    measure_frame,
+    text="Clear Outliers",
+    command=clear_outliers,
+).grid(row=7, column=2)
 
 # --- Servo Parameters ------------------------------------------------------
 tk.Label(servo_frame, text="Servo Speed (1–255):").grid(row=0, column=0, sticky="e")
