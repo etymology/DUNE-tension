@@ -108,6 +108,7 @@ plc_stub.is_web_server_active = lambda: False
 plc_stub.spoof_get_xy = lambda: (0.0, 0.0)
 plc_stub.spoof_goto_xy = lambda x, y: True
 plc_stub.spoof_wiggle = lambda m: None
+plc_stub.increment = lambda x, y: None
 sys.modules["plc_io"] = plc_stub
 
 # data_cache
