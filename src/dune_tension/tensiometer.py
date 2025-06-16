@@ -23,7 +23,7 @@ from geometry import (
 )
 from audioProcessing import analyze_sample, get_samplerate
 
-from plc_io import is_web_server_active
+from plc_io import is_web_server_active,increment
 from data_cache import (
     get_dataframe,
     update_dataframe,
@@ -82,7 +82,7 @@ class Tensiometer:
             )
         self.get_current_xy_position = get_xy
         self.goto_xy_func = goto_xy
-        self.wiggle_func = wiggle
+        self.wiggle_func = increment
 
         self.focus_wiggle_func = focus_wiggle or (lambda: None)
 
@@ -254,13 +254,13 @@ class Tensiometer:
             wire_y = np.average([d.y for d in wires])
             return cluster, wire_y
         wiggle_start_time = time.time()
-        current_wiggle = 0.1
+        current_wiggle = 0.2
         last_amplitude = None
         direction = 1.0
         while (time.time() - start_time) < 30:
             if check_stop_event(self.stop_event, "tension measurement interrupted!"):
                 return None, wire_y
-            audio_sample = self.record_audio_func(
+            audio_sample,amplitude = self.record_audio_func(
                 duration=0.15, sample_rate=self.samplerate
 
             )
@@ -278,8 +278,8 @@ class Tensiometer:
                 if last_amplitude is not None and amplitude < last_amplitude:
                     direction *= -1.0
                 increment = direction * current_wiggle
-                wire_y += increment
-                self.goto_xy_func(wire_x, wire_y)
+                self.wiggle_func(0,increment)
+                print(f"Wiggling by {increment:.2f} mm")
                 self.focus_wiggle_func()
                 last_amplitude = amplitude
             if audio_sample is not None:
