@@ -1,6 +1,6 @@
 import threading
 from datetime import datetime
-from typing import Optional
+from typing import Optional, Callable
 import time
 import numpy as np
 import pandas as pd
@@ -46,6 +46,8 @@ class Tensiometer:
         plot_audio: bool = False,
         spoof: bool = False,
         spoof_movement: bool = False,
+        start_servo_loop: Optional[Callable[[], None]] = None,
+        stop_servo_loop: Optional[Callable[[], None]] = None,
     ) -> None:
         self.config = make_config(
             apa_name=apa_name,
@@ -79,6 +81,9 @@ class Tensiometer:
         self.get_current_xy_position = get_xy
         self.goto_xy_func = goto_xy
         self.wiggle_func = wiggle
+
+        self.start_servo_loop = start_servo_loop or (lambda: None)
+        self.stop_servo_loop = stop_servo_loop or (lambda: None)
 
         self.samplerate = get_samplerate()
         if self.samplerate is None or spoof:
@@ -394,12 +399,16 @@ class Tensiometer:
                 time=datetime.now(),
             )
 
-        wires, wire_y = self._collect_samples(
-            wire_number=wire_number,
-            length=length,
-            start_time=start_time,
-            wire_y=wire_y,
-        )
+        self.start_servo_loop()
+        try:
+            wires, wire_y = self._collect_samples(
+                wire_number=wire_number,
+                length=length,
+                start_time=start_time,
+                wire_y=wire_y,
+            )
+        finally:
+            self.stop_servo_loop()
 
         if wires is None:
             return
