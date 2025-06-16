@@ -2,6 +2,7 @@ import threading
 from datetime import datetime
 from typing import Optional, Callable
 import time
+import random
 import numpy as np
 import pandas as pd
 from tension_calculation import calculate_kde_max, tension_plausible
@@ -277,14 +278,16 @@ class Tensiometer:
                 )
             if time.time() - wiggle_start_time > 1:
                 wiggle_start_time = time.time()
-                if last_amplitude is not None and amplitude < last_amplitude:
-
-                    plc_direction *= -1.0
-                    focus_direction *= -1
-                increment = plc_direction * current_wiggle
-                wire_y += increment
-                self.goto_xy_func(wire_x, wire_y)
-                self.focus_wiggle_func(focus_direction * 10)
+                if random.choice([True, False]):  # wiggle PLC
+                    if last_amplitude is not None and amplitude < last_amplitude:
+                        plc_direction *= -1.0
+                    increment = plc_direction * current_wiggle
+                    wire_y += increment
+                    self.goto_xy_func(wire_x, wire_y)
+                else:  # wiggle focus
+                    if last_amplitude is not None and amplitude < last_amplitude:
+                        focus_direction *= -1
+                    self.focus_wiggle_func(focus_direction * 10)
                 last_amplitude = amplitude
             if audio_sample is not None:
                 frequency, confidence, tension, tension_ok = analyze_sample(
