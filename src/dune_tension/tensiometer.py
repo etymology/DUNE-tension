@@ -95,8 +95,8 @@ class Tensiometer:
             from audioProcessing import spoof_audio_sample
 
             self.samplerate = 44100  # Default samplerate for spoofing
-            self.record_audio_func = lambda duration, sample_rate: spoof_audio_sample(
-                "audio"
+            self.record_audio_func = (
+                lambda duration, sample_rate: (spoof_audio_sample("audio"), 0.0)
             )
         else:
             from audioProcessing import record_audio
@@ -255,10 +255,12 @@ class Tensiometer:
             return cluster, wire_y
         wiggle_start_time = time.time()
         current_wiggle = 0.1
+        last_amplitude = None
+        direction = 1.0
         while (time.time() - start_time) < 30:
             if check_stop_event(self.stop_event, "tension measurement interrupted!"):
                 return None, wire_y
-            audio_sample = self.record_audio_func(
+            audio_sample, amplitude = self.record_audio_func(
                 duration=0.3, sample_rate=self.samplerate
             )
             if check_stop_event(self.stop_event, "tension measurement interrupted!"):
@@ -272,8 +274,13 @@ class Tensiometer:
                 )
             if time.time() - wiggle_start_time > 1:
                 wiggle_start_time = time.time()
-                self.wiggle_func(current_wiggle)
+                if last_amplitude is not None and amplitude < last_amplitude:
+                    direction *= -1.0
+                increment = direction * current_wiggle
+                wire_y += increment
+                self.goto_xy_func(wire_x, wire_y)
                 self.focus_wiggle_func()
+                last_amplitude = amplitude
             if audio_sample is not None:
                 frequency, confidence, tension, tension_ok = analyze_sample(
                     audio_sample, self.samplerate, length
