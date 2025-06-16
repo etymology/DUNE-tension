@@ -277,7 +277,7 @@ class Tensiometer:
                     f"audio/{self.config.layer}{self.config.side}{wire_number}_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}",
                     audio_sample,
                 )
-            if time.time() - wiggle_start_time > duration*3:
+            if time.time() - wiggle_start_time > duration*8:
                 wiggle_start_time = time.time()
                 if random.choice([True, False]):  # wiggle PLC
                     if last_amplitude is not None and amplitude < last_amplitude:
@@ -285,12 +285,14 @@ class Tensiometer:
                     increment = plc_direction * current_wiggle
                     wire_y += increment
                     self.goto_xy_func(wire_x, wire_y)
+                    print(f"plc wiggle: {increment:.2f}mm")
                 else:  # wiggle focus
                     if last_amplitude is not None and amplitude < last_amplitude:
                         focus_direction *= -1
                     self.focus_wiggle_func(focus_direction * 10)
+                    print(f"focus wiggle: {focus_direction * 10}")
+
                 last_amplitude = amplitude
-                print(f"plc wiggle: {increment:.2f}mm, focus wiggle: {focus_direction * 10}")
             if audio_sample is not None:
                 frequency, confidence, tension, tension_ok = analyze_sample(
                     audio_sample, self.samplerate, length
