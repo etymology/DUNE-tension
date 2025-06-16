@@ -7,3 +7,4 @@ venv/*
 images/*
 data/renamed_audio/*
 .venv/*
+data/tension_data/tension_data.db
