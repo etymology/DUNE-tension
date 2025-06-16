@@ -264,3 +264,26 @@ def get_missing_wires(config: TensiometerConfig) -> Dict[str, List[int]]:
         missing[side] = _order_missing_wires(missing_side, measured)
 
     return missing
+
+
+def get_failed_wires(config: TensiometerConfig) -> Dict[str, List[int]]:
+    """Return wire numbers with failed tension for each side."""
+
+    df = get_dataframe(config.data_path)
+    mask = (
+        (df["apa_name"] == config.apa_name)
+        & (df["layer"] == config.layer)
+    )
+    df = df[mask].copy()
+    df["wire_number"] = pd.to_numeric(df["wire_number"], errors="coerce")
+    df = df.dropna(subset=["wire_number"])
+    df["wire_number"] = df["wire_number"].astype(int)
+    df["tension_pass"] = df["tension_pass"].astype(str).str.lower() == "true"
+
+    result: Dict[str, List[int]] = {"A": [], "B": []}
+    for side in ["A", "B"]:
+        side_df = df[df["side"] == side]
+        bad = side_df[side_df["tension_pass"] == False]
+        result[side] = sorted(bad["wire_number"].unique().tolist())
+
+    return result

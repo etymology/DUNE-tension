@@ -195,6 +195,32 @@ class Tensiometer:
                 self.collect_wire_data(wire_number=wire_number, wire_x=x, wire_y=y)
         print("Done measuring all wires")
 
+    def measure_failing(self) -> None:
+        from analyze import get_failed_wires
+
+        wires_dict = get_failed_wires(self.config)
+        wires_to_measure = wires_dict.get(self.config.side, [])
+
+        print(f"Failing wires: {wires_to_measure}")
+
+        if not wires_to_measure:
+            print("No failing wires found.")
+            return
+
+        for wire_number in wires_to_measure:
+            if check_stop_event(self.stop_event):
+                return
+
+            xy = get_xy_from_file(self.config, wire_number)
+            if xy is None:
+                print(f"No position data found for wire {wire_number}")
+            else:
+                x, y = xy
+                self.goto_xy_func(x, y)
+                print(f"Remeasuring wire {wire_number} at position {x},{y}")
+                self.collect_wire_data(wire_number=wire_number, wire_x=x, wire_y=y)
+        print("Done remeasuring failing wires")
+
     def measure_list(self, wire_list: list[int], preserve_order: bool) -> None:
         measure_list(
             config=self.config,
