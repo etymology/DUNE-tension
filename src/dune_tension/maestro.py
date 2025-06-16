@@ -314,9 +314,11 @@ class ServoController:
         while self.servo.isMoving(1):
             time.sleep(0.01)
 
-    def wiggle_focus(self, sigma: float = 10.0) -> None:
+    def wiggle_focus(self, sigma: float = 20.0) -> None:
         """Randomly adjust the focus servo around the current position."""
-        self.focus_position += int(gauss(0, sigma))
+        wiggle_amount = int(gauss(0, sigma))
+        print(f"Wiggling focus by {wiggle_amount} quarter-microseconds")
+        self.focus_position += wiggle_amount
         low = self.servo.getMin(1) or 0
         high = self.servo.getMax(1) or 0
         if low and high:

@@ -254,7 +254,7 @@ class Tensiometer:
             wire_y = np.average([d.y for d in wires])
             return cluster, wire_y
         wiggle_start_time = time.time()
-        current_wiggle = 0.5
+        current_wiggle = 0.1
         while (time.time() - start_time) < 30:
             if check_stop_event(self.stop_event, "tension measurement interrupted!"):
                 return None, wire_y
