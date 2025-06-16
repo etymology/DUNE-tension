@@ -123,6 +123,7 @@ def create_tensiometer():
         plot_audio=plot_audio_var.get(),
         start_servo_loop=servo_controller.start_loop,
         stop_servo_loop=servo_controller.stop_loop,
+        focus_wiggle=servo_controller.wiggle_focus,
     )
 
 
@@ -194,13 +195,13 @@ def measure_list():
 def _parse_ranges(text: str) -> list[tuple[int, int]]:
     """Return list of ``(start, end)`` tuples parsed from ``text``."""
     ranges: list[tuple[int, int]] = []
-    for part in text.split(','):
+    for part in text.split(","):
         part = part.strip()
         if not part:
             continue
-        if '-' in part:
+        if "-" in part:
             try:
-                a, b = part.split('-', 1)
+                a, b = part.split("-", 1)
                 start = int(a)
                 end = int(b)
             except ValueError:
@@ -373,9 +374,7 @@ def update_focus_command_indicator(val: int) -> None:
         else:
             x = (val - low) / (high - low) * length
         r = 3
-        focus_command_canvas.coords(
-            focus_command_dot, x - r, 5 - r, x + r, 5 + r
-        )
+        focus_command_canvas.coords(focus_command_dot, x - r, 5 - r, x + r, 5 + r)
 
     root.after(0, _update)
 
@@ -543,7 +542,9 @@ if hasattr(tk, "Canvas"):
     focus_command_canvas = tk.Canvas(servo_frame, height=10)
     focus_command_canvas.grid(row=4, column=1, sticky="ew")
     focus_command_canvas.create_line(0, 5, int(focus_slider.cget("length")), 5)
-    focus_command_dot = focus_command_canvas.create_oval(0, 0, 0, 0, fill="blue", outline="")
+    focus_command_dot = focus_command_canvas.create_oval(
+        0, 0, 0, 0, fill="blue", outline=""
+    )
     update_focus_command_indicator(focus_slider.get())
 
 # --- Manual Move -----------------------------------------------------------
@@ -578,5 +579,14 @@ for label, dx, dy, r, c in btn_specs:
 
 
 load_state()
+try:
+    val = int(focus_slider.get())
+except Exception:
+    val = 4000
+servo_controller.focus_position = val
+try:
+    servo_controller.focus_target(val)
+except Exception:
+    pass
 root.after(1000, monitor_tension_logs)
 root.mainloop()
