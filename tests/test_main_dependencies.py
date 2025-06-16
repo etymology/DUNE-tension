@@ -123,6 +123,7 @@ sys.modules["tensiometer_functions"] = tfunc_stub
 # Minimal data_cache stub with clear_wire_range
 dc_stub = types.ModuleType("data_cache")
 dc_stub.clear_wire_range = lambda *a, **k: None
+dc_stub.clear_outliers = lambda *a, **k: []
 sys.modules["data_cache"] = dc_stub
 
 import dune_tension.main as main
@@ -310,6 +311,30 @@ def test_clear_range_invokes_cache(monkeypatch):
     assert called
     _, apa, layer, side, start, end = called[-1]
     assert (apa, layer, side, start, end) == ("APA", "X", "A", 10, 12)
+
+
+def test_clear_outliers_invokes_cache(monkeypatch):
+    called = []
+
+    def dummy_clear(path, apa, layer, side, sigma, conf):
+        called.append((path, apa, layer, side, sigma, conf))
+        return [99]
+
+    monkeypatch.setattr(main, "entry_apa", DummyGetter("APA"))
+    monkeypatch.setattr(main, "layer_var", DummyGetter("X"))
+    monkeypatch.setattr(main, "side_var", DummyGetter("A"))
+    monkeypatch.setattr(main, "flipped_var", DummyGetter(False))
+    monkeypatch.setattr(main, "entry_samples", DummyGetter("1"))
+    monkeypatch.setattr(main, "entry_confidence", DummyGetter("0.7"))
+    monkeypatch.setattr(main, "plot_audio_var", DummyGetter(False))
+    monkeypatch.setattr(main, "cache_clear_outliers", dummy_clear)
+
+    main.clear_outliers()
+    assert called
+    path, apa, layer, side, sigma, conf = called[-1]
+    assert (apa, layer, side) == ("APA", "X", "A")
+    assert sigma == 2.0
+    assert conf == 0.7
 
 
 def test_focus_target_state_round_trip(tmp_path, monkeypatch):
