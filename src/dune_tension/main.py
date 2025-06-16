@@ -167,6 +167,25 @@ def measure_auto():
     Thread(target=run, daemon=True).start()
 
 
+def measure_failing():
+    def run():
+        stop_event.clear()
+        t = None
+        try:
+            t = create_tensiometer()
+            save_state()
+            t.measure_failing()
+        finally:
+            if t is not None:
+                try:
+                    t.close()
+                except Exception:
+                    pass
+            stop_event.clear()
+
+    Thread(target=run, daemon=True).start()
+
+
 def measure_list():
     def run():
         stop_event.clear()
@@ -481,6 +500,10 @@ tk.Label(measure_frame, text="Clear Range:").grid(row=5, column=0, sticky="e")
 entry_clear_range = tk.Entry(measure_frame)
 entry_clear_range.grid(row=5, column=1)
 tk.Button(measure_frame, text="Clear", command=clear_range).grid(row=5, column=2)
+
+tk.Button(measure_frame, text="Remeasure Failing", command=measure_failing).grid(
+    row=6, column=0, pady=(5, 0)
+)
 
 # --- Servo Parameters ------------------------------------------------------
 tk.Label(servo_frame, text="Servo Speed (1–255):").grid(row=0, column=0, sticky="e")

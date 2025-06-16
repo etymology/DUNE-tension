@@ -83,6 +83,7 @@ sys.modules["pandas"] = pandas_stub
 geo_stub = types.ModuleType("geometry")
 geo_stub.zone_lookup = lambda x: 1
 geo_stub.length_lookup = lambda layer, wire, zone: 1.0
+geo_stub.refine_position = lambda x, y, dx, dy: (x, y)
 sys.modules["geometry"] = geo_stub
 
 # tension_calculation
