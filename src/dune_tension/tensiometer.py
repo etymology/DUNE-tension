@@ -289,8 +289,8 @@ class Tensiometer:
                 else:  # wiggle focus
                     if last_amplitude is not None and amplitude < last_amplitude:
                         focus_direction *= -1
-                    self.focus_wiggle_func(focus_direction * 10)
-                    print(f"focus wiggle: {focus_direction * 10}")
+                    self.focus_wiggle_func(focus_direction * 20)
+                    print(f"focus wiggle: {focus_direction * 20}")
 
                 last_amplitude = amplitude
             if audio_sample is not None:
