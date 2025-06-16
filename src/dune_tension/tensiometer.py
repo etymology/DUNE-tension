@@ -1,5 +1,5 @@
 import threading
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional, Callable
 import time
 import random
@@ -182,6 +182,8 @@ class Tensiometer:
 
         print("Measuring missing wires...")
         print(f"Missing wires: {wires_to_measure}")
+        start_time = time.time()
+        measured_count = 0
         for wire_number in wires_to_measure:
             if check_stop_event(self.stop_event):
                 return
@@ -190,10 +192,19 @@ class Tensiometer:
             if xy is None:
                 print(f"No position data found for wire {wire_number}")
             else:
-                x,y = xy
+                x, y = xy
                 self.goto_xy_func(x, y)
                 print(f"Measuring wire {wire_number} at position {x},{y}")
+                wire_start = time.time()
                 self.collect_wire_data(wire_number=wire_number, wire_x=x, wire_y=y)
+                measured_count += 1
+                elapsed = time.time() - start_time
+                avg_time = elapsed / measured_count
+                remaining = len(wires_to_measure) - measured_count
+                est_remaining = avg_time * remaining
+                print(
+                    f"Estimated time remaining: {timedelta(seconds=int(est_remaining))}"
+                )
         print("Done measuring all wires")
 
     def measure_list(self, wire_list: list[int], preserve_order: bool) -> None:
