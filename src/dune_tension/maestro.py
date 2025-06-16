@@ -3,6 +3,7 @@ from sys import version_info
 import platform
 import time
 from threading import Event, Thread, RLock
+from typing import Callable
 
 PY2 = version_info[0] == 2  # Running Python 2.x?
 
@@ -264,6 +265,10 @@ class ServoController:
         except Exception:
             pass
 
+        # Optional callback invoked whenever ``focus_target`` is called.  This
+        # is primarily used by the GUI to display the last commanded position.
+        self.on_focus_command: Callable[[int], None] | None = None
+
     def set_speed(self, val: int) -> None:
         self.servo.setSpeed(0, int(val))
 
@@ -292,6 +297,14 @@ class ServoController:
             time.sleep(self.dwell_time)
 
     def focus_target(self, target: int) -> None:
+        # Notify GUI of the command if a callback is registered.  Exceptions are
+        # ignored to avoid disrupting servo control in headless environments.
+        if self.on_focus_command:
+            try:
+                self.on_focus_command(target)
+            except Exception:
+                pass
+
         self.servo.setTarget(1, target)
         while self.servo.isMoving(1):
             time.sleep(0.01)

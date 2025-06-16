@@ -1,5 +1,6 @@
 import tkinter as tk
 from tkinter import messagebox
+from typing import Any
 import json
 import os
 import sounddevice as sd
@@ -352,6 +353,40 @@ root.title("Tensiometer GUI")
 if hasattr(root, "columnconfigure"):
     root.columnconfigure(0, weight=1)
 
+focus_slider: tk.Scale  # defined later
+
+# Track the most recent focus servo command.  This is updated via
+# ``servo_controller.on_focus_command``.
+focus_command_var = tk.StringVar(value="4000")
+focus_command_canvas: Any | None = None
+focus_command_dot: Any | None = None
+
+
+def update_focus_command_indicator(val: int) -> None:
+    """Display the last focus command as a blue dot under the slider."""
+
+    def _update() -> None:
+        focus_command_var.set(str(val))
+        if not focus_command_canvas or not focus_command_dot:
+            return
+        length = focus_command_canvas.winfo_width()
+        low = int(focus_slider["from"])
+        high = int(focus_slider["to"])
+        if high == low:
+            x = 0
+        else:
+            x = (val - low) / (high - low) * length
+        r = 3
+        focus_command_canvas.coords(
+            focus_command_dot, x - r, 5 - r, x + r, 5 + r
+        )
+
+    root.after(0, _update)
+
+
+# Register the callback so that all focus movements update the indicator
+servo_controller.on_focus_command = update_focus_command_indicator
+
 
 def _on_close() -> None:
     """Gracefully shut down threads and destroy the root window."""
@@ -502,6 +537,18 @@ focus_slider = tk.Scale(
 )
 focus_slider.set(4000)
 focus_slider.grid(row=3, column=1, sticky="ew")
+
+# Draw a line beneath the focus slider showing the last command sent to the
+# servo controller.  The position is displayed numerically on the left.  If the
+# ``Canvas`` widget is unavailable (as in some test environments), simply skip
+# the indicator.
+tk.Label(servo_frame, textvariable=focus_command_var).grid(row=4, column=0, sticky="e")
+if hasattr(tk, "Canvas"):
+    focus_command_canvas = tk.Canvas(servo_frame, height=10)
+    focus_command_canvas.grid(row=4, column=1, sticky="ew")
+    focus_command_canvas.create_line(0, 5, int(focus_slider.cget("length")), 5)
+    focus_command_dot = focus_command_canvas.create_oval(0, 0, 0, 0, fill="blue", outline="")
+    update_focus_command_indicator(focus_slider.get())
 
 # --- Manual Move -----------------------------------------------------------
 manual_move_frame = tk.LabelFrame(bottom_frame, text="Manual Move")
