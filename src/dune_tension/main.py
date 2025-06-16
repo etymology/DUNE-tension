@@ -73,6 +73,7 @@ def save_state():
         "servo_dwell": dwell_slider.get(),
         "plot_audio": plot_audio_var.get(),
         "focus_target": focus_slider.get(),
+        "condition": entry_condition.get(),
     }
     with open(state_file, "w") as f:
         json.dump(state, f)
@@ -95,6 +96,7 @@ def load_state():
             dwell_slider.set(state.get("servo_dwell", 100))
             plot_audio_var.set(state.get("plot_audio", False))
             focus_slider.set(state.get("focus_target", 4000))
+            entry_condition.insert(0, state.get("condition", ""))
 
 
 def create_tensiometer():
@@ -183,6 +185,60 @@ def measure_list():
             save_state()
             print(f"Measuring wires: {wire_list}")
             t.measure_list(wire_list, preserve_order=False)
+        finally:
+            if t is not None:
+                try:
+                    t.close()
+                except Exception:
+                    pass
+            stop_event.clear()
+
+    Thread(target=run, daemon=True).start()
+
+
+def measure_condition() -> None:
+    """Measure wires whose tension satisfies ``entry_condition``."""
+
+    def _get_wires(cfg, expr: str) -> list[int]:
+        from data_cache import get_dataframe  # Local import for test stubs
+        import pandas as pd
+
+        df = get_dataframe(cfg.data_path)
+        mask = (
+            (df["apa_name"] == cfg.apa_name)
+            & (df["layer"] == cfg.layer)
+            & (df["side"] == cfg.side)
+        )
+        subset = df[mask].copy()
+        subset["wire_number"] = pd.to_numeric(subset["wire_number"], errors="coerce")
+        subset["tension"] = pd.to_numeric(subset["tension"], errors="coerce")
+        subset = subset.dropna(subset=["wire_number", "tension"])
+        wires: list[int] = []
+        for _, row in subset.iterrows():
+            try:
+                if eval(expr, {"t": float(row["tension"])}):
+                    wires.append(int(row["wire_number"]))
+            except Exception as exc:
+                print(f"Invalid expression '{expr}': {exc}")
+                return []
+        return sorted(set(wires))
+
+    def run() -> None:
+        stop_event.clear()
+        t = None
+        expr = entry_condition.get().strip()
+        if not expr:
+            print("No condition specified")
+            return
+        try:
+            t = create_tensiometer()
+            save_state()
+            wires = _get_wires(t.config, expr)
+            if not wires:
+                print(f"No wires satisfy: {expr}")
+                return
+            print(f"Measuring wires {wires} matching '{expr}'")
+            t.measure_list(wires, preserve_order=False)
         finally:
             if t is not None:
                 try:
@@ -483,6 +539,15 @@ tk.Label(measure_frame, text="Clear Range:").grid(row=5, column=0, sticky="e")
 entry_clear_range = tk.Entry(measure_frame)
 entry_clear_range.grid(row=5, column=1)
 tk.Button(measure_frame, text="Clear", command=clear_range).grid(row=5, column=2)
+
+tk.Label(measure_frame, text="Condition:").grid(row=6, column=0, sticky="e")
+entry_condition = tk.Entry(measure_frame)
+entry_condition.grid(row=6, column=1)
+tk.Button(
+    measure_frame,
+    text="Measure Condition",
+    command=measure_condition,
+).grid(row=6, column=2)
 
 # --- Servo Parameters ------------------------------------------------------
 tk.Label(servo_frame, text="Servo Speed (1–255):").grid(row=0, column=0, sticky="e")
