@@ -173,13 +173,14 @@ class Tensiometer:
         for wire_number in wires_to_measure:
             if check_stop_event(self.stop_event):
                 return
-            print(f"Measuring wire {wire_number}...")
             xy = get_xy_from_file(self.config, wire_number)
             if xy is None:
                 print(f"No position data found for wire {wire_number}")
             else:
                 x, y = xy
                 self.goto_xy_func(x, y)
+                print(f"Measuring wire {wire_number} at position {x},{y}")
+
                 self.collect_wire_data(wire_number=wire_number, wire_x=x, wire_y=y)
         print("Done measuring all wires")
 

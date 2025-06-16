@@ -117,7 +117,7 @@ def goto_xy(x_target: float, y_target: float, *, deadzone: float = BACKLASH_DEAD
 
     global _TRUE_XY, _LAST_X_DIR, _X_DEADZONE_LEFT
 
-    if x_target < 0 or x_target > 7174 or y_target < 0 or y_target > 2680:
+    if not (1000 < x_target < 7174 and 0 < y_target < 2680):
         print(
             f"Motion target {x_target},{y_target} out of bounds. Please enter a valid position."
         )
@@ -153,6 +153,7 @@ def goto_xy(x_target: float, y_target: float, *, deadzone: float = BACKLASH_DEAD
     # ------------------------------------------------------------
     current_state = get_state()
     while current_state != IDLE_STATE:
+        time.sleep(0.1)
         current_state = get_state()
     write_tag("MOVE_TYPE", IDLE_MOVE_TYPE)
     write_tag("STATE", IDLE_STATE)
