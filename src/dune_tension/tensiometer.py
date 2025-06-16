@@ -241,12 +241,12 @@ class Tensiometer:
             wire_y = np.average([d.y for d in wires])
             return cluster, wire_y
         wiggle_start_time = time.time()
-        current_wiggle = 0.5
+        current_wiggle = 0.1
         while (time.time() - start_time) < 30:
             if check_stop_event(self.stop_event, "tension measurement interrupted!"):
                 return None, wire_y
             audio_sample = self.record_audio_func(
-                duration=0.15, sample_rate=self.samplerate
+                duration=0.3, sample_rate=self.samplerate
             )
             if check_stop_event(self.stop_event, "tension measurement interrupted!"):
                 return None, wire_y
@@ -259,7 +259,6 @@ class Tensiometer:
                 )
             if time.time() - wiggle_start_time > 1:
                 wiggle_start_time = time.time()
-                print(f"Wiggling {current_wiggle}mm")
                 self.wiggle_func(current_wiggle)
             if audio_sample is not None:
                 frequency, confidence, tension, tension_ok = analyze_sample(

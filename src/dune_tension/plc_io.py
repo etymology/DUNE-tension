@@ -187,16 +187,19 @@ def wiggle(step):
     """Wiggle the winder by a given step size in a background thread."""
 
     def _do_wiggle() -> None:
-        increment(0, gauss(0, step))
+        y_wiggle = gauss(0, step)
+        increment(0, y_wiggle)
         # Also jiggle the focus servo if available. Import lazily to avoid
         # circular dependencies when :mod:`plc_io` is used without the GUI.
+        focus_wiggle = 0
         try:
             from dune_tension import main  # type: ignore
 
             slider = getattr(main, "focus_slider", None)
             controller = getattr(main, "servo_controller", None)
             if slider is not None and controller is not None:
-                new_val = slider.get() + gauss(0, 5)
+                focus_wiggle = gauss(0, 10)
+                new_val = slider.get() 
                 # Constrain to the slider's range before sending the command
                 low = int(slider["from"])
                 high = int(slider["to"])
@@ -209,6 +212,7 @@ def wiggle(step):
         except Exception:
             # If anything goes wrong (e.g. GUI not loaded), just ignore
             pass
+        print(f"Wiggling by {y_wiggle} mm, focus wiggle: {focus_wiggle}")
 
     threading.Thread(target=_do_wiggle, daemon=True).start()
     return True
