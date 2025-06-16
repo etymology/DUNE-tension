@@ -348,19 +348,30 @@ def monitor_tension_logs():
     ):
         monitor_tension_logs.last_path = path
         monitor_tension_logs.last_mtime = mtime
-        try:
-            from analyze import update_tension_logs
+        def run() -> None:
+            try:
+                from analyze import update_tension_logs
 
-            update_tension_logs(config)
-            print(f"Updated tension logs for {config.apa_name} layer {config.layer}")
-        except Exception as exc:
-            print(f"Failed to update logs: {exc}")
+                update_tension_logs(config)
+                print(
+                    f"Updated tension logs for {config.apa_name} layer {config.layer}"
+                )
+            except Exception as exc:
+                print(f"Failed to update logs: {exc}")
+
+        if (
+            monitor_tension_logs.update_thread is None
+            or not monitor_tension_logs.update_thread.is_alive()
+        ):
+            monitor_tension_logs.update_thread = Thread(target=run, daemon=True)
+            monitor_tension_logs.update_thread.start()
 
     root.after(10000, monitor_tension_logs)
 
 
 monitor_tension_logs.last_path = ""
 monitor_tension_logs.last_mtime = None
+monitor_tension_logs.update_thread = None
 
 
 def manual_goto():
