@@ -242,15 +242,19 @@ def test_monitor_tension_logs(monkeypatch):
     main.monitor_tension_logs.last_path = ""
     main.monitor_tension_logs.last_mtime = None
     main.monitor_tension_logs()
+    main.monitor_tension_logs.update_thread.join(timeout=1)
     assert updates and updates[-1] is DummyConfig
     assert called_args["samples_per_wire"] == 5
     assert called_args["confidence_threshold"] == 0.9
     assert called_args["plot_audio"] is True
     assert main.monitor_tension_logs.last_mtime == 1
     main.monitor_tension_logs()
+    if main.monitor_tension_logs.update_thread is not None:
+        main.monitor_tension_logs.update_thread.join(timeout=1)
     assert len(updates) == 1
     monkeypatch.setattr(main.os.path, "getmtime", lambda p: 2)
     main.monitor_tension_logs()
+    main.monitor_tension_logs.update_thread.join(timeout=1)
     assert len(updates) == 2
 
 
