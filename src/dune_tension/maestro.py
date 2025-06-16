@@ -325,6 +325,15 @@ class ServoController:
             self.focus_position = max(low, min(high, self.focus_position))
         self.focus_target(self.focus_position)
 
+    def nudge_focus(self, delta: int) -> None:
+        """Move the focus servo by ``delta`` relative to the current position."""
+        self.focus_position += int(delta)
+        low = self.servo.getMin(1) or 0
+        high = self.servo.getMax(1) or 0
+        if low and high:
+            self.focus_position = max(low, min(high, self.focus_position))
+        self.focus_target(self.focus_position)
+
 
 if __name__ == "__main__":
     import serial.tools.list_ports

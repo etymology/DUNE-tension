@@ -49,7 +49,7 @@ class Tensiometer:
         spoof_movement: bool = False,
         start_servo_loop: Optional[Callable[[], None]] = None,
         stop_servo_loop: Optional[Callable[[], None]] = None,
-        focus_wiggle: Optional[Callable[[], None]] = None,
+        focus_wiggle: Optional[Callable[[float], None]] = None,
     ) -> None:
         self.config = make_config(
             apa_name=apa_name,
@@ -84,7 +84,7 @@ class Tensiometer:
         self.goto_xy_func = goto_xy
         self.wiggle_func = increment
 
-        self.focus_wiggle_func = focus_wiggle or (lambda: None)
+        self.focus_wiggle_func = focus_wiggle or (lambda delta: None)
 
         self.start_servo_loop = start_servo_loop or (lambda: None)
         self.stop_servo_loop = stop_servo_loop or (lambda: None)
@@ -216,7 +216,10 @@ class Tensiometer:
         length: float,
         start_time: float,
         wire_y: float,
-    ) -> tuple[list[TensionResult] | None, float]:
+        wire_x: float,
+        plc_direction: float,
+        focus_direction: int,
+    ) -> tuple[list[TensionResult] | None, float, float, int]:
         # Load any previously collected raw samples for this wire
         samples_df = get_samples_dataframe(self.config.data_path)
         mask = (
@@ -252,20 +255,19 @@ class Tensiometer:
         if cluster != []:
             print("already collected enough samples for this wire.")
             wire_y = np.average([d.y for d in wires])
-            return cluster, wire_y
+            return cluster, wire_y, plc_direction, focus_direction
         wiggle_start_time = time.time()
         current_wiggle = 0.2
         last_amplitude = None
-        direction = 1.0
         while (time.time() - start_time) < 30:
             if check_stop_event(self.stop_event, "tension measurement interrupted!"):
                 return None, wire_y
             audio_sample,amplitude = self.record_audio_func(
-                duration=0.15, sample_rate=self.samplerate
 
+                duration=0.15, sample_rate=self.samplerate
             )
             if check_stop_event(self.stop_event, "tension measurement interrupted!"):
-                return None, wire_y
+                return None, wire_y, plc_direction, focus_direction
             if audio_sample is not None and self.config.plot_audio:
                 self._plot_audio(audio_sample)
             if self.config.save_audio and not self.config.spoof:
@@ -276,11 +278,13 @@ class Tensiometer:
             if time.time() - wiggle_start_time > 1:
                 wiggle_start_time = time.time()
                 if last_amplitude is not None and amplitude < last_amplitude:
-                    direction *= -1.0
-                increment = direction * current_wiggle
-                self.wiggle_func(0,increment)
-                print(f"Wiggling by {increment:.2f} mm")
-                self.focus_wiggle_func()
+
+                    plc_direction *= -1.0
+                    focus_direction *= -1
+                increment = plc_direction * current_wiggle
+                wire_y += increment
+                self.goto_xy_func(wire_x, wire_y)
+                self.focus_wiggle_func(focus_direction * 10)
                 last_amplitude = amplitude
             if audio_sample is not None:
                 frequency, confidence, tension, tension_ok = analyze_sample(
@@ -289,7 +293,7 @@ class Tensiometer:
                 if check_stop_event(
                     self.stop_event, "tension measurement interrupted!"
                 ):
-                    return None, wire_y
+                    return None, wire_y, plc_direction, focus_direction
                 x, y = self.get_current_xy_position()
                 if confidence > self.config.confidence_threshold and tension_plausible(
                     tension
@@ -330,13 +334,13 @@ class Tensiometer:
                     wire_y = np.average([d.y for d in wires])
                     current_wiggle = (current_wiggle + 0.1) / 1.5
                     if self.config.samples_per_wire == 1:
-                        return wires[:1], wire_y
+                        return wires[:1], wire_y, plc_direction, focus_direction
 
                     cluster = has_cluster(
                         wires, "tension", self.config.samples_per_wire
                     )
                     if cluster != []:
-                        return cluster, wire_y
+                        return cluster, wire_y, plc_direction, focus_direction
                     print(
                         f"tension: {tension:.1f}N, frequency: {frequency:.1f}Hz, "
                         f"confidence: {confidence * 100:.1f}%",
@@ -344,7 +348,7 @@ class Tensiometer:
                     )
         return (
             [] if not self.stop_event or not self.stop_event.is_set() else None
-        ), wire_y
+        ), wire_y, plc_direction, focus_direction
 
     def _generate_result(
         self,
@@ -418,12 +422,19 @@ class Tensiometer:
 
         self.start_servo_loop()
         try:
-            wires, wire_y = self._collect_samples(
+            plc_dir = getattr(self, "_plc_direction", 1.0)
+            focus_dir = getattr(self, "_focus_direction", 1)
+            wires, wire_y, plc_dir, focus_dir = self._collect_samples(
                 wire_number=wire_number,
                 length=length,
                 start_time=start_time,
                 wire_y=wire_y,
+                wire_x=wire_x,
+                plc_direction=plc_dir,
+                focus_direction=focus_dir,
             )
+            self._plc_direction = plc_dir
+            self._focus_direction = focus_dir
         finally:
             self.stop_servo_loop()
 
