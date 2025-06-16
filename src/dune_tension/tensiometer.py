@@ -259,7 +259,7 @@ class Tensiometer:
             if check_stop_event(self.stop_event, "tension measurement interrupted!"):
                 return None, wire_y
             audio_sample = self.record_audio_func(
-                duration=0.3, sample_rate=self.samplerate
+                duration=0.15, sample_rate=self.samplerate
             )
             if check_stop_event(self.stop_event, "tension measurement interrupted!"):
                 return None, wire_y
