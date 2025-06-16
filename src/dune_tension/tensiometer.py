@@ -262,9 +262,10 @@ class Tensiometer:
         while (time.time() - start_time) < 30:
             if check_stop_event(self.stop_event, "tension measurement interrupted!"):
                 return None, wire_y
+            duration = 0.15
             audio_sample,amplitude = self.record_audio_func(
 
-                duration=0.15, sample_rate=self.samplerate
+                duration=duration, sample_rate=self.samplerate
             )
             if check_stop_event(self.stop_event, "tension measurement interrupted!"):
                 return None, wire_y, plc_direction, focus_direction
@@ -275,7 +276,7 @@ class Tensiometer:
                     f"audio/{self.config.layer}{self.config.side}{wire_number}_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}",
                     audio_sample,
                 )
-            if time.time() - wiggle_start_time > 1:
+            if time.time() - wiggle_start_time > duration*3:
                 wiggle_start_time = time.time()
                 if last_amplitude is not None and amplitude < last_amplitude:
 
@@ -286,6 +287,7 @@ class Tensiometer:
                 self.goto_xy_func(wire_x, wire_y)
                 self.focus_wiggle_func(focus_direction * 10)
                 last_amplitude = amplitude
+                print(f"plc wiggle: {increment:.2f}mm, focus wiggle: {focus_direction * 10}")
             if audio_sample is not None:
                 frequency, confidence, tension, tension_ok = analyze_sample(
                     audio_sample, self.samplerate, length
