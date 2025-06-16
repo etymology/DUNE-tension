@@ -2,6 +2,7 @@ import sys
 from pathlib import Path
 import types
 import time
+import json
 from threading import Thread
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
@@ -305,3 +306,57 @@ def test_clear_range_invokes_cache(monkeypatch):
     assert called
     _, apa, layer, side, start, end = called[-1]
     assert (apa, layer, side, start, end) == ("APA", "X", "A", 10, 12)
+
+
+def test_focus_target_state_round_trip(tmp_path, monkeypatch):
+    path = tmp_path / "state.json"
+    monkeypatch.setattr(main, "state_file", str(path))
+
+    class DummyWidget:
+        def __init__(self, value=""):
+            self.value = value
+
+        def insert(self, *_):
+            pass
+
+        def set(self, val):
+            self.value = int(val)
+
+        def get(self):
+            return self.value
+
+    class DummyVar:
+        def __init__(self, value=None):
+            self.value = value
+
+        def set(self, v):
+            self.value = v
+
+        def get(self):
+            return self.value
+
+    # Patch required widgets/vars
+    monkeypatch.setattr(main, "entry_apa", DummyWidget())
+    monkeypatch.setattr(main, "layer_var", DummyVar("X"))
+    monkeypatch.setattr(main, "side_var", DummyVar("A"))
+    monkeypatch.setattr(main, "flipped_var", DummyVar(False))
+    monkeypatch.setattr(main, "entry_wire", DummyWidget())
+    monkeypatch.setattr(main, "entry_wire_list", DummyWidget())
+    monkeypatch.setattr(main, "entry_samples", DummyWidget("1"))
+    monkeypatch.setattr(main, "entry_confidence", DummyWidget("0.7"))
+    monkeypatch.setattr(main, "speed_slider", DummyWidget(1))
+    monkeypatch.setattr(main, "accel_slider", DummyWidget(1))
+    monkeypatch.setattr(main, "dwell_slider", DummyWidget(100))
+    monkeypatch.setattr(main, "plot_audio_var", DummyVar(False))
+
+    focus = DummyWidget(4567)
+    monkeypatch.setattr(main, "focus_slider", focus)
+
+    main.save_state()
+    with open(path) as f:
+        data = json.load(f)
+    assert data["focus_target"] == 4567
+
+    focus.set(4000)
+    main.load_state()
+    assert focus.get() == 4567

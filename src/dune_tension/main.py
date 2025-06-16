@@ -72,6 +72,7 @@ def save_state():
         "servo_accel": accel_slider.get(),
         "servo_dwell": dwell_slider.get(),
         "plot_audio": plot_audio_var.get(),
+        "focus_target": focus_slider.get(),
     }
     with open(state_file, "w") as f:
         json.dump(state, f)
@@ -93,6 +94,7 @@ def load_state():
             accel_slider.set(state.get("servo_accel", 1))
             dwell_slider.set(state.get("servo_dwell", 100))
             plot_audio_var.set(state.get("plot_audio", False))
+            focus_slider.set(state.get("focus_target", 4000))
 
 
 def create_tensiometer():
