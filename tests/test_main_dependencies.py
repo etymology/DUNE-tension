@@ -312,6 +312,35 @@ def test_clear_range_invokes_cache(monkeypatch):
     assert (apa, layer, side, start, end) == ("APA", "X", "A", 10, 12)
 
 
+def test_clear_range_condition(monkeypatch):
+    called = []
+
+    def dummy_clear(path, apa, layer, side, start, end):
+        called.append((start, end))
+
+    df = {
+        "apa_name": ["APA", "APA", "APA"],
+        "layer": ["X", "X", "X"],
+        "side": ["A", "A", "A"],
+        "wire_number": [1, 2, 3],
+        "tension": [2.5, 4.5, 2.0],
+    }
+
+    monkeypatch.setattr(main, "entry_clear_range", DummyGetter("t<3"))
+    monkeypatch.setattr(main, "entry_apa", DummyGetter("APA"))
+    monkeypatch.setattr(main, "layer_var", DummyGetter("X"))
+    monkeypatch.setattr(main, "side_var", DummyGetter("A"))
+    monkeypatch.setattr(main, "flipped_var", DummyGetter(False))
+    monkeypatch.setattr(main, "entry_samples", DummyGetter("1"))
+    monkeypatch.setattr(main, "entry_confidence", DummyGetter("0.7"))
+    monkeypatch.setattr(main, "plot_audio_var", DummyGetter(False))
+    monkeypatch.setattr(main, "clear_wire_range", dummy_clear)
+    monkeypatch.setattr(sys.modules["data_cache"], "get_dataframe", lambda p: df)
+
+    main.clear_range()
+    assert (1, 1) in called and (3, 3) in called
+
+
 def test_focus_target_state_round_trip(tmp_path, monkeypatch):
     path = tmp_path / "state.json"
     monkeypatch.setattr(main, "state_file", str(path))

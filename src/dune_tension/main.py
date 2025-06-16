@@ -196,32 +196,47 @@ def measure_list():
     Thread(target=run, daemon=True).start()
 
 
-def measure_condition() -> None:
-    """Measure wires whose tension satisfies ``entry_condition``."""
+def _get_condition_wires(cfg, expr: str) -> list[int]:
+    """Return sorted wire numbers whose tension satisfies ``expr``."""
 
-    def _get_wires(cfg, expr: str) -> list[int]:
-        from data_cache import get_dataframe  # Local import for test stubs
-        import pandas as pd
+    from data_cache import get_dataframe  # Local import for test stubs
 
-        df = get_dataframe(cfg.data_path)
-        mask = (
-            (df["apa_name"] == cfg.apa_name)
-            & (df["layer"] == cfg.layer)
-            & (df["side"] == cfg.side)
-        )
-        subset = df[mask].copy()
-        subset["wire_number"] = pd.to_numeric(subset["wire_number"], errors="coerce")
-        subset["tension"] = pd.to_numeric(subset["tension"], errors="coerce")
-        subset = subset.dropna(subset=["wire_number", "tension"])
-        wires: list[int] = []
-        for _, row in subset.iterrows():
+    df = get_dataframe(cfg.data_path)
+    if df is None:
+        return []
+
+    def _get_col(name: str):
+        try:
+            col = df[name]
+            if hasattr(col, "tolist"):
+                col = col.tolist()
+            return list(col)
+        except Exception:
+            attr = getattr(df, name, [])
+            if hasattr(attr, "tolist"):
+                attr = attr.tolist()
+            return list(attr)
+
+    apa_col = _get_col("apa_name")
+    layer_col = _get_col("layer")
+    side_col = _get_col("side")
+    wire_col = _get_col("wire_number")
+    tension_col = _get_col("tension")
+
+    wires: list[int] = []
+    for a, l, s, w, t_val in zip(apa_col, layer_col, side_col, wire_col, tension_col):
+        if a == cfg.apa_name and l == cfg.layer and s == cfg.side:
             try:
-                if eval(expr, {"t": float(row["tension"])}):
-                    wires.append(int(row["wire_number"]))
+                if eval(expr, {"t": float(t_val)}):
+                    wires.append(int(float(w)))
             except Exception as exc:
                 print(f"Invalid expression '{expr}': {exc}")
                 return []
-        return sorted(set(wires))
+    return sorted(set(wires))
+
+
+def measure_condition() -> None:
+    """Measure wires whose tension satisfies ``entry_condition``."""
 
     def run() -> None:
         stop_event.clear()
@@ -233,7 +248,7 @@ def measure_condition() -> None:
         try:
             t = create_tensiometer()
             save_state()
-            wires = _get_wires(t.config, expr)
+            wires = _get_condition_wires(t.config, expr)
             if not wires:
                 print(f"No wires satisfy: {expr}")
                 return
@@ -276,10 +291,8 @@ def _parse_ranges(text: str) -> list[tuple[int, int]]:
 
 
 def clear_range() -> None:
-    ranges = _parse_ranges(entry_clear_range.get())
-    if not ranges:
-        print("No valid range specified")
-        return
+    text = entry_clear_range.get().strip()
+    ranges = _parse_ranges(text)
 
     try:
         samples = int(entry_samples.get())
@@ -299,6 +312,14 @@ def clear_range() -> None:
         confidence_threshold=conf,
         plot_audio=plot_audio_var.get(),
     )
+
+    if not ranges and text:
+        wires = _get_condition_wires(cfg, text)
+        ranges = [(w, w) for w in wires]
+
+    if not ranges:
+        print("No valid range specified")
+        return
 
     for start, end in ranges:
         clear_wire_range(cfg.data_path, cfg.apa_name, cfg.layer, cfg.side, start, end)
