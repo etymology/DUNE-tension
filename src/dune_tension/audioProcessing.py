@@ -268,7 +268,7 @@ def get_pitch_pesto(
 
 
 def record_audio(duration, sample_rate, plot=False, normalize=False):
-    """Record audio for a given duration and sample rate and normalize it to the range -1 to 1. Optionally plot the waveform."""
+    """Record audio and return the raw sample and its average amplitude."""
     try:
         audio_data = sd.rec(
             int(duration * sample_rate),
@@ -278,13 +278,14 @@ def record_audio(duration, sample_rate, plot=False, normalize=False):
         )
         sd.wait()  # Wait until recording is finished
         audio_data = audio_data.flatten()  # Flatten the audio data to a 1D array
-        # Normalize the audio data to the range -1 to 1
+
+        amplitude = float(np.mean(np.abs(audio_data)))
+
         if normalize:
             max_val = np.max(np.abs(audio_data))
             if max_val > 0:
                 audio_data = audio_data / max_val
 
-        # Plot the waveform if plot is True
         if plot:
             plt.figure(figsize=(10, 4))
             plt.plot(audio_data)
@@ -294,10 +295,10 @@ def record_audio(duration, sample_rate, plot=False, normalize=False):
             plt.grid()
             plt.show()
 
-        return audio_data
+        return audio_data, amplitude
     except Exception as e:
         print(f"An error occurred while recording audio: {e}")
-        return None
+        return None, 0.0
     finally:
         try:
             sd.stop()
