@@ -101,7 +101,7 @@ def clear_outliers(
     apa_name: str,
     layer: str,
     side: str,
-    sigma: float = 2.0,
+    sigma: float = 3.0,
     confidence_threshold: float = 0.0,
 ) -> list[int]:
     """Remove wires with tension more than ``sigma`` standard deviations from the mean.
