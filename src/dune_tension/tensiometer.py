@@ -179,10 +179,16 @@ class Tensiometer:
             for x in wires_to_measure
             if (x >= 20 if low_numbered_high else x <= 1146 - 20)
         ]
+        wires_to_measure[:] = [
+            x
+            for x in wires_to_measure
+            if x >= 20
+        ]
 
         print("Measuring missing wires...")
         print(f"Missing wires: {wires_to_measure}")
         for wire_number in wires_to_measure:
+
             if check_stop_event(self.stop_event):
                 return
 
@@ -260,7 +266,7 @@ class Tensiometer:
         wiggle_start_time = time.time()
         current_wiggle = 0.2
         last_amplitude = None
-        while (time.time() - start_time) < 30:
+        while (time.time() - start_time) < 15:
             if check_stop_event(self.stop_event, "tension measurement interrupted!"):
                 return None, wire_y
             duration = 0.15
@@ -277,7 +283,7 @@ class Tensiometer:
                     f"audio/{self.config.layer}{self.config.side}{wire_number}_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}",
                     audio_sample,
                 )
-            if time.time() - wiggle_start_time > duration*8:
+            if time.time() - wiggle_start_time > duration*5:
                 wiggle_start_time = time.time()
                 if random.choice([True, False]):  # wiggle PLC
                     if last_amplitude is not None and amplitude < last_amplitude:
