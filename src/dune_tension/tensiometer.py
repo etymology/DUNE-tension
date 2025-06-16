@@ -48,6 +48,7 @@ class Tensiometer:
         spoof_movement: bool = False,
         start_servo_loop: Optional[Callable[[], None]] = None,
         stop_servo_loop: Optional[Callable[[], None]] = None,
+        focus_wiggle: Optional[Callable[[], None]] = None,
     ) -> None:
         self.config = make_config(
             apa_name=apa_name,
@@ -81,6 +82,8 @@ class Tensiometer:
         self.get_current_xy_position = get_xy
         self.goto_xy_func = goto_xy
         self.wiggle_func = wiggle
+
+        self.focus_wiggle_func = focus_wiggle or (lambda: None)
 
         self.start_servo_loop = start_servo_loop or (lambda: None)
         self.stop_servo_loop = stop_servo_loop or (lambda: None)
@@ -170,7 +173,9 @@ class Tensiometer:
         )
 
         wires_to_measure[:] = [
-            x for x in wires_to_measure if (x >= 150 if low_numbered_high else x <= 1146-150)
+            x
+            for x in wires_to_measure
+            if (x >= 150 if low_numbered_high else x <= 1146 - 150)
         ]
 
         print("Measuring missing wires...")
@@ -234,9 +239,11 @@ class Tensiometer:
                 x=float(row.x),
                 y=float(row.y),
                 wires=[],
-                time=datetime.fromisoformat(row.time)
-                if isinstance(row.time, str)
-                else row.time,
+                time=(
+                    datetime.fromisoformat(row.time)
+                    if isinstance(row.time, str)
+                    else row.time
+                ),
             )
             for row in samples_df[mask].itertuples()
         ]
@@ -265,6 +272,7 @@ class Tensiometer:
             if time.time() - wiggle_start_time > 1:
                 wiggle_start_time = time.time()
                 self.wiggle_func(current_wiggle)
+                self.focus_wiggle_func()
             if audio_sample is not None:
                 frequency, confidence, tension, tension_ok = analyze_sample(
                     audio_sample, self.samplerate, length

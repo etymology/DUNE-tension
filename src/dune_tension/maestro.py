@@ -4,6 +4,7 @@ import platform
 import time
 from threading import Event, Thread, RLock
 from typing import Callable
+from random import gauss
 
 PY2 = version_info[0] == 2  # Running Python 2.x?
 
@@ -252,13 +253,16 @@ class DummyController:
 class ServoController:
     """High-level servo helper used by the GUI."""
 
-    def __init__(self, servo: Controller | DummyController) -> None:
+    def __init__(
+        self, servo: Controller | DummyController, *, focus_position: int = 4000
+    ) -> None:
         self.servo = servo or DummyController()
         self.servo.setRange(0, 4000, 8000)  # plucking servo
         self.running: Event = Event()
         self.dwell_time: float = 1.0
 
         self.servo.setRange(1, 4000, 8000)  # focus servo
+        self.focus_position = focus_position
         try:
             self.servo.setSpeed(1, 100)
             self.servo.setAccel(1, 100)
@@ -304,10 +308,20 @@ class ServoController:
                 self.on_focus_command(target)
             except Exception:
                 pass
+        self.focus_position = target
 
         self.servo.setTarget(1, target)
         while self.servo.isMoving(1):
             time.sleep(0.01)
+
+    def wiggle_focus(self, sigma: float = 10.0) -> None:
+        """Randomly adjust the focus servo around the current position."""
+        self.focus_position += int(gauss(0, sigma))
+        low = self.servo.getMin(1) or 0
+        high = self.servo.getMax(1) or 0
+        if low and high:
+            self.focus_position = max(low, min(high, self.focus_position))
+        self.focus_target(self.focus_position)
 
 
 if __name__ == "__main__":

@@ -189,30 +189,7 @@ def wiggle(step):
     def _do_wiggle() -> None:
         y_wiggle = gauss(0, step)
         increment(0, y_wiggle)
-        # Also jiggle the focus servo if available. Import lazily to avoid
-        # circular dependencies when :mod:`plc_io` is used without the GUI.
-        focus_wiggle = 0
-        try:
-            from dune_tension import main  # type: ignore
-
-            slider = getattr(main, "focus_slider", None)
-            controller = getattr(main, "servo_controller", None)
-            if slider is not None and controller is not None:
-                focus_wiggle = gauss(0, 10)
-                new_val = slider.get() 
-                # Constrain to the slider's range before sending the command
-                low = int(slider["from"])
-                high = int(slider["to"])
-                new_val = max(low, min(high, int(new_val)))
-                slider.set(new_val)
-                try:
-                    controller.focus_target(int(new_val))
-                except Exception:
-                    pass
-        except Exception:
-            # If anything goes wrong (e.g. GUI not loaded), just ignore
-            pass
-        print(f"Wiggling by {y_wiggle} mm, focus wiggle: {focus_wiggle}")
+        print(f"Wiggling by {y_wiggle} mm")
 
     threading.Thread(target=_do_wiggle, daemon=True).start()
     return True
