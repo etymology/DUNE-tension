@@ -121,13 +121,14 @@ def create_tensiometer():
         samples_per_wire=samples,
         confidence_threshold=conf,
         plot_audio=plot_audio_var.get(),
+        start_servo_loop=servo_controller.start_loop,
+        stop_servo_loop=servo_controller.stop_loop,
     )
 
 
 def measure_calibrate():
     def run():
         stop_event.clear()
-        servo_controller.start_loop()
         t = None
         try:
             t = create_tensiometer()
@@ -141,7 +142,6 @@ def measure_calibrate():
                     t.close()
                 except Exception:
                     pass
-            servo_controller.stop_loop()
             stop_event.clear()
 
     Thread(target=run, daemon=True).start()
@@ -150,7 +150,6 @@ def measure_calibrate():
 def measure_auto():
     def run():
         stop_event.clear()
-        servo_controller.start_loop()
         t = None
         try:
             t = create_tensiometer()
@@ -162,7 +161,6 @@ def measure_auto():
                     t.close()
                 except Exception:
                     pass
-            servo_controller.stop_loop()
             stop_event.clear()
 
     Thread(target=run, daemon=True).start()
@@ -171,7 +169,6 @@ def measure_auto():
 def measure_list():
     def run():
         stop_event.clear()
-        servo_controller.start_loop()
         t = None
         try:
             t = create_tensiometer()
@@ -189,7 +186,6 @@ def measure_list():
                     t.close()
                 except Exception:
                     pass
-            servo_controller.stop_loop()
             stop_event.clear()
 
     Thread(target=run, daemon=True).start()
