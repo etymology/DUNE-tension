@@ -297,7 +297,7 @@ def monitor_tension_logs():
         except Exception as exc:
             print(f"Failed to update logs: {exc}")
 
-    root.after(50000, monitor_tension_logs)
+    root.after(10000, monitor_tension_logs)
 
 
 monitor_tension_logs.last_path = ""

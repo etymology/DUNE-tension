@@ -19,6 +19,7 @@ from tensiometer_functions import (
 from geometry import (
     zone_lookup,
     length_lookup,
+    refine_position
 )
 from audioProcessing import analyze_sample, get_samplerate
 
@@ -178,14 +179,14 @@ class Tensiometer:
         for wire_number in wires_to_measure:
             if check_stop_event(self.stop_event):
                 return
+
             xy = get_xy_from_file(self.config, wire_number)
             if xy is None:
                 print(f"No position data found for wire {wire_number}")
             else:
-                x, y = xy
+                x,y = xy
                 self.goto_xy_func(x, y)
                 print(f"Measuring wire {wire_number} at position {x},{y}")
-
                 self.collect_wire_data(wire_number=wire_number, wire_x=x, wire_y=y)
         print("Done measuring all wires")
 
@@ -246,7 +247,7 @@ class Tensiometer:
             wire_y = np.average([d.y for d in wires])
             return cluster, wire_y
         wiggle_start_time = time.time()
-        current_wiggle = 0.1
+        current_wiggle = 0.5
         while (time.time() - start_time) < 30:
             if check_stop_event(self.stop_event, "tension measurement interrupted!"):
                 return None, wire_y
@@ -435,13 +436,6 @@ class Tensiometer:
             row["wires"] = str(row["wires"])
         df.loc[len(df)] = row
         update_dataframe(self.config.data_path, df)
-
-        try:
-            from analyze import update_tension_logs
-
-            update_tension_logs(self.config)
-        except Exception as exc:
-            print(f"Failed to update logs: {exc}")
 
         return result
 
