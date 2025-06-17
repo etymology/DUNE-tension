@@ -210,9 +210,15 @@ def measure_condition() -> None:
             & (df["side"] == cfg.side)
         )
         subset = df[mask].copy()
-        subset["wire_number"] = pd.to_numeric(subset["wire_number"], errors="coerce")
+        subset["wire_number"] = pd.to_numeric(
+            subset["wire_number"], errors="coerce"
+        )
         subset["tension"] = pd.to_numeric(subset["tension"], errors="coerce")
         subset = subset.dropna(subset=["wire_number", "tension"])
+        subset = (
+            subset.sort_values("time")
+            .drop_duplicates(subset="wire_number", keep="last")
+        )
         wires: list[int] = []
         for _, row in subset.iterrows():
             try:
