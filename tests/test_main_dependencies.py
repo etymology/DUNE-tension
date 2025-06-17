@@ -337,6 +337,146 @@ def test_clear_outliers_invokes_cache(monkeypatch):
     assert conf == 0.7
 
 
+def test_measure_condition_latest_only(monkeypatch):
+    wires_measured = []
+
+    class Column(list):
+        def __eq__(self, other):
+            return Mask([v == other for v in self])
+
+
+    class Mask(list):
+        def __and__(self, other):
+            return Mask([a and b for a, b in zip(self, other)])
+
+
+    class DataFrame:
+        def __init__(self, rows):
+            self.rows = [row.copy() for row in rows]
+
+        def __getitem__(self, key):
+            if isinstance(key, Mask):
+                return DataFrame([r for r, m in zip(self.rows, key) if m])
+            return Column([r.get(key) for r in self.rows])
+
+        def __setitem__(self, key, values):
+            for row, val in zip(self.rows, values):
+                row[key] = val
+
+        def copy(self):
+            return DataFrame([r.copy() for r in self.rows])
+
+        def dropna(self, subset):
+            self.rows = [
+                r
+                for r in self.rows
+                if all(r.get(k) is not None for k in subset)
+            ]
+            return self
+
+        def sort_values(self, key):
+            self.rows.sort(key=lambda r: r.get(key))
+            return self
+
+        def drop_duplicates(self, subset, keep="last"):
+            seen = {}
+            for r in self.rows:
+                seen[r[subset]] = r
+            self.rows = list(seen.values())
+            return self
+
+        def iterrows(self):
+            for i, r in enumerate(self.rows):
+                yield i, r
+
+    def to_numeric(col, errors="raise"):
+        out = []
+        for val in col:
+            try:
+                out.append(float(val))
+            except Exception:
+                out.append(float("nan"))
+        return out
+
+    pandas_stub = types.ModuleType("pandas")
+    pandas_stub.to_numeric = to_numeric
+    pandas_stub.DataFrame = DataFrame
+    sys.modules["pandas"] = pandas_stub
+
+    rows = [
+        {
+            "apa_name": "APA",
+            "layer": "X",
+            "side": "A",
+            "wire_number": 1,
+            "tension": 5,
+            "time": 1,
+        },
+        {
+            "apa_name": "APA",
+            "layer": "X",
+            "side": "A",
+            "wire_number": 1,
+            "tension": 2,
+            "time": 2,
+        },
+        {
+            "apa_name": "APA",
+            "layer": "X",
+            "side": "A",
+            "wire_number": 2,
+            "tension": 3,
+            "time": 1,
+        },
+        {
+            "apa_name": "APA",
+            "layer": "X",
+            "side": "A",
+            "wire_number": 2,
+            "tension": 6,
+            "time": 2,
+        },
+    ]
+    df = DataFrame(rows)
+
+    dc_stub = sys.modules["data_cache"]
+    monkeypatch.setattr(dc_stub, "get_dataframe", lambda path: df)
+
+    class DummyTensiometer:
+        config = types.SimpleNamespace(
+            apa_name="APA",
+            layer="X",
+            side="A",
+            data_path="dummy",
+        )
+
+        def measure_list(self, wires, preserve_order=False):
+            wires_measured.extend(wires)
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(main, "create_tensiometer", lambda: DummyTensiometer())
+    monkeypatch.setattr(main, "save_state", lambda: None)
+
+    class DummyThread:
+        def __init__(self, target, daemon=True):
+            self.target = target
+
+        def start(self):
+            self.target()
+
+    monkeypatch.setattr(main, "Thread", DummyThread)
+    monkeypatch.setattr(main, "entry_condition", DummyGetter("t<4"))
+    monkeypatch.setattr(main, "entry_apa", DummyGetter("APA"))
+    monkeypatch.setattr(main, "layer_var", DummyGetter("X"))
+    monkeypatch.setattr(main, "side_var", DummyGetter("A"))
+    monkeypatch.setattr(main, "flipped_var", DummyGetter(False))
+
+    main.measure_condition()
+    assert wires_measured == [1]
+
+
 def test_focus_target_state_round_trip(tmp_path, monkeypatch):
     path = tmp_path / "state.json"
     monkeypatch.setattr(main, "state_file", str(path))
