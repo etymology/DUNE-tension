@@ -400,7 +400,7 @@ def monitor_tension_logs():
             monitor_tension_logs.update_thread = Thread(target=run, daemon=True)
             monitor_tension_logs.update_thread.start()
 
-    root.after(5000, monitor_tension_logs)
+    root.after(2000, monitor_tension_logs)
 
 
 monitor_tension_logs.last_path = ""
