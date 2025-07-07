@@ -103,7 +103,7 @@ class Tensiometer:
             from audioProcessing import record_audio
 
             self.record_audio_func = lambda duration, sample_rate: record_audio(
-                duration, sample_rate=sample_rate, normalize=True
+                duration, sample_rate=sample_rate, normalize=False
             )
 
     def _plot_audio(self, audio_sample) -> None:
@@ -270,13 +270,17 @@ class Tensiometer:
             wire_y = np.average([d.y for d in wires])
             return cluster, wire_y, plc_direction, focus_direction
         wiggle_start_time = time.time()
-        current_wiggle = 0.2
+        current_wiggle = 0.1
         last_amplitude = None
-        measuring_timeout = 10  # seconds
+        measuring_timeout = 20  # seconds
+        _,starting_amplitude = self.record_audio_func(
+            duration=0.2, sample_rate=self.samplerate
+        )
+        self.goto_xy_func(wire_x, wire_y)
         while (time.time() - start_time) < measuring_timeout:
             if check_stop_event(self.stop_event, "tension measurement interrupted!"):
                 return None, wire_y
-            record_duration = .5 # seconds
+            record_duration = .1 # seconds
             audio_sample,amplitude = self.record_audio_func(
 
                 duration=record_duration, sample_rate=self.samplerate
@@ -290,7 +294,7 @@ class Tensiometer:
                     f"audio/{self.config.layer}{self.config.side}{wire_number}_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}",
                     audio_sample,
                 )
-            if audio_sample is not None:
+            if audio_sample is not None and amplitude > starting_amplitude * 2:
                 frequency, confidence, tension, tension_ok = analyze_sample(
                     audio_sample, self.samplerate, length
                 )
@@ -325,7 +329,6 @@ class Tensiometer:
                 if confidence > self.config.confidence_threshold and tension_plausible(
                     tension
                 ):
-                    wiggle_start_time = time.time()
                     wires.append(
                         TensionResult(
                             apa_name=self.config.apa_name,

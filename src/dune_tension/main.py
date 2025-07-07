@@ -414,8 +414,18 @@ def set_manual_tension() -> None:
                     "layer": cfg.layer,
                     "side": cfg.side,
                     "wire_number": wire,
+                    "frequency": 0.0,
+                    "confidence": 1,
                     "tension": tension,
+                    "tension_pass": 1,
+                    "x": 0.0,
+                    "y": 0.0,
+                    "wires": [],
+                    "ttf": 0.0,
                     "time": datetime.now().isoformat(),
+                    "zone": 0,
+                    "wire_length": 0.0,
+                    "t_sigma": 0.0,
                 }
             )
             df.loc[len(df)] = row
