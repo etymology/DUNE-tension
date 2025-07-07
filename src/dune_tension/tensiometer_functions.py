@@ -31,6 +31,8 @@ class TensiometerConfig:
     save_audio: bool
     spoof: bool
     plot_audio: bool = False
+    record_duration: float = 0.5
+    measuring_duration: float = 10.0
 
     data_path: str = field(init=False)
 
@@ -50,6 +52,8 @@ def make_config(
     save_audio: bool = True,
     spoof: bool = False,
     plot_audio: bool = False,
+    record_duration: float = 0.5,
+    measuring_duration: float = 10.0,
 ) -> TensiometerConfig:
     if layer in ["X", "G"]:
         dx, dy = 0.0, 2300 / 480
@@ -75,6 +79,8 @@ def make_config(
         save_audio,
         spoof,
         plot_audio,
+        record_duration,
+        measuring_duration,
     )
 
 def get_xy_from_file(
