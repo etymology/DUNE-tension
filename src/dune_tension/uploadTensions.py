@@ -1,8 +1,19 @@
 from m2m.common import ConnectToAPI, EditAction
-from dune_tension.tensiometer import Tensiometer
+# from tensiometer import Tensiometer
+import pandas as pd
 
+def load_tension_summary(apa_name: str, layer: str) -> tuple[list, list]:
+    datapath = f"data/tension_summaries/tension_summary_{apa_name}_{layer}.csv"
+    df = pd.read_csv(datapath,encoding='utf-8')
+    if "A" not in df.columns or "B" not in df.columns:
+        return "⚠️ File missing required columns 'A' and 'B'", [], []
 
-def uploadTensions(t: Tensiometer):
+    # Convert columns to lists, preserving NaNs if present
+    a_list = df["A"].tolist()
+    b_list = df["B"].tolist()
+    return a_list, b_list
+
+def uploadTensions(apa_name:str, layer:str) -> None:
     connection, headers = ConnectToAPI()
 
     # actionTypeFormID = "x_tension_testing"  # This name is misleading: the action type form is the same for ALL LAYERS
@@ -19,10 +30,10 @@ def uploadTensions(t: Tensiometer):
     #     actionTypeFormID, componentUUID, actionData, connection, headers
     # )
 
-    create_layer_action_id = r"683f72822967cf595ddbd6d3"
-    print(f" Successfully performed action with ID: {create_layer_action_id}")
+    create_layer_action_id = r"684b4098c0b4887458320c4d"
+    # print(f" Successfully performed action with ID: {create_layer_action_id}")
 
-    tensions_sideA, tensions_sideB = t.load_tension_summary()
+    tensions_sideA, tensions_sideB = load_tension_summary(apa_name, layer)
 
     actionData_fields = [
         "measuredTensions_sideA",
@@ -50,10 +61,4 @@ def uploadTensions(t: Tensiometer):
 
 
 if __name__ == "__main__":
-    t = Tensiometer(
-        apa_name="US_APA9",
-        layer="X",
-        side="A",
-    )
-
-    uploadTensions(t)
+    uploadTensions("USAPA7", "V")

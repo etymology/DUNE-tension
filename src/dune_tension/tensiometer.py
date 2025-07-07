@@ -103,7 +103,7 @@ class Tensiometer:
             from audioProcessing import record_audio
 
             self.record_audio_func = lambda duration, sample_rate: record_audio(
-                0.15, sample_rate=sample_rate, normalize=True
+                duration, sample_rate=sample_rate, normalize=True
             )
 
     def _plot_audio(self, audio_sample) -> None:
@@ -178,11 +178,6 @@ class Tensiometer:
             x
             for x in wires_to_measure
             if (x >= 20 if low_numbered_high else x <= 1146 - 20)
-        ]
-        wires_to_measure[:] = [
-            x
-            for x in wires_to_measure
-            if x >= 20
         ]
 
         print("Measuring missing wires...")
@@ -276,13 +271,13 @@ class Tensiometer:
             return cluster, wire_y, plc_direction, focus_direction
         wiggle_start_time = time.time()
         current_wiggle = 0.2
-        last_confidence = None
-        measuring_timeout = 40  # seconds
+        last_amplitude = None
+        measuring_timeout = 10  # seconds
         while (time.time() - start_time) < measuring_timeout:
             if check_stop_event(self.stop_event, "tension measurement interrupted!"):
                 return None, wire_y
-            record_duration = 0.15 # seconds
-            audio_sample,confidence = self.record_audio_func(
+            record_duration = .5 # seconds
+            audio_sample,amplitude = self.record_audio_func(
 
                 duration=record_duration, sample_rate=self.samplerate
             )
@@ -305,23 +300,28 @@ class Tensiometer:
                     return None, wire_y, plc_direction, focus_direction
                 x, y = self.get_current_xy_position()
                 
-                # if time.time() - wiggle_start_time > record_duration*3:
-                # wiggle_start_time = time.time()
-                if random.choice([True, False]):  # wiggle PLC
-                    if last_confidence is not None and confidence < last_confidence:
-                        plc_direction *= -1
-                    increment = plc_direction * current_wiggle
-                    wire_y += increment
-                    self.goto_xy_func(wire_x, wire_y)
-                    print(f"plc wiggle: {increment:.2f}mm")
-                else:  # wiggle focus
-                    if last_confidence is not None and confidence < last_confidence:
-                        focus_direction *= -1
-                    self.focus_wiggle_func(focus_direction * 50)
-                    print(f"focus wiggle: {focus_direction * 50}")
+                if time.time() - wiggle_start_time > record_duration*3:
+                    wiggle_start_time = time.time()
+                    if random.choice([True, False]):  # wiggle PLC
+                        if last_amplitude is not None and amplitude < last_amplitude:
+                            plc_direction *= -1
+                        increment = plc_direction * current_wiggle
+                        wire_y += increment
+                        self.goto_xy_func(wire_x, wire_y)
+                        print(f"plc wiggle: {increment:.2f}mm confidence {confidence:.2f}")
+                    else:  # wiggle focus
+                        if last_amplitude is not None and amplitude < last_amplitude:
+                            focus_direction *= -1
+                        self.focus_wiggle_func(focus_direction * 100)
+                        print(f"focus wiggle: {focus_direction * 100} confidence {confidence:.2f}")
 
-                last_confidence = confidence
-            
+                        last_amplitude = amplitude
+                print(
+                    f"tension: {tension:.1f}N, frequency: {frequency:.1f}Hz, "
+                    f"confidence: {confidence * 100:.1f}%"
+                    f"amplitude: {amplitude:.2f}"
+                    f"y: {y:.1f}",
+                )
                 if confidence > self.config.confidence_threshold and tension_plausible(
                     tension
                 ):
@@ -368,11 +368,6 @@ class Tensiometer:
                     )
                     if cluster != []:
                         return cluster, wire_y, plc_direction, focus_direction
-                    print(
-                        f"tension: {tension:.1f}N, frequency: {frequency:.1f}Hz, "
-                        f"confidence: {confidence * 100:.1f}%",
-                        f"y: {y:.1f}",
-                    )
         return (
             [] if not self.stop_event or not self.stop_event.is_set() else None
         ), wire_y, plc_direction, focus_direction

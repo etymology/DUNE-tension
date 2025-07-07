@@ -267,7 +267,7 @@ def get_pitch_pesto(
     return pitch_val, conf_val
 
 
-def record_audio(duration, sample_rate, plot=False, normalize=False):
+def record_audio(duration, sample_rate, plot=False, normalize=True):
     """Record audio and return the raw sample and its average amplitude."""
     try:
         audio_data = sd.rec(
@@ -310,10 +310,11 @@ def analyze_sample(audio_sample, sample_rate, wire_length):
     frequency, confidence = get_pitch_crepe(audio_sample, sample_rate)
     tension = tension_lookup(length=wire_length, frequency=frequency)
     tension_ok = tension_pass(tension, wire_length)
-    if not tension_ok and tension_pass(tension / 4, wire_length):
-        tension /= 4
-        frequency /= 2
-        tension_ok = True
+    for i in range(1,6):
+        if not tension_ok and tension_pass(tension / i**2, wire_length):
+            tension /= i**2
+            frequency /= i
+            tension_ok = True
     return frequency, confidence, tension, tension_ok
 
 
