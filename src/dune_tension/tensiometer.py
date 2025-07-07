@@ -94,6 +94,10 @@ class Tensiometer:
         self.start_servo_loop = start_servo_loop or (lambda: None)
         self.stop_servo_loop = stop_servo_loop or (lambda: None)
 
+        # State tracking for winder wiggle thread
+        self._wiggle_event: threading.Event | None = None
+        self._wiggle_thread: threading.Thread | None = None
+
         self.samplerate = get_samplerate()
         if self.samplerate is None or spoof:
             print("Using spoofed audio sample for testing.")
@@ -106,9 +110,40 @@ class Tensiometer:
         else:
             from audioProcessing import record_audio
 
-            self.record_audio_func = lambda duration, sample_rate: record_audio(
-                duration, sample_rate=sample_rate, normalize=True
-            )
+        self.record_audio_func = lambda duration, sample_rate: record_audio(
+            duration, sample_rate=sample_rate, normalize=True
+        )
+
+    def start_wiggle(self) -> None:
+        """Begin wiggling the winder in a background thread."""
+        if self._wiggle_event and self._wiggle_event.is_set():
+            return
+
+        self._wiggle_event = threading.Event()
+        self._wiggle_event.set()
+
+        start_x, start_y = self.get_current_xy_position()
+
+        def _run() -> None:
+            while self._wiggle_event and self._wiggle_event.is_set():
+                self.goto_xy_func(start_x, start_y + 1)
+                if not self._wiggle_event.is_set():
+                    break
+                self.goto_xy_func(start_x, start_y - 1)
+                time.sleep(0.01)
+
+        self._wiggle_thread = threading.Thread(target=_run, daemon=True)
+        self._wiggle_thread.start()
+
+    def stop_wiggle(self) -> None:
+        """Stop the background winder wiggle thread."""
+        if not self._wiggle_event:
+            return
+        self._wiggle_event.clear()
+        if self._wiggle_thread:
+            self._wiggle_thread.join(timeout=0.1)
+        self._wiggle_event = None
+        self._wiggle_thread = None
 
     def _plot_audio(self, audio_sample) -> None:
         """Save a plot of the recorded audio sample to a temporary file."""
@@ -274,13 +309,14 @@ class Tensiometer:
             wire_y = np.average([d.y for d in wires])
             return cluster, wire_y, plc_direction, focus_direction
         wiggle_start_time = time.time()
-        current_wiggle = 0.2
+        current_wiggle = 0.1
         last_amplitude = None
         measuring_timeout = self.config.measuring_duration
         while (time.time() - start_time) < measuring_timeout:
             if check_stop_event(self.stop_event, "tension measurement interrupted!"):
                 return None, wire_y
             record_duration = self.config.record_duration
+
             audio_sample,amplitude = self.record_audio_func(
 
                 duration=record_duration, sample_rate=self.samplerate
@@ -294,7 +330,7 @@ class Tensiometer:
                     f"audio/{self.config.layer}{self.config.side}{wire_number}_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}",
                     audio_sample,
                 )
-            if audio_sample is not None:
+            if audio_sample is not None and amplitude > starting_amplitude * 2:
                 frequency, confidence, tension, tension_ok = analyze_sample(
                     audio_sample, self.samplerate, length
                 )
@@ -329,7 +365,6 @@ class Tensiometer:
                 if confidence > self.config.confidence_threshold and tension_plausible(
                     tension
                 ):
-                    wiggle_start_time = time.time()
                     wires.append(
                         TensionResult(
                             apa_name=self.config.apa_name,
