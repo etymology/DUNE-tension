@@ -1,6 +1,7 @@
 import sys
 from pathlib import Path
 import types
+import time
 import pytest
 
 # Ensure src is on path
@@ -264,3 +265,19 @@ def test_load_tension_summary_bad_columns(tmp_path):
     msg, a, b = t.load_tension_summary()
     assert "missing" in msg
     assert a == [] and b == []
+
+
+def test_wiggle_start_stop(monkeypatch):
+    moves = []
+    plc = sys.modules["plc_io"]
+    monkeypatch.setattr(plc, "spoof_get_xy", lambda: (1.0, 2.0))
+    monkeypatch.setattr(plc, "spoof_goto_xy", lambda x, y: moves.append((x, y)) or True)
+
+    t = Tensiometer(apa_name="APA", layer="X", side="A")
+
+    t.start_wiggle()
+    time.sleep(0.05)
+    t.stop_wiggle()
+
+    assert moves[0] == (1.0, 3.0)
+    assert moves[1] == (1.0, 1.0)
