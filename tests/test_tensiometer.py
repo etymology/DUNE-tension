@@ -35,6 +35,7 @@ numpy_stub.average = _avg
 numpy_stub.std = _std
 numpy_stub.linspace = _linspace
 numpy_stub.argmax = _argmax
+numpy_stub.bool_ = bool
 numpy_stub.isscalar = lambda x: not isinstance(x, (list, tuple))
 numpy_stub.savez = lambda *a, **k: None
 sys.modules["numpy"] = numpy_stub
@@ -119,6 +120,29 @@ dc_stub.get_samples_dataframe = lambda path: None
 dc_stub.update_samples_dataframe = lambda path, df: None
 dc_stub.EXPECTED_COLUMNS = []
 sys.modules["data_cache"] = dc_stub
+
+# results stub
+results_stub = types.ModuleType("results")
+
+
+class _Dummy:
+    def __init__(self, **kwargs):
+        for k, v in kwargs.items():
+            setattr(self, k, v)
+        freq = kwargs.get("frequency", 0.0)
+        if "tension" not in kwargs:
+            self.tension = freq * 0.1
+        self.tension_pass = kwargs.get("tension_pass", True)
+        self.wires = kwargs.get("wires", [])
+        self.zone = 1
+        self.wire_length = 1.0
+        self.t_sigma = _std(self.wires) if self.wires else 0.0
+
+
+results_stub.TensionResult = _Dummy
+results_stub.RawSample = _Dummy
+results_stub.EXPECTED_COLUMNS = []
+sys.modules["results"] = results_stub
 
 # tensiometer_functions
 tf_stub = types.ModuleType("tensiometer_functions")

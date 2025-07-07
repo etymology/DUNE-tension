@@ -3,10 +3,18 @@ from tkinter import messagebox
 from typing import Any
 import json
 import os
+import re
 import sounddevice as sd
 from tensiometer import Tensiometer
 from tensiometer_functions import make_config
-from data_cache import clear_wire_range, clear_outliers as cache_clear_outliers
+from data_cache import (
+    clear_wire_range,
+    clear_outliers as cache_clear_outliers,
+    get_dataframe,
+    update_dataframe,
+)
+from results import EXPECTED_COLUMNS
+from datetime import datetime
 from threading import Event, Thread
 from maestro import DummyController, ServoController, Controller
 
@@ -74,6 +82,7 @@ def save_state():
         "plot_audio": plot_audio_var.get(),
         "focus_target": focus_slider.get(),
         "condition": entry_condition.get(),
+        "set_tension": entry_set_tension.get(),
     }
     with open(state_file, "w") as f:
         json.dump(state, f)
@@ -97,6 +106,7 @@ def load_state():
             plot_audio_var.set(state.get("plot_audio", False))
             focus_slider.set(state.get("focus_target", 4000))
             entry_condition.insert(0, state.get("condition", ""))
+            entry_set_tension.insert(0, state.get("set_tension", ""))
 
 
 def create_tensiometer():
@@ -210,14 +220,11 @@ def measure_condition() -> None:
             & (df["side"] == cfg.side)
         )
         subset = df[mask].copy()
-        subset["wire_number"] = pd.to_numeric(
-            subset["wire_number"], errors="coerce"
-        )
+        subset["wire_number"] = pd.to_numeric(subset["wire_number"], errors="coerce")
         subset["tension"] = pd.to_numeric(subset["tension"], errors="coerce")
         subset = subset.dropna(subset=["wire_number", "tension"])
-        subset = (
-            subset.sort_values("time")
-            .drop_duplicates(subset="wire_number", keep="last")
+        subset = subset.sort_values("time").drop_duplicates(
+            subset="wire_number", keep="last"
         )
         wires: list[int] = []
         for _, row in subset.iterrows():
@@ -279,6 +286,22 @@ def _parse_ranges(text: str) -> list[tuple[int, int]]:
             start, end = end, start
         ranges.append((start, end))
     return ranges
+
+
+_PAIR_RE = re.compile(r"\(?\s*(\d+)\s*[,:]\s*([+-]?\d+(?:\.\d*)?)\s*\)?")
+
+
+def _parse_pairs(text: str) -> list[tuple[int, float]]:
+    """Return list of ``(wire, tension)`` pairs parsed from ``text``."""
+    pairs: list[tuple[int, float]] = []
+    for m in _PAIR_RE.finditer(text):
+        try:
+            wire = int(m.group(1))
+            tension = float(m.group(2))
+        except ValueError:
+            continue
+        pairs.append((wire, tension))
+    return pairs
 
 
 def clear_range() -> None:
@@ -345,6 +368,61 @@ def clear_outliers() -> None:
         print("No outlier wires found")
 
 
+def set_manual_tension() -> None:
+    """Parse :data:`entry_set_tension` and update tension values."""
+    pairs = _parse_pairs(entry_set_tension.get())
+    if not pairs:
+        print("No valid tension pairs specified")
+        return
+
+    try:
+        samples = int(entry_samples.get())
+    except Exception:
+        samples = 3
+    try:
+        conf = float(entry_confidence.get())
+    except Exception:
+        conf = 0.7
+
+    cfg = make_config(
+        apa_name=entry_apa.get(),
+        layer=layer_var.get(),
+        side=side_var.get(),
+        flipped=flipped_var.get(),
+        samples_per_wire=samples,
+        confidence_threshold=conf,
+        plot_audio=plot_audio_var.get(),
+    )
+
+    df = get_dataframe(cfg.data_path)
+    for wire, tension in pairs:
+        mask = (
+            (df["apa_name"] == cfg.apa_name)
+            & (df["layer"] == cfg.layer)
+            & (df["side"] == cfg.side)
+            & (df["wire_number"].astype(int) == wire)
+        )
+        if mask.any():
+            df.loc[mask, "tension"] = tension
+            if "time" in df.columns:
+                df.loc[mask, "time"] = datetime.now().isoformat()
+        else:
+            row = {col: "" for col in EXPECTED_COLUMNS}
+            row.update(
+                {
+                    "apa_name": cfg.apa_name,
+                    "layer": cfg.layer,
+                    "side": cfg.side,
+                    "wire_number": wire,
+                    "tension": tension,
+                    "time": datetime.now().isoformat(),
+                }
+            )
+            df.loc[len(df)] = row
+    update_dataframe(cfg.data_path, df)
+    print(f"Updated tensions: {pairs}")
+
+
 def interrupt():
     stop_event.set()
     servo_controller.stop_loop()
@@ -388,6 +466,7 @@ def monitor_tension_logs():
     ):
         monitor_tension_logs.last_path = path
         monitor_tension_logs.last_mtime = mtime
+
         def run() -> None:
             try:
                 from analyze import update_tension_logs
@@ -604,6 +683,15 @@ tk.Button(
     text="Clear Outliers",
     command=clear_outliers,
 ).grid(row=7, column=2)
+
+tk.Label(measure_frame, text="Set Tensions:").grid(row=8, column=0, sticky="e")
+entry_set_tension = tk.Entry(measure_frame)
+entry_set_tension.grid(row=8, column=1)
+tk.Button(
+    measure_frame,
+    text="Apply Tensions",
+    command=set_manual_tension,
+).grid(row=8, column=2)
 
 # --- Servo Parameters ------------------------------------------------------
 tk.Label(servo_frame, text="Servo Speed (1–255):").grid(row=0, column=0, sticky="e")
