@@ -310,7 +310,7 @@ def analyze_sample(audio_sample, sample_rate, wire_length):
     frequency, confidence = get_pitch_crepe(audio_sample, sample_rate)
     tension = tension_lookup(length=wire_length, frequency=frequency)
     tension_ok = tension_pass(tension, wire_length)
-    for i in range(1,6):
+    for i in range(1, 6):
         if not tension_ok and tension_pass(tension / i**2, wire_length):
             tension /= i**2
             frequency /= i

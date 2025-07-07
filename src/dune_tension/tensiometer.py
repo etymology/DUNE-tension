@@ -17,14 +17,10 @@ from tensiometer_functions import (
     get_xy_from_file,
     check_stop_event,
 )
-from geometry import (
-    zone_lookup,
-    length_lookup,
-    refine_position
-)
+from geometry import zone_lookup, length_lookup
 from audioProcessing import analyze_sample, get_samplerate
 
-from plc_io import is_web_server_active,increment
+from plc_io import is_web_server_active, increment
 from data_cache import (
     get_dataframe,
     update_dataframe,
@@ -70,12 +66,11 @@ class Tensiometer:
             web_ok = False
 
         if not spoof_movement and web_ok:
-            from plc_io import get_xy, goto_xy, wiggle
+            from plc_io import get_xy, goto_xy
         else:
             from plc_io import (
                 spoof_get_xy as get_xy,
                 spoof_goto_xy as goto_xy,
-                spoof_wiggle as wiggle,
             )
 
             print(
@@ -100,8 +95,9 @@ class Tensiometer:
             from audioProcessing import spoof_audio_sample
 
             self.samplerate = 44100  # Default samplerate for spoofing
-            self.record_audio_func = (
-                lambda duration, sample_rate: (spoof_audio_sample("audio"), 0.0)
+            self.record_audio_func = lambda duration, sample_rate: (
+                spoof_audio_sample("audio"),
+                0.0,
             )
         else:
             from audioProcessing import record_audio
@@ -220,7 +216,6 @@ class Tensiometer:
         start_time = time.time()
         measured_count = 0
         for wire_number in wires_to_measure:
-
             if check_stop_event(self.stop_event):
                 return
 
@@ -231,7 +226,6 @@ class Tensiometer:
                 x, y = xy
                 self.goto_xy_func(x, y)
                 print(f"Measuring wire {wire_number} at position {x},{y}")
-                wire_start = time.time()
                 self.collect_wire_data(wire_number=wire_number, wire_x=x, wire_y=y)
                 measured_count += 1
                 elapsed = time.time() - start_time
@@ -308,16 +302,15 @@ class Tensiometer:
         current_wiggle = 0.1
         last_amplitude = None
         measuring_timeout = 20  # seconds
-        _,starting_amplitude = self.record_audio_func(
+        _, starting_amplitude = self.record_audio_func(
             duration=0.2, sample_rate=self.samplerate
         )
         self.goto_xy_func(wire_x, wire_y)
         while (time.time() - start_time) < measuring_timeout:
             if check_stop_event(self.stop_event, "tension measurement interrupted!"):
                 return None, wire_y
-            record_duration = .1 # seconds
-            audio_sample,amplitude = self.record_audio_func(
-
+            record_duration = 0.1  # seconds
+            audio_sample, amplitude = self.record_audio_func(
                 duration=record_duration, sample_rate=self.samplerate
             )
             if check_stop_event(self.stop_event, "tension measurement interrupted!"):
@@ -338,8 +331,8 @@ class Tensiometer:
                 ):
                     return None, wire_y, plc_direction, focus_direction
                 x, y = self.get_current_xy_position()
-                
-                if time.time() - wiggle_start_time > record_duration*3:
+
+                if time.time() - wiggle_start_time > record_duration * 3:
                     wiggle_start_time = time.time()
                     if random.choice([True, False]):  # wiggle PLC
                         if last_amplitude is not None and amplitude < last_amplitude:
@@ -347,12 +340,16 @@ class Tensiometer:
                         increment = plc_direction * current_wiggle
                         wire_y += increment
                         self.goto_xy_func(wire_x, wire_y)
-                        print(f"plc wiggle: {increment:.2f}mm confidence {confidence:.2f}")
+                        print(
+                            f"plc wiggle: {increment:.2f}mm confidence {confidence:.2f}"
+                        )
                     else:  # wiggle focus
                         if last_amplitude is not None and amplitude < last_amplitude:
                             focus_direction *= -1
                         self.focus_wiggle_func(focus_direction * 100)
-                        print(f"focus wiggle: {focus_direction * 100} confidence {confidence:.2f}")
+                        print(
+                            f"focus wiggle: {focus_direction * 100} confidence {confidence:.2f}"
+                        )
 
                         last_amplitude = amplitude
                 print(
@@ -407,8 +404,11 @@ class Tensiometer:
                     if cluster != []:
                         return cluster, wire_y, plc_direction, focus_direction
         return (
-            [] if not self.stop_event or not self.stop_event.is_set() else None
-        ), wire_y, plc_direction, focus_direction
+            ([] if not self.stop_event or not self.stop_event.is_set() else None),
+            wire_y,
+            plc_direction,
+            focus_direction,
+        )
 
     def _generate_result(
         self,

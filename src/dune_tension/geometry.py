@@ -33,6 +33,7 @@ def zone_lookup(x) -> int:
 def zone_x_target(zone: int):
     return [1635, 2825, 4015, 5185, 6365][zone - 1]
 
+
 def refine_position(
     x: float, y: float, dx: float, dy: float
 ) -> tuple[float, float] | None:
@@ -46,6 +47,7 @@ def refine_position(
     chosen.  If no candidate is valid the original coordinates are
     returned unchanged.
     """
+
     def is_in_bounds(x: float, y: float) -> bool:
         return X_MIN <= x <= X_MAX and Y_MIN <= y <= Y_MAX
 
@@ -74,6 +76,7 @@ def refine_position(
 
     # Choose the candidate furthest from limiting lines
     return max(candidates, key=score)
+
 
 # def refine_position(x, y, dx, dy):
 #     # Compute t where line crosses vertical boundaries x = c

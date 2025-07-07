@@ -124,7 +124,11 @@ def clear_outliers(
     std = subset["tension"].std()
     if pd.isna(std) or std == 0:
         return []
-    outliers = subset[(subset["tension"] - mean).abs() > sigma * std]["wire_number"].astype(int).tolist()
+    outliers = (
+        subset[(subset["tension"] - mean).abs() > sigma * std]["wire_number"]
+        .astype(int)
+        .tolist()
+    )
     for wire in outliers:
         clear_wire_range(file_path, apa_name, layer, side, wire, wire)
     return outliers

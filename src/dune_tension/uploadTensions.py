@@ -1,10 +1,12 @@
 from m2m.common import ConnectToAPI, EditAction
+
 # from tensiometer import Tensiometer
 import pandas as pd
 
+
 def load_tension_summary(apa_name: str, layer: str) -> tuple[list, list]:
     datapath = f"data/tension_summaries/tension_summary_{apa_name}_{layer}.csv"
-    df = pd.read_csv(datapath,encoding='utf-8')
+    df = pd.read_csv(datapath, encoding="utf-8")
     if "A" not in df.columns or "B" not in df.columns:
         return "⚠️ File missing required columns 'A' and 'B'", [], []
 
@@ -13,7 +15,8 @@ def load_tension_summary(apa_name: str, layer: str) -> tuple[list, list]:
     b_list = df["B"].tolist()
     return a_list, b_list
 
-def uploadTensions(apa_name:str, layer:str) -> None:
+
+def uploadTensions(apa_name: str, layer: str) -> None:
     connection, headers = ConnectToAPI()
 
     # actionTypeFormID = "x_tension_testing"  # This name is misleading: the action type form is the same for ALL LAYERS

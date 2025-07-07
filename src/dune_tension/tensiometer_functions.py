@@ -77,6 +77,7 @@ def make_config(
         plot_audio,
     )
 
+
 def get_xy_from_file(
     config: TensiometerConfig,
     wire_number: int,

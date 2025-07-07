@@ -26,23 +26,30 @@ def setup_module(module):
         if name == "data_cache":
             mod.get_samples_dataframe = lambda path: None
         elif name == "tensiometer_functions":
+
             class DummyConfig:
                 pass
+
             mod.TensiometerConfig = DummyConfig
         elif name == "tension_calculation":
             mod.calculate_kde_max = lambda x: 0
             mod.has_cluster = lambda a, b, c: []
         elif name == "pandas":
+
             class DummyDF:
                 pass
+
             mod.DataFrame = DummyDF
         elif name == "results":
+
             class Dummy:
                 pass
+
             mod.TensionResult = Dummy
         sys.modules[name] = mod
     global analyze
     from dune_tension import analyze as analyze_mod
+
     analyze = analyze_mod
 
 
