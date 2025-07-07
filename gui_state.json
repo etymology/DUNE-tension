@@ -1,17 +1,1 @@
-{
-    "apa_name": "USAPA7",
-    "layer": "U",
-    "side": "B",
-    "flipped": false,
-    "wire_number": "26",
-    "wire_list": "25",
-    "samples_per_wire": 2,
-    "confidence_threshold": 0.65,
-    "servo_speed": 255,
-    "servo_accel": 129,
-    "servo_dwell": 100,
-    "plot_audio": false,
-    "focus_target": 6326,
-    "condition": "t>6.5",
-    "set_tension": "(8,6)",
-}
+{"apa_name": "USAPA7", "layer": "U", "side": "B", "flipped": false, "wire_number": "", "wire_list": "", "samples_per_wire": 2, "confidence_threshold": 0.5, "servo_speed": 255, "servo_accel": 255, "servo_dwell": 60, "plot_audio": false, "focus_target": 5884, "condition": "", "set_tension": "", "record_duration": ".1", "measuring_duration": "10"}
