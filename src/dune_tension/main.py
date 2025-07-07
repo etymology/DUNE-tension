@@ -92,25 +92,29 @@ def save_state():
 
 def load_state():
     if os.path.exists(state_file):
-        with open(state_file, "r") as f:
-            state = json.load(f)
-            entry_apa.insert(0, state.get("apa_name", ""))
-            layer_var.set(state.get("layer", "X"))
-            side_var.set(state.get("side", "A"))
-            flipped_var.set(state.get("flipped", False))
-            entry_wire.insert(0, state.get("wire_number", ""))
-            entry_wire_list.insert(0, state.get("wire_list", ""))
-            entry_samples.insert(0, str(state.get("samples_per_wire", 3)))
-            entry_confidence.insert(0, str(state.get("confidence_threshold", 0.7)))
-            speed_slider.set(state.get("servo_speed", 1))
-            accel_slider.set(state.get("servo_accel", 1))
-            dwell_slider.set(state.get("servo_dwell", 100))
-            plot_audio_var.set(state.get("plot_audio", False))
-            focus_slider.set(state.get("focus_target", 4000))
-            entry_condition.insert(0, state.get("condition", ""))
-            entry_set_tension.insert(0, state.get("set_tension", ""))
-            entry_record_duration.insert(0, str(state.get("record_duration", 0.5)))
-            entry_measuring_duration.insert(0, str(state.get("measuring_duration", 10.0)))
+        try:
+            with open(state_file, "r") as f:
+                state = json.load(f)
+        except json.JSONDecodeError as exc:  # pragma: no cover - corrupt state
+            print(f"Failed to load {state_file}: {exc}")
+            return
+        entry_apa.insert(0, state.get("apa_name", ""))
+        layer_var.set(state.get("layer", "X"))
+        side_var.set(state.get("side", "A"))
+        flipped_var.set(state.get("flipped", False))
+        entry_wire.insert(0, state.get("wire_number", ""))
+        entry_wire_list.insert(0, state.get("wire_list", ""))
+        entry_samples.insert(0, str(state.get("samples_per_wire", 3)))
+        entry_confidence.insert(0, str(state.get("confidence_threshold", 0.7)))
+        speed_slider.set(state.get("servo_speed", 1))
+        accel_slider.set(state.get("servo_accel", 1))
+        dwell_slider.set(state.get("servo_dwell", 100))
+        plot_audio_var.set(state.get("plot_audio", False))
+        focus_slider.set(state.get("focus_target", 4000))
+        entry_condition.insert(0, state.get("condition", ""))
+        entry_set_tension.insert(0, state.get("set_tension", ""))
+        entry_record_duration.insert(0, str(state.get("record_duration", 0.5)))
+        entry_measuring_duration.insert(0, str(state.get("measuring_duration", 10.0)))
 
 
 def create_tensiometer():
