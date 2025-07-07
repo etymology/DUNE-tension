@@ -42,6 +42,8 @@ class Tensiometer:
         confidence_threshold: float = 0.7,
         save_audio: bool = True,
         plot_audio: bool = False,
+        record_duration: float = 0.5,
+        measuring_duration: float = 10.0,
         spoof: bool = False,
         spoof_movement: bool = False,
         start_servo_loop: Optional[Callable[[], None]] = None,
@@ -58,6 +60,8 @@ class Tensiometer:
             save_audio=save_audio,
             spoof=spoof,
             plot_audio=plot_audio,
+            record_duration=record_duration,
+            measuring_duration=measuring_duration,
         )
         self.stop_event = stop_event or threading.Event()
         try:
@@ -301,16 +305,14 @@ class Tensiometer:
         wiggle_start_time = time.time()
         current_wiggle = 0.1
         last_amplitude = None
-        measuring_timeout = 20  # seconds
-        _, starting_amplitude = self.record_audio_func(
-            duration=0.2, sample_rate=self.samplerate
-        )
-        self.goto_xy_func(wire_x, wire_y)
+        measuring_timeout = self.config.measuring_duration
         while (time.time() - start_time) < measuring_timeout:
             if check_stop_event(self.stop_event, "tension measurement interrupted!"):
                 return None, wire_y
-            record_duration = 0.1  # seconds
-            audio_sample, amplitude = self.record_audio_func(
+            record_duration = self.config.record_duration
+
+            audio_sample,amplitude = self.record_audio_func(
+
                 duration=record_duration, sample_rate=self.samplerate
             )
             if check_stop_event(self.stop_event, "tension measurement interrupted!"):

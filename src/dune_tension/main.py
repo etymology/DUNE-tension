@@ -83,6 +83,8 @@ def save_state():
         "focus_target": focus_slider.get(),
         "condition": entry_condition.get(),
         "set_tension": entry_set_tension.get(),
+        "record_duration": entry_record_duration.get(),
+        "measuring_duration": entry_measuring_duration.get(),
     }
     with open(state_file, "w") as f:
         json.dump(state, f)
@@ -107,6 +109,8 @@ def load_state():
             focus_slider.set(state.get("focus_target", 4000))
             entry_condition.insert(0, state.get("condition", ""))
             entry_set_tension.insert(0, state.get("set_tension", ""))
+            entry_record_duration.insert(0, str(state.get("record_duration", 0.5)))
+            entry_measuring_duration.insert(0, str(state.get("measuring_duration", 10.0)))
 
 
 def create_tensiometer():
@@ -118,6 +122,9 @@ def create_tensiometer():
         conf = float(entry_confidence.get())
         if not (0.0 <= conf <= 1.0):
             raise ValueError("Confidence threshold must be between 0.0 and 1.0")
+
+        rec = float(entry_record_duration.get())
+        meas = float(entry_measuring_duration.get())
 
     except ValueError as e:
         messagebox.showerror("Input Error", str(e))
@@ -134,6 +141,8 @@ def create_tensiometer():
         stop_event=stop_event,
         samples_per_wire=samples,
         confidence_threshold=conf,
+        record_duration=rec,
+        measuring_duration=meas,
         plot_audio=plot_audio_var.get(),
         start_servo_loop=servo_controller.start_loop,
         stop_servo_loop=servo_controller.stop_loop,
@@ -702,6 +711,14 @@ tk.Button(
     text="Apply Tensions",
     command=set_manual_tension,
 ).grid(row=8, column=2)
+
+tk.Label(measure_frame, text="Record Duration (s):").grid(row=9, column=0, sticky="e")
+entry_record_duration = tk.Entry(measure_frame)
+entry_record_duration.grid(row=9, column=1)
+
+tk.Label(measure_frame, text="Measuring Duration (s):").grid(row=10, column=0, sticky="e")
+entry_measuring_duration = tk.Entry(measure_frame)
+entry_measuring_duration.grid(row=10, column=1)
 
 # --- Servo Parameters ------------------------------------------------------
 tk.Label(servo_frame, text="Servo Speed (1–255):").grid(row=0, column=0, sticky="e")
