@@ -302,12 +302,17 @@ class Tensiometer:
             print("already collected enough samples for this wire.")
             wire_y = np.average([d.y for d in wires])
             return cluster, wire_y, plc_direction, focus_direction
-        wiggle_start_time = time.time()
-        current_wiggle = 0.1
-        last_amplitude = None
+        # wiggle_start_time = time.time()
+        # current_wiggle = 0.1
+        # last_amplitude = None
+        _, starting_amplitude = self.record_audio_func(
+            duration=self.config.record_duration, sample_rate=self.samplerate
+        )
         measuring_timeout = self.config.measuring_duration
+        self.start_wiggle()
         while (time.time() - start_time) < measuring_timeout:
             if check_stop_event(self.stop_event, "tension measurement interrupted!"):
+                self.stop_wiggle()
                 return None, wire_y
             record_duration = self.config.record_duration
 
@@ -316,6 +321,7 @@ class Tensiometer:
                 duration=record_duration, sample_rate=self.samplerate
             )
             if check_stop_event(self.stop_event, "tension measurement interrupted!"):
+                self.stop_wiggle()
                 return None, wire_y, plc_direction, focus_direction
             if audio_sample is not None and self.config.plot_audio:
                 self._plot_audio(audio_sample)
@@ -331,29 +337,30 @@ class Tensiometer:
                 if check_stop_event(
                     self.stop_event, "tension measurement interrupted!"
                 ):
+                    self.stop_wiggle()
                     return None, wire_y, plc_direction, focus_direction
                 x, y = self.get_current_xy_position()
 
-                if time.time() - wiggle_start_time > record_duration * 3:
-                    wiggle_start_time = time.time()
-                    if random.choice([True, False]):  # wiggle PLC
-                        if last_amplitude is not None and amplitude < last_amplitude:
-                            plc_direction *= -1
-                        increment = plc_direction * current_wiggle
-                        wire_y += increment
-                        self.goto_xy_func(wire_x, wire_y)
-                        print(
-                            f"plc wiggle: {increment:.2f}mm confidence {confidence:.2f}"
-                        )
-                    else:  # wiggle focus
-                        if last_amplitude is not None and amplitude < last_amplitude:
-                            focus_direction *= -1
-                        self.focus_wiggle_func(focus_direction * 100)
-                        print(
-                            f"focus wiggle: {focus_direction * 100} confidence {confidence:.2f}"
-                        )
+                # if time.time() - wiggle_start_time > record_duration * 3:
+                #     wiggle_start_time = time.time()
+                #     if random.choice([True, False]):  # wiggle PLC
+                #         if last_amplitude is not None and amplitude < last_amplitude:
+                #             plc_direction *= -1
+                #         increment = plc_direction * current_wiggle
+                #         wire_y += increment
+                #         self.goto_xy_func(wire_x, wire_y)
+                #         print(
+                #             f"plc wiggle: {increment:.2f}mm confidence {confidence:.2f}"
+                #         )
+                #     else:  # wiggle focus
+                #         if last_amplitude is not None and amplitude < last_amplitude:
+                #             focus_direction *= -1
+                #         self.focus_wiggle_func(focus_direction * 100)
+                #         print(
+                #             f"focus wiggle: {focus_direction * 100} confidence {confidence:.2f}"
+                #         )
 
-                        last_amplitude = amplitude
+                #         last_amplitude = amplitude
                 print(
                     f"tension: {tension:.1f}N, frequency: {frequency:.1f}Hz, "
                     f"confidence: {confidence * 100:.1f}%"
@@ -396,15 +403,18 @@ class Tensiometer:
                     }
                     update_samples_dataframe(self.config.data_path, samples_df)
                     wire_y = np.average([d.y for d in wires])
-                    current_wiggle = (current_wiggle + 0.1) / 1.5
+                    # current_wiggle = (current_wiggle + 0.1) / 1.5
                     if self.config.samples_per_wire == 1:
+                        self.stop_wiggle()
                         return wires[:1], wire_y, plc_direction, focus_direction
 
                     cluster = has_cluster(
                         wires, "tension", self.config.samples_per_wire
                     )
                     if cluster != []:
+                        self.stop_wiggle()
                         return cluster, wire_y, plc_direction, focus_direction
+        self.stop_wiggle()
         return (
             ([] if not self.stop_event or not self.stop_event.is_set() else None),
             wire_y,
