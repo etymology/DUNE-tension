@@ -104,9 +104,9 @@ class Tensiometer:
                 0.0,
             )
         else:
-            from audioProcessing import record_audio
+            from audioProcessing import record_audio_filtered
 
-        self.record_audio_func = lambda duration, sample_rate: record_audio(
+        self.record_audio_func = lambda duration, sample_rate: record_audio_filtered(
             duration, sample_rate=sample_rate, normalize=True
         )
 
