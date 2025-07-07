@@ -124,7 +124,14 @@ sys.modules["tensiometer_functions"] = tfunc_stub
 dc_stub = types.ModuleType("data_cache")
 dc_stub.clear_wire_range = lambda *a, **k: None
 dc_stub.clear_outliers = lambda *a, **k: []
+dc_stub.get_dataframe = lambda path: None
+dc_stub.update_dataframe = lambda path, df: None
 sys.modules["data_cache"] = dc_stub
+
+# Minimal results stub
+results_stub = types.ModuleType("results")
+results_stub.EXPECTED_COLUMNS = []
+sys.modules["results"] = results_stub
 
 import dune_tension.main as main
 from dune_tension.maestro import DummyController
@@ -344,11 +351,9 @@ def test_measure_condition_latest_only(monkeypatch):
         def __eq__(self, other):
             return Mask([v == other for v in self])
 
-
     class Mask(list):
         def __and__(self, other):
             return Mask([a and b for a, b in zip(self, other)])
-
 
     class DataFrame:
         def __init__(self, rows):
@@ -368,9 +373,7 @@ def test_measure_condition_latest_only(monkeypatch):
 
         def dropna(self, subset):
             self.rows = [
-                r
-                for r in self.rows
-                if all(r.get(k) is not None for k in subset)
+                r for r in self.rows if all(r.get(k) is not None for k in subset)
             ]
             return self
 
