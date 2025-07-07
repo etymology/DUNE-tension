@@ -306,6 +306,52 @@ def record_audio(duration, sample_rate, plot=False, normalize=True):
             pass
 
 
+_NOISE_PROFILE_PATH = os.path.join(os.path.dirname(__file__), "noise_profile.npy")
+_noise_profile: np.ndarray | None = None
+
+
+def _load_noise_profile() -> None:
+    """Load the saved noise profile if available."""
+    global _noise_profile
+    if _noise_profile is None and os.path.exists(_NOISE_PROFILE_PATH):
+        try:
+            _noise_profile = np.load(_NOISE_PROFILE_PATH)
+        except Exception as exc:  # pragma: no cover - loading is optional
+            print(f"Failed to load noise profile: {exc}")
+            _noise_profile = None
+
+
+def calibrate_background_noise(duration: float, sample_rate: int) -> None:
+    """Record a sample of background noise and save it for later filtering."""
+    noise_sample, _ = record_audio(duration, sample_rate, plot=False, normalize=True)
+    if noise_sample is not None:
+        global _noise_profile
+        _noise_profile = noise_sample
+        try:
+            np.save(_NOISE_PROFILE_PATH, _noise_profile)
+            print(f"Saved noise profile to {_NOISE_PROFILE_PATH}")
+        except Exception as exc:  # pragma: no cover - saving is optional
+            print(f"Failed to save noise profile: {exc}")
+
+
+def record_audio_filtered(duration, sample_rate, plot=False, normalize=True):
+    """Record audio and subtract the calibrated noise profile if available."""
+    _load_noise_profile()
+    audio, amp = record_audio(duration, sample_rate, plot=plot, normalize=normalize)
+    if audio is None:
+        return None, 0.0
+    if _noise_profile is not None:
+        noise = _noise_profile
+        if len(noise) >= len(audio):
+            audio = audio - noise[: len(audio)]
+        else:
+            pad = len(audio) - len(noise)
+            padded = np.pad(noise, (0, pad), mode="wrap")
+            audio = audio - padded
+        amp = float(np.mean(np.abs(audio)))
+    return audio, amp
+
+
 def analyze_sample(audio_sample, sample_rate, wire_length):
     frequency, confidence = get_pitch_crepe(audio_sample, sample_rate)
     tension = tension_lookup(length=wire_length, frequency=frequency)
