@@ -777,12 +777,12 @@ accel_slider = tk.Scale(
 accel_slider.set(1)
 accel_slider.grid(row=1, column=1, sticky="ew")
 
-tk.Label(servo_frame, text="Dwell Time (0.00–1.00s):").grid(row=2, column=0, sticky="e")
+tk.Label(servo_frame, text="Dwell Time (0.00–2.00s):").grid(row=2, column=0, sticky="e")
 
 dwell_slider = tk.Scale(
     servo_frame,
     from_=0,
-    to=100,
+    to=200,
     orient=tk.HORIZONTAL,
     command=lambda val: servo_controller.set_dwell_time(float(val) / 100),
 )

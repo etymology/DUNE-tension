@@ -8,7 +8,7 @@ WIRE_DENSITY = 0.000152
 MAX_PASSING_TENSION = 8  # Note the minimum depends on the wire length
 MIN_PHYSICAL_TENSION = 2.5
 MAX_PHYSICAL_TENSION = (
-    6.5  # considering higher than 10 not possible because of winder tension control
+    7.5  # considering higher than 10 not possible because of winder tension control
 )
 
 

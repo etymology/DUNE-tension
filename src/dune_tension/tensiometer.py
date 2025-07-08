@@ -53,7 +53,7 @@ class Tensiometer:
         plot_audio: bool = False,
         record_duration: float = 0.5,
         measuring_duration: float = 10.0,
-        snr: float = 1.5,
+        snr: float = 3,
         spoof: bool = False,
         spoof_movement: bool = False,
         start_servo_loop: Optional[Callable[[], None]] = None,
@@ -135,10 +135,10 @@ class Tensiometer:
         def _run() -> None:
             while self._wiggle_event and self._wiggle_event.is_set():
 
-                self.goto_xy_func(start_x, start_y-self.config.dy/5,speed=self.config.dy/5)
+                self.goto_xy_func(start_x, start_y-self.config.dy/10,speed=self.config.dy/5)
                 if self._wiggle_event is not None and not self._wiggle_event.is_set():
                     break
-                self.goto_xy_func(start_x, start_y+self.config.dy/5,speed=self.config.dy/5)
+                self.goto_xy_func(start_x, start_y+self.config.dy/10,speed=self.config.dy/5)
                 time.sleep(0.01)
 
         self._wiggle_thread = threading.Thread(target=_run, daemon=True)
@@ -542,6 +542,7 @@ class Tensiometer:
         )
         result.ttf = ttf
         result.time = datetime.now()
+        reset_plc()
 
         df = get_dataframe(self.config.data_path)
         row = {col: getattr(result, col, None) for col in EXPECTED_COLUMNS}

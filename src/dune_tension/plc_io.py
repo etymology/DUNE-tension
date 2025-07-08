@@ -181,7 +181,7 @@ def reset_plc():
     """Reset the PLC to its initial state."""
     write_tag("MOVE_TYPE", IDLE_MOVE_TYPE)
     write_tag("STATE", IDLE_STATE)
-    set_speed(100)  # Reset speed to a default value
+    set_speed()  # Reset speed to a default value
 
 def increment(increment_x, increment_y):
     # Use the cached position to avoid reading tags when possible
@@ -200,7 +200,7 @@ def wiggle(step):
     threading.Thread(target=_do_wiggle, daemon=True).start()
     return True
 
-def set_speed(speed: float = 100) -> bool:
+def set_speed(speed: float = 300) -> bool:
     """Set the speed of the winder.
 
     This function writes the desired speed to the PLC server.
