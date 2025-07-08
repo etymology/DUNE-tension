@@ -308,11 +308,12 @@ def record_audio(duration, sample_rate, plot=False, normalize=True):
 
 _NOISE_FILTER_PATH = os.path.join(os.path.dirname(__file__), "noise_filter.npz")
 _noise_filter: dict | None = None
+_noise_threshold: float = 0.0
 
 
 def _load_noise_filter() -> None:
     """Load the saved noise filter if available."""
-    global _noise_filter
+    global _noise_filter, _noise_threshold
     if _noise_filter is None and os.path.exists(_NOISE_FILTER_PATH):
         try:
             data = np.load(_NOISE_FILTER_PATH)
@@ -320,9 +321,17 @@ def _load_noise_filter() -> None:
                 "sample_rate": int(data["sample_rate"]),
                 "magnitude": data["magnitude"],
             }
+            if "threshold" in data:
+                _noise_threshold = float(data["threshold"])
         except Exception as exc:  # pragma: no cover - loading is optional
             print(f"Failed to load noise filter: {exc}")
             _noise_filter = None
+
+
+def get_noise_threshold() -> float:
+    """Return the calibrated noise amplitude threshold."""
+    _load_noise_filter()
+    return _noise_threshold
 
 
 def calibrate_background_noise(
@@ -330,17 +339,23 @@ def calibrate_background_noise(
 ) -> None:
     """Record ``duration`` seconds of background noise and create a spectral filter."""
 
-    noise_sample, _ = record_audio(duration, sample_rate, plot=False, normalize=True)
+    noise_sample, amp = record_audio(duration, sample_rate, plot=False, normalize=True)
     if noise_sample is not None:
         noise_fft = np.fft.rfft(noise_sample)
         noise_mag = np.abs(noise_fft)
-        global _noise_filter
+        global _noise_filter, _noise_threshold
         _noise_filter = {
             "sample_rate": sample_rate,
             "magnitude": noise_mag,
         }
+        _noise_threshold = float(amp)
         try:
-            np.savez(_NOISE_FILTER_PATH, sample_rate=sample_rate, magnitude=noise_mag)
+            np.savez(
+                _NOISE_FILTER_PATH,
+                sample_rate=sample_rate,
+                magnitude=noise_mag,
+                threshold=_noise_threshold,
+            )
             print(f"Saved noise filter to {_NOISE_FILTER_PATH}")
         except Exception as exc:  # pragma: no cover - saving is optional
             print(f"Failed to save noise filter: {exc}")
