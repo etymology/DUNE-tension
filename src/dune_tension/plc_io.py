@@ -3,6 +3,9 @@ import threading
 import time
 from random import gauss
 
+# Global lock to ensure exclusive PLC communication
+PLC_LOCK = threading.RLock()
+
 # Amount of travel, in mm, assumed to be lost when reversing X direction
 BACKLASH_DEADZONE = 0.5
 
@@ -49,7 +52,8 @@ def read_tag(tag_name, *, timeout: float = 10.0, retry_interval: float = 0.1) ->
 
     while time.monotonic() < end_time:
         try:
-            response = requests.get(url)
+            with PLC_LOCK:
+                response = requests.get(url)
             if response.status_code == 200:
                 try:
                     data = response.json()[tag_name]
@@ -107,7 +111,8 @@ def write_tag(tag_name, value):
     # print(f"Attempting to write to URL: {url}")  # Debugging statement
     payload = {"value": value}
     try:
-        response = requests.post(url, json=payload)
+        with PLC_LOCK:
+            response = requests.post(url, json=payload)
         if response.status_code == 200:
             return response.json()
         else:
@@ -120,7 +125,11 @@ def write_tag(tag_name, value):
 
 
 def goto_xy(
-    x_target: float, y_target: float, *, speed=300, deadzone: float = BACKLASH_DEADZONE
+    x_target: float,
+    y_target: float,
+    *,
+    speed=300,
+    deadzone: float = BACKLASH_DEADZONE,
 ):
     """Move the winder to a given position.
 
@@ -130,76 +139,81 @@ def goto_xy(
 
     global _TRUE_XY, _LAST_X_DIR, _X_DEADZONE_LEFT
 
-    if not (1000 < x_target < 7174 and 0 < y_target < 2680):
-        print(
-            f"Motion target {x_target},{y_target} out of bounds. Please enter a valid position."
-        )
-        return False
+    with PLC_LOCK:
+        if not (1000 < x_target < 7174 and 0 < y_target < 2680):
+            print(
+                f"Motion target {x_target},{y_target} out of bounds. Please enter a valid position."
+            )
+            return False
 
-    # ------------------------------------------------------------
-    # Backlash compensation bookkeeping
-    # ------------------------------------------------------------
-    delta_x = x_target - _TRUE_XY[0]
-    direction = 1 if delta_x > 0 else -1 if delta_x < 0 else 0
+        # ------------------------------------------------------------
+        # Backlash compensation bookkeeping
+        # ------------------------------------------------------------
+        delta_x = x_target - _TRUE_XY[0]
+        direction = 1 if delta_x > 0 else -1 if delta_x < 0 else 0
 
-    if direction != 0 and direction != _LAST_X_DIR:
-        _X_DEADZONE_LEFT = deadzone
-        _LAST_X_DIR = direction
+        if direction != 0 and direction != _LAST_X_DIR:
+            _X_DEADZONE_LEFT = deadzone
+            _LAST_X_DIR = direction
 
-    move_x = abs(delta_x)
-    actual_move_x = 0.0
-    if direction != 0:
-        if _X_DEADZONE_LEFT > 0:
-            if move_x <= _X_DEADZONE_LEFT:
-                _X_DEADZONE_LEFT -= move_x
+        move_x = abs(delta_x)
+        actual_move_x = 0.0
+        if direction != 0:
+            if _X_DEADZONE_LEFT > 0:
+                if move_x <= _X_DEADZONE_LEFT:
+                    _X_DEADZONE_LEFT -= move_x
+                else:
+                    actual_move_x = direction * (move_x - _X_DEADZONE_LEFT)
+                    _X_DEADZONE_LEFT = 0.0
             else:
-                actual_move_x = direction * (move_x - _X_DEADZONE_LEFT)
-                _X_DEADZONE_LEFT = 0.0
-        else:
-            actual_move_x = delta_x
+                actual_move_x = delta_x
 
-    _TRUE_XY[0] += actual_move_x
-    _TRUE_XY[1] = y_target
+        _TRUE_XY[0] += actual_move_x
+        _TRUE_XY[1] = y_target
 
-    # ------------------------------------------------------------
-    # Command the PLC move
-    # ------------------------------------------------------------
-    current_state = get_state()
-    while current_state != IDLE_STATE:
-        time.sleep(0.1)
+        # ------------------------------------------------------------
+        # Command the PLC move
+        # ------------------------------------------------------------
         current_state = get_state()
-    set_speed(speed)
-    write_tag("MOVE_TYPE", IDLE_MOVE_TYPE)
-    write_tag("STATE", IDLE_STATE)
-    write_tag("X_POSITION", x_target)
-    write_tag("Y_POSITION", y_target)
-    write_tag("MOVE_TYPE", XY_MOVE_TYPE)
+        while current_state != IDLE_STATE:
+            time.sleep(0.1)
+            current_state = get_state()
+        set_speed(speed)
+        write_tag("MOVE_TYPE", IDLE_MOVE_TYPE)
+        write_tag("STATE", IDLE_STATE)
+        write_tag("X_POSITION", x_target)
+        write_tag("Y_POSITION", y_target)
+        write_tag("MOVE_TYPE", XY_MOVE_TYPE)
 
-    while get_movetype() == XY_MOVE_TYPE:
-        time.sleep(0.1)
-    return True
+        while get_movetype() == XY_MOVE_TYPE:
+            time.sleep(0.1)
+        return True
 
 
 def reset_plc():
     """Reset the PLC to its initial state."""
-    write_tag("MOVE_TYPE", IDLE_MOVE_TYPE)
-    write_tag("STATE", IDLE_STATE)
-    set_speed(0)  # exits an ongoing move
-
+    with PLC_LOCK:
+        write_tag("MOVE_TYPE", IDLE_MOVE_TYPE)
+        write_tag("STATE", IDLE_STATE)
+        set_speed(0)  # Reset speed to a default value
 
 def increment(increment_x, increment_y):
     # Use the cached position to avoid reading tags when possible
-    x, y = get_cached_xy()
-    goto_xy(x + increment_x, y + increment_y)
+    with PLC_LOCK:
+        x, y = get_cached_xy()
+        goto_xy(x + increment_x, y + increment_y)
 
 
 def wiggle(step):
     """Wiggle the winder by a given step size in a background thread."""
 
     def _do_wiggle() -> None:
-        y_wiggle = gauss(0, step)
-        increment(0, y_wiggle)
-        print(f"Wiggling by {y_wiggle} mm")
+        try:
+            y_wiggle = gauss(0, step)
+            increment(0, y_wiggle)
+            print(f"Wiggling by {y_wiggle} mm")
+        finally:
+            reset_plc()
 
     threading.Thread(target=_do_wiggle, daemon=True).start()
     return True
@@ -214,7 +228,8 @@ def set_speed(speed: float = 300) -> bool:
         print(f"Speed {speed} out of bounds. Please enter a value between 0 and 100.")
         return False
 
-    response = write_tag("XY_SPEED", speed)
+    with PLC_LOCK:
+        response = write_tag("XY_SPEED", speed)
     if "error" in response:
         print(f"Failed to set speed: {response['error']}")
         return False
