@@ -245,22 +245,43 @@ def update_tension_logs(config: TensiometerConfig) -> Dict[str, str]:
 
 def get_missing_wires(config: TensiometerConfig) -> Dict[str, List[int]]:
     """Return missing wire numbers for each side for ``config``."""
-    samples = get_samples_dataframe(config.data_path)
-    mask = (
-        (samples["apa_name"] == config.apa_name)
-        & (samples["layer"] == config.layer)
-        & (samples["confidence"].astype(float) >= config.confidence_threshold)
-    )
-    df = samples[mask].copy()
-    df["wire_number"] = pd.to_numeric(df["wire_number"], errors="coerce")
-    df = df.dropna(subset=["wire_number", "frequency"])
-    df["wire_number"] = df["wire_number"].astype(int)
 
-    tension_series, _, _, missing = _compute_tensions(config, df)
+    summary_path = (
+        f"data/tension_summaries/tension_summary_{config.apa_name}_{config.layer}.csv"
+    )
+
+    try:
+        df = pd.read_csv(summary_path)
+    except FileNotFoundError:
+        expected = list(get_expected_range(config.layer))
+        return {"A": expected.copy(), "B": expected.copy()}
+
+    wire_numbers = [int(w) for w in df["wire_number"]]
+    col_a = df["A"] if "A" in df.columns else [float("nan")] * len(wire_numbers)
+    col_b = df["B"] if "B" in df.columns else [float("nan")] * len(wire_numbers)
+
+    missing: Dict[str, List[int]] = {"A": [], "B": []}
+    measured: Dict[str, List[int]] = {"A": [], "B": []}
+
+    for wire, ta, tb in zip(wire_numbers, col_a, col_b):
+        if ta == ta and ta not in ("", None):
+            measured["A"].append(wire)
+        else:
+            missing["A"].append(wire)
+
+        if tb == tb and tb not in ("", None):
+            measured["B"].append(wire)
+        else:
+            missing["B"].append(wire)
+
+    expected_range = get_expected_range(config.layer)
+    for wire in expected_range:
+        if wire not in wire_numbers:
+            missing["A"].append(wire)
+            missing["B"].append(wire)
 
     for side in ["A", "B"]:
-        missing_side = missing.get(side, [])
-        measured = list(tension_series.get(side, {}).keys())
-        missing[side] = _order_missing_wires(missing_side, measured)
+        missing_side = sorted(set(missing[side]))
+        missing[side] = _order_missing_wires(missing_side, measured[side])
 
     return missing

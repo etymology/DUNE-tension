@@ -36,10 +36,40 @@ def setup_module(module):
             mod.has_cluster = lambda a, b, c: []
         elif name == "pandas":
 
+            class _Column(list):
+                def tolist(self):
+                    return list(self)
+
+
             class DummyDF:
-                pass
+                def __init__(self, data):
+                    self._data = {k: _Column(v) for k, v in data.items()}
+
+                def __getitem__(self, key):
+                    return self._data[key]
+
+                @property
+                def columns(self):
+                    return list(self._data.keys())
+
+
+            def _read_csv(path):
+                p = Path(path)
+                if not p.exists():
+                    raise FileNotFoundError(path)
+                lines = [line.strip() for line in p.read_text().splitlines() if line.strip()]
+                headers = lines[0].split(",")
+                cols = {h: [] for h in headers}
+                for line in lines[1:]:
+                    for h, val in zip(headers, line.split(",")):
+                        try:
+                            cols[h].append(float(val))
+                        except ValueError:
+                            cols[h].append(val)
+                return DummyDF(cols)
 
             mod.DataFrame = DummyDF
+            mod.read_csv = _read_csv
         elif name == "results":
 
             class Dummy:
@@ -72,3 +102,23 @@ def test_order_missing_no_measured():
     missing = [3, 1, 2]
     ordered = analyze._order_missing_wires(missing, [])
     assert ordered == [1, 2, 3]
+
+
+def test_get_missing_wires_from_summary(tmp_path, monkeypatch):
+    # Create fake summary CSV in temporary directory
+    base = tmp_path / "data" / "tension_summaries"
+    base.mkdir(parents=True)
+    csv = base / "tension_summary_APA_X.csv"
+    csv.write_text("wire_number,A,B\n1,1,\n2,,2\n")
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(analyze, "get_expected_range", lambda _l: range(1, 3))
+
+    cfg = analyze.TensiometerConfig()
+    cfg.apa_name = "APA"
+    cfg.layer = "X"
+
+    missing = analyze.get_missing_wires(cfg)
+
+    assert missing["A"] == [2]
+    assert missing["B"] == [1]
