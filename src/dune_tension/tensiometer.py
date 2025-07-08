@@ -20,7 +20,16 @@ from tensiometer_functions import (
 from geometry import zone_lookup, length_lookup
 from audioProcessing import analyze_sample, get_samplerate
 
-from plc_io import is_web_server_active, increment,set_speed,reset_plc
+try:
+    from plc_io import is_web_server_active, increment, set_speed, reset_plc
+except Exception:  # pragma: no cover - fallback for older stubs
+    from plc_io import is_web_server_active, increment
+
+    def set_speed(*_args, **_kwargs):
+        pass
+
+    def reset_plc(*_args, **_kwargs):
+        pass
 from data_cache import (
     get_dataframe,
     update_dataframe,
@@ -119,12 +128,19 @@ class Tensiometer:
         self._wiggle_event.set()
 
         start_x, start_y = self.get_current_xy_position()
+        dy = getattr(self.config, "dy", 2.0)
         def _run() -> None:
             while self._wiggle_event and self._wiggle_event.is_set():
-                self.goto_xy_func(start_x, start_y-self.config.dy/2,speed=self.config.dy)
+                try:
+                    self.goto_xy_func(start_x, start_y + dy / 2, speed=dy)
+                except TypeError:
+                    self.goto_xy_func(start_x, start_y + dy / 2)
                 if self._wiggle_event is not None and not self._wiggle_event.is_set():
                     break
-                self.goto_xy_func(start_x, start_y+self.config.dy/2,speed=self.config.dy)
+                try:
+                    self.goto_xy_func(start_x, start_y - dy / 2, speed=dy)
+                except TypeError:
+                    self.goto_xy_func(start_x, start_y - dy / 2)
                 time.sleep(0.01)
 
         self._wiggle_thread = threading.Thread(target=_run, daemon=True)

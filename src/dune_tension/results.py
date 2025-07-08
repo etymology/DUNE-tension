@@ -30,9 +30,16 @@ class TensionResult:
     def __post_init__(self) -> None:
         self.wires = self.wires or []
         self.zone = zone_lookup(self.x)
-        self.wire_length = length_lookup(self.layer, self.wire_number, self.zone)
-        self.tension = tension_lookup(self.wire_length, self.frequency)
-        self.tension_pass = tension_pass(self.tension, self.wire_length)
+        try:
+            self.wire_length = length_lookup(
+                self.layer, self.wire_number, self.zone
+            )
+            self.tension = tension_lookup(self.wire_length, self.frequency)
+            self.tension_pass = tension_pass(self.tension, self.wire_length)
+        except ValueError:
+            self.wire_length = 0
+            self.tension = 0
+            self.tension_pass = False
         self.t_sigma = float(np.std(self.wires)) if self.wires else 0.0
         if self.time is None:
             self.time = datetime.now()
