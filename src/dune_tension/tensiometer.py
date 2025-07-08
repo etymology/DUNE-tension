@@ -131,14 +131,15 @@ class Tensiometer:
         self._wiggle_event.set()
 
         start_x, start_y = self.get_current_xy_position()
-        wiggle_width = abs(getattr(self.config, "dy", 4.0)/3)
+        # Wiggle by roughly half the wire pitch to avoid hitting adjacent wires
+        wiggle_width = abs(getattr(self.config, "dy", 2.0) / 2)
         def _run() -> None:
             while self._wiggle_event and self._wiggle_event.is_set():
 
-                self.goto_xy_func(start_x, start_y-wiggle_width,speed=wiggle_width)
+                self.goto_xy_func(start_x, start_y - wiggle_width, speed=wiggle_width)
                 if self._wiggle_event is not None and not self._wiggle_event.is_set():
                     break
-                self.goto_xy_func(start_x, start_y+wiggle_width,speed=wiggle_width)
+                self.goto_xy_func(start_x, start_y + wiggle_width, speed=wiggle_width)
                 time.sleep(0.01)
 
         self._wiggle_thread = threading.Thread(target=_run, daemon=True)
@@ -526,6 +527,7 @@ class Tensiometer:
             self._focus_direction = focus_dir
         finally:
             self.stop_servo_loop()
+            reset_plc()
 
         if wires is None:
             return
