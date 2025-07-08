@@ -121,10 +121,10 @@ class Tensiometer:
         start_x, start_y = self.get_current_xy_position()
         def _run() -> None:
             while self._wiggle_event and self._wiggle_event.is_set():
-                self.goto_xy_func(start_x, start_y-self.config.dy/2,speed=self.config.dy)
+                self.goto_xy_func(start_x, start_y-self.config.dy/5,speed=self.config.dy/5)
                 if self._wiggle_event is not None and not self._wiggle_event.is_set():
                     break
-                self.goto_xy_func(start_x, start_y+self.config.dy/2,speed=self.config.dy)
+                self.goto_xy_func(start_x, start_y+self.config.dy/5,speed=self.config.dy/5)
                 time.sleep(0.01)
 
         self._wiggle_thread = threading.Thread(target=_run, daemon=True)
@@ -379,7 +379,7 @@ class Tensiometer:
                             wire_number=wire_number,
                             frequency=frequency,
                             confidence=confidence,
-                            x=x,
+                            x=wire_x,
                             y=y,
                             wires=[tension],
                             time=datetime.now(),
@@ -394,7 +394,7 @@ class Tensiometer:
                         wire_number=wire_number,
                         frequency=frequency,
                         confidence=confidence,
-                        x=x,
+                        x=wire_x,
                         y=y,
                         time=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                     )
