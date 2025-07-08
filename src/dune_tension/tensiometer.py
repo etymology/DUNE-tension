@@ -131,14 +131,14 @@ class Tensiometer:
         self._wiggle_event.set()
 
         start_x, start_y = self.get_current_xy_position()
-        dy = getattr(self.config, "dy", 2.0)
+        wiggle_width = abs(getattr(self.config, "dy", 4.0)/3)
         def _run() -> None:
             while self._wiggle_event and self._wiggle_event.is_set():
 
-                self.goto_xy_func(start_x, start_y-self.config.dy/10,speed=self.config.dy/5)
+                self.goto_xy_func(start_x, start_y-wiggle_width,speed=wiggle_width)
                 if self._wiggle_event is not None and not self._wiggle_event.is_set():
                     break
-                self.goto_xy_func(start_x, start_y+self.config.dy/10,speed=self.config.dy/5)
+                self.goto_xy_func(start_x, start_y+wiggle_width,speed=wiggle_width)
                 time.sleep(0.01)
 
         self._wiggle_thread = threading.Thread(target=_run, daemon=True)
@@ -227,7 +227,7 @@ class Tensiometer:
         wires_to_measure[:] = [
             x
             for x in wires_to_measure
-            if (x >= 20 if low_numbered_high else x <= 1146 - 20)
+            if (x >= 20 if low_numbered_high else x <= 1146)
         ]
 
         print("Measuring missing wires...")
@@ -485,6 +485,7 @@ class Tensiometer:
     ) -> Optional[TensionResult]:
         reset_plc()
         length = length_lookup(self.config.layer, wire_number, zone_lookup(wire_x))
+        assert length != np.float64("nan"), "Length lookup returned NaN"
         start_time = time.time()
 
         if check_stop_event(self.stop_event):

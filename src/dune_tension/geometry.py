@@ -7,7 +7,7 @@ Y_MIN = 200
 Y_MAX = 2460
 
 X_MIN = 1050
-X_MAX = 7000
+X_MAX = 7050
 COMB_TOLERANCE = 300
 
 comb_positions = [

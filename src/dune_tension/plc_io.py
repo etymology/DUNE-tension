@@ -181,7 +181,7 @@ def reset_plc():
     """Reset the PLC to its initial state."""
     write_tag("MOVE_TYPE", IDLE_MOVE_TYPE)
     write_tag("STATE", IDLE_STATE)
-    set_speed()  # Reset speed to a default value
+    set_speed(0)  # Reset speed to a default value
 
 def increment(increment_x, increment_y):
     # Use the cached position to avoid reading tags when possible
