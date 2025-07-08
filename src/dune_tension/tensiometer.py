@@ -331,7 +331,7 @@ class Tensiometer:
                     f"audio/{self.config.layer}{self.config.side}{wire_number}_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}",
                     audio_sample,
                 )
-            if audio_sample is not None and amplitude > starting_amplitude * 2:
+            if audio_sample is not None:
                 frequency, confidence, tension, tension_ok = analyze_sample(
                     audio_sample, self.samplerate, length
                 )
