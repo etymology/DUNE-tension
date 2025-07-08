@@ -231,11 +231,7 @@ def calibrate_background_noise() -> None:
             if samplerate is None:
                 print("Unable to access audio device")
                 return
-            try:
-                dur = float(entry_record_duration.get())
-            except Exception:
-                dur = 0.5
-            calibrate_background_noise(dur, int(samplerate))
+            calibrate_background_noise(int(samplerate))
             print("Background noise calibrated")
         finally:
             stop_event.clear()

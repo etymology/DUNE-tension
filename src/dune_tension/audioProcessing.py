@@ -306,48 +306,79 @@ def record_audio(duration, sample_rate, plot=False, normalize=True):
             pass
 
 
-_NOISE_PROFILE_PATH = os.path.join(os.path.dirname(__file__), "noise_profile.npy")
-_noise_profile: np.ndarray | None = None
+_NOISE_FILTER_PATH = os.path.join(os.path.dirname(__file__), "noise_filter.npz")
+_noise_filter: dict | None = None
 
 
-def _load_noise_profile() -> None:
-    """Load the saved noise profile if available."""
-    global _noise_profile
-    if _noise_profile is None and os.path.exists(_NOISE_PROFILE_PATH):
+def _load_noise_filter() -> None:
+    """Load the saved noise filter if available."""
+    global _noise_filter
+    if _noise_filter is None and os.path.exists(_NOISE_FILTER_PATH):
         try:
-            _noise_profile = np.load(_NOISE_PROFILE_PATH)
+            data = np.load(_NOISE_FILTER_PATH)
+            _noise_filter = {
+                "sample_rate": int(data["sample_rate"]),
+                "magnitude": data["magnitude"],
+            }
         except Exception as exc:  # pragma: no cover - loading is optional
-            print(f"Failed to load noise profile: {exc}")
-            _noise_profile = None
+            print(f"Failed to load noise filter: {exc}")
+            _noise_filter = None
 
 
-def calibrate_background_noise(duration: float, sample_rate: int) -> None:
-    """Record a sample of background noise and save it for later filtering."""
+def calibrate_background_noise(
+    sample_rate: int, duration: float = 1.0
+) -> None:
+    """Record ``duration`` seconds of background noise and create a spectral filter."""
+
     noise_sample, _ = record_audio(duration, sample_rate, plot=False, normalize=True)
     if noise_sample is not None:
-        global _noise_profile
-        _noise_profile = noise_sample
+        noise_fft = np.fft.rfft(noise_sample)
+        noise_mag = np.abs(noise_fft)
+        global _noise_filter
+        _noise_filter = {
+            "sample_rate": sample_rate,
+            "magnitude": noise_mag,
+        }
         try:
-            np.save(_NOISE_PROFILE_PATH, _noise_profile)
-            print(f"Saved noise profile to {_NOISE_PROFILE_PATH}")
+            np.savez(_NOISE_FILTER_PATH, sample_rate=sample_rate, magnitude=noise_mag)
+            print(f"Saved noise filter to {_NOISE_FILTER_PATH}")
         except Exception as exc:  # pragma: no cover - saving is optional
-            print(f"Failed to save noise profile: {exc}")
+            print(f"Failed to save noise filter: {exc}")
 
 
 def record_audio_filtered(duration, sample_rate, plot=False, normalize=True):
-    """Record audio and subtract the calibrated noise profile if available."""
-    _load_noise_profile()
+    """Record audio and apply the calibrated stationary-noise filter if available."""
+
+    _load_noise_filter()
     audio, amp = record_audio(duration, sample_rate, plot=plot, normalize=normalize)
     if audio is None:
         return None, 0.0
-    if _noise_profile is not None:
-        noise = _noise_profile
-        if len(noise) >= len(audio):
-            audio = audio - noise[: len(audio)]
+
+    if _noise_filter is not None:
+        noise_sr = _noise_filter["sample_rate"]
+        noise_mag = _noise_filter["magnitude"]
+
+        fft = np.fft.rfft(audio)
+        mag = np.abs(fft)
+        phase = np.angle(fft)
+
+        if noise_sr != sample_rate or len(noise_mag) != len(mag):
+            x_old = np.linspace(0, sample_rate / 2, len(noise_mag))
+            x_new = np.linspace(0, sample_rate / 2, len(mag))
+            noise_mag = np.interp(x_new, x_old, noise_mag)
+
+        if len(noise_mag) < len(mag):
+            noise_mag = np.pad(noise_mag, (0, len(mag) - len(noise_mag)), mode="edge")
         else:
-            pad = len(audio) - len(noise)
-            padded = np.pad(noise, (0, pad), mode="wrap")
-            audio = audio - padded
+            noise_mag = noise_mag[: len(mag)]
+
+        filtered_mag = np.maximum(0.0, mag - noise_mag)
+        filtered_fft = filtered_mag * np.exp(1j * phase)
+        audio = np.fft.irfft(filtered_fft, n=len(audio))
+        if normalize:
+            max_val = np.max(np.abs(audio))
+            if max_val > 0:
+                audio = audio / max_val
         amp = float(np.mean(np.abs(audio)))
     return audio, amp
 
