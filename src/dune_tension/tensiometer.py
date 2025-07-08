@@ -20,7 +20,7 @@ from tensiometer_functions import (
 from geometry import zone_lookup, length_lookup
 from audioProcessing import analyze_sample, get_samplerate
 
-from plc_io import is_web_server_active, increment
+from plc_io import is_web_server_active, increment,set_speed,reset_plc
 from data_cache import (
     get_dataframe,
     update_dataframe,
@@ -119,13 +119,12 @@ class Tensiometer:
         self._wiggle_event.set()
 
         start_x, start_y = self.get_current_xy_position()
-
         def _run() -> None:
             while self._wiggle_event and self._wiggle_event.is_set():
-                self.goto_xy_func(start_x, start_y + 1)
-                if not self._wiggle_event.is_set():
+                self.goto_xy_func(start_x, start_y-self.config.dy/2,speed=self.config.dy)
+                if self._wiggle_event is not None and not self._wiggle_event.is_set():
                     break
-                self.goto_xy_func(start_x, start_y - 1)
+                self.goto_xy_func(start_x, start_y+self.config.dy/2,speed=self.config.dy)
                 time.sleep(0.01)
 
         self._wiggle_thread = threading.Thread(target=_run, daemon=True)
@@ -135,11 +134,13 @@ class Tensiometer:
         """Stop the background winder wiggle thread."""
         if not self._wiggle_event:
             return
+        set_speed()
         self._wiggle_event.clear()
         if self._wiggle_thread:
             self._wiggle_thread.join(timeout=0.1)
         self._wiggle_event = None
         self._wiggle_thread = None
+        reset_plc()
 
     def _plot_audio(self, audio_sample) -> None:
         """Save a plot of the recorded audio sample to a temporary file."""
@@ -330,7 +331,7 @@ class Tensiometer:
                     f"audio/{self.config.layer}{self.config.side}{wire_number}_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}",
                     audio_sample,
                 )
-            if audio_sample is not None and amplitude > starting_amplitude * 2:
+            if audio_sample is not None:
                 frequency, confidence, tension, tension_ok = analyze_sample(
                     audio_sample, self.samplerate, length
                 )
@@ -468,6 +469,7 @@ class Tensiometer:
     def collect_wire_data(
         self, wire_number: int, wire_x: float, wire_y: float
     ) -> Optional[TensionResult]:
+        reset_plc()
         length = length_lookup(self.config.layer, wire_number, zone_lookup(wire_x))
         start_time = time.time()
 

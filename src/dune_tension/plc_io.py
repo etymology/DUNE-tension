@@ -119,7 +119,7 @@ def write_tag(tag_name, value):
         return {"error": str(e)}
 
 
-def goto_xy(x_target: float, y_target: float, *, deadzone: float = BACKLASH_DEADZONE):
+def goto_xy(x_target: float, y_target: float, *,speed=300, deadzone: float = BACKLASH_DEADZONE):
     """Move the winder to a given position.
 
     When reversing X direction, assume the first ``deadzone`` mm of travel does
@@ -166,6 +166,7 @@ def goto_xy(x_target: float, y_target: float, *, deadzone: float = BACKLASH_DEAD
     while current_state != IDLE_STATE:
         time.sleep(0.1)
         current_state = get_state()
+    set_speed(speed)
     write_tag("MOVE_TYPE", IDLE_MOVE_TYPE)
     write_tag("STATE", IDLE_STATE)
     write_tag("X_POSITION", x_target)
@@ -176,6 +177,11 @@ def goto_xy(x_target: float, y_target: float, *, deadzone: float = BACKLASH_DEAD
         time.sleep(0.1)
     return True
 
+def reset_plc():
+    """Reset the PLC to its initial state."""
+    write_tag("MOVE_TYPE", IDLE_MOVE_TYPE)
+    write_tag("STATE", IDLE_STATE)
+    set_speed(100)  # Reset speed to a default value
 
 def increment(increment_x, increment_y):
     # Use the cached position to avoid reading tags when possible
@@ -194,7 +200,22 @@ def wiggle(step):
     threading.Thread(target=_do_wiggle, daemon=True).start()
     return True
 
+def set_speed(speed: float = 100) -> bool:
+    """Set the speed of the winder.
 
+    This function writes the desired speed to the PLC server.
+    """
+    if not (0 <= speed <= 1000):
+        print(f"Speed {speed} out of bounds. Please enter a value between 0 and 100.")
+        return False
+
+    response = write_tag("XY_SPEED", speed)
+    if "error" in response:
+        print(f"Failed to set speed: {response['error']}")
+        return False
+
+    print(f"Speed set to {speed}")
+    return True
 def is_web_server_active():
     """
     Check if a web server is active by sending a HTTP GET request.

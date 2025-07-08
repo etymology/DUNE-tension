@@ -293,11 +293,8 @@ class ServoController:
     def run_loop(self) -> None:
         while self.running.is_set():
             self.servo.setTarget(0, 4000)
-            while self.servo.isMoving(0) and self.running.is_set():
-                time.sleep(0.01)
+            time.sleep(self.dwell_time)
             self.servo.setTarget(0, 8000)
-            while self.servo.isMoving(0) and self.running.is_set():
-                time.sleep(0.01)
             time.sleep(self.dwell_time)
 
     def focus_target(self, target: int) -> None:
