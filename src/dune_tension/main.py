@@ -219,6 +219,26 @@ def measure_list():
     Thread(target=run, daemon=True).start()
 
 
+def calibrate_background_noise() -> None:
+    """Record background noise for filtering future recordings."""
+
+    def run() -> None:
+        stop_event.clear()
+        try:
+            from audioProcessing import calibrate_background_noise, get_samplerate
+
+            samplerate = get_samplerate()
+            if samplerate is None:
+                print("Unable to access audio device")
+                return
+            calibrate_background_noise(int(samplerate))
+            print("Background noise calibrated")
+        finally:
+            stop_event.clear()
+
+    Thread(target=run, daemon=True).start()
+
+
 def measure_condition() -> None:
     """Measure wires whose tension satisfies ``entry_condition``."""
 
@@ -723,6 +743,12 @@ entry_record_duration.grid(row=9, column=1)
 tk.Label(measure_frame, text="Measuring Duration (s):").grid(row=10, column=0, sticky="e")
 entry_measuring_duration = tk.Entry(measure_frame)
 entry_measuring_duration.grid(row=10, column=1)
+
+tk.Button(
+    measure_frame,
+    text="Calibrate Noise",
+    command=calibrate_background_noise,
+).grid(row=11, column=2)
 
 # --- Servo Parameters ------------------------------------------------------
 tk.Label(servo_frame, text="Servo Speed (1–255):").grid(row=0, column=0, sticky="e")
