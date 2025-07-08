@@ -18,7 +18,7 @@ from tensiometer_functions import (
     check_stop_event,
 )
 from geometry import zone_lookup, length_lookup
-from audioProcessing import analyze_sample, get_samplerate
+from audioProcessing import analyze_sample, get_samplerate, get_noise_threshold
 
 from plc_io import is_web_server_active, increment,set_speed,reset_plc
 from data_cache import (
@@ -44,6 +44,7 @@ class Tensiometer:
         plot_audio: bool = False,
         record_duration: float = 0.5,
         measuring_duration: float = 10.0,
+        snr: float = 1.5,
         spoof: bool = False,
         spoof_movement: bool = False,
         start_servo_loop: Optional[Callable[[], None]] = None,
@@ -64,6 +65,8 @@ class Tensiometer:
             measuring_duration=measuring_duration,
         )
         self.stop_event = stop_event or threading.Event()
+        self.snr = max(1.0, snr)
+        self.noise_threshold = get_noise_threshold()
         try:
             web_ok = is_web_server_active()
         except Exception:
@@ -331,7 +334,7 @@ class Tensiometer:
                     f"audio/{self.config.layer}{self.config.side}{wire_number}_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}",
                     audio_sample,
                 )
-            if audio_sample is not None:
+            if audio_sample is not None and amplitude > self.noise_threshold * self.snr:
                 frequency, confidence, tension, tension_ok = analyze_sample(
                     audio_sample, self.samplerate, length
                 )
