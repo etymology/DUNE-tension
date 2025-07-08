@@ -102,6 +102,7 @@ ap_stub = types.ModuleType("audioProcessing")
 ap_stub.get_samplerate = lambda: None
 ap_stub.spoof_audio_sample = lambda p: []
 ap_stub.analyze_sample = lambda sample, sr, length: (sr, 1.0, 2.0, True)
+ap_stub.get_noise_threshold = lambda: 0.0
 sys.modules["audioProcessing"] = ap_stub
 
 # plc_io
@@ -111,6 +112,8 @@ plc_stub.spoof_get_xy = lambda: (0.0, 0.0)
 plc_stub.spoof_goto_xy = lambda x, y: True
 plc_stub.spoof_wiggle = lambda m: None
 plc_stub.increment = lambda x, y: None
+plc_stub.set_speed = lambda speed=100: True
+plc_stub.reset_plc = lambda: None
 sys.modules["plc_io"] = plc_stub
 
 # data_cache
@@ -152,6 +155,8 @@ tf_stub = types.ModuleType("tensiometer_functions")
 def _make_config(**kwargs):
     cfg = types.SimpleNamespace(**kwargs)
     cfg.data_path = f"{cfg.apa_name}_{cfg.layer}.csv"
+    cfg.dy = 2.0
+    cfg.dx = 1.0
     return cfg
 
 
@@ -271,7 +276,11 @@ def test_wiggle_start_stop(monkeypatch):
     moves = []
     plc = sys.modules["plc_io"]
     monkeypatch.setattr(plc, "spoof_get_xy", lambda: (1.0, 2.0))
-    monkeypatch.setattr(plc, "spoof_goto_xy", lambda x, y: moves.append((x, y)) or True)
+    monkeypatch.setattr(
+        plc,
+        "spoof_goto_xy",
+        lambda x, y, speed=None: moves.append((x, y)) or True,
+    )
 
     t = Tensiometer(apa_name="APA", layer="X", side="A")
 
@@ -279,5 +288,5 @@ def test_wiggle_start_stop(monkeypatch):
     time.sleep(0.05)
     t.stop_wiggle()
 
-    assert moves[0] == (1.0, 3.0)
-    assert moves[1] == (1.0, 1.0)
+    assert moves[0] == (1.0, 1.0)
+    assert moves[1] == (1.0, 3.0)
