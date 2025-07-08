@@ -2,7 +2,6 @@ import threading
 from datetime import datetime, timedelta
 from typing import Optional, Callable
 import time
-import random
 import numpy as np
 import pandas as pd
 from tension_calculation import calculate_kde_max, tension_plausible
@@ -30,6 +29,8 @@ except Exception:  # pragma: no cover - fallback for older stubs
 
     def reset_plc(*_args, **_kwargs):
         pass
+
+
 from data_cache import (
     get_dataframe,
     update_dataframe,
@@ -131,14 +132,14 @@ class Tensiometer:
         self._wiggle_event.set()
 
         start_x, start_y = self.get_current_xy_position()
-        wiggle_width = abs(getattr(self.config, "dy", 4.0)/3)
+        wiggle_width = abs(getattr(self.config, "dy", 4.0) / 3)
+
         def _run() -> None:
             while self._wiggle_event and self._wiggle_event.is_set():
-
-                self.goto_xy_func(start_x, start_y-wiggle_width,speed=wiggle_width)
+                self.goto_xy_func(start_x, start_y - wiggle_width, speed=wiggle_width)
                 if self._wiggle_event is not None and not self._wiggle_event.is_set():
                     break
-                self.goto_xy_func(start_x, start_y+wiggle_width,speed=wiggle_width)
+                self.goto_xy_func(start_x, start_y + wiggle_width, speed=wiggle_width)
                 time.sleep(0.01)
 
         self._wiggle_thread = threading.Thread(target=_run, daemon=True)
@@ -225,9 +226,7 @@ class Tensiometer:
         )
 
         wires_to_measure[:] = [
-            x
-            for x in wires_to_measure
-            if (x >= 20 if low_numbered_high else x <= 1146)
+            x for x in wires_to_measure if (x >= 20 if low_numbered_high else x <= 1146)
         ]
 
         print("Measuring missing wires...")
@@ -331,8 +330,7 @@ class Tensiometer:
                 return None, wire_y
             record_duration = self.config.record_duration
 
-            audio_sample,amplitude = self.record_audio_func(
-
+            audio_sample, amplitude = self.record_audio_func(
                 duration=record_duration, sample_rate=self.samplerate
             )
             if check_stop_event(self.stop_event, "tension measurement interrupted!"):

@@ -119,7 +119,9 @@ def write_tag(tag_name, value):
         return {"error": str(e)}
 
 
-def goto_xy(x_target: float, y_target: float, *,speed=300, deadzone: float = BACKLASH_DEADZONE):
+def goto_xy(
+    x_target: float, y_target: float, *, speed=300, deadzone: float = BACKLASH_DEADZONE
+):
     """Move the winder to a given position.
 
     When reversing X direction, assume the first ``deadzone`` mm of travel does
@@ -177,11 +179,13 @@ def goto_xy(x_target: float, y_target: float, *,speed=300, deadzone: float = BAC
         time.sleep(0.1)
     return True
 
+
 def reset_plc():
     """Reset the PLC to its initial state."""
     write_tag("MOVE_TYPE", IDLE_MOVE_TYPE)
     write_tag("STATE", IDLE_STATE)
-    set_speed(0)  # Reset speed to a default value
+    set_speed(0)  # exits an ongoing move
+
 
 def increment(increment_x, increment_y):
     # Use the cached position to avoid reading tags when possible
@@ -200,6 +204,7 @@ def wiggle(step):
     threading.Thread(target=_do_wiggle, daemon=True).start()
     return True
 
+
 def set_speed(speed: float = 300) -> bool:
     """Set the speed of the winder.
 
@@ -216,6 +221,8 @@ def set_speed(speed: float = 300) -> bool:
 
     print(f"Speed set to {speed}")
     return True
+
+
 def is_web_server_active():
     """
     Check if a web server is active by sending a HTTP GET request.

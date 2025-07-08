@@ -31,9 +31,7 @@ class TensionResult:
         self.wires = self.wires or []
         self.zone = zone_lookup(self.x)
         try:
-            self.wire_length = length_lookup(
-                self.layer, self.wire_number, self.zone
-            )
+            self.wire_length = length_lookup(self.layer, self.wire_number, self.zone)
             self.tension = tension_lookup(self.wire_length, self.frequency)
             self.tension_pass = tension_pass(self.tension, self.wire_length)
         except ValueError:

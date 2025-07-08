@@ -334,9 +334,7 @@ def get_noise_threshold() -> float:
     return _noise_threshold
 
 
-def calibrate_background_noise(
-    sample_rate: int, duration: float = 1.0
-) -> None:
+def calibrate_background_noise(sample_rate: int, duration: float = 1.0) -> None:
     """Record ``duration`` seconds of background noise and create a spectral filter."""
 
     noise_sample, amp = record_audio(duration, sample_rate, plot=False, normalize=True)

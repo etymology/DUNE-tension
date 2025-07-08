@@ -684,6 +684,14 @@ tk.Label(measure_frame, text="Confidence Threshold (0.0–1.0):").grid(
 entry_confidence = tk.Entry(measure_frame)
 entry_confidence.grid(row=1, column=1)
 
+tk.Label(measure_frame, text="Record Duration (s):").grid(row=9, column=0, sticky="e")
+entry_record_duration = tk.Entry(measure_frame)
+entry_record_duration.grid(row=9, column=1)
+
+tk.Label(measure_frame, text="Measuring Duration (s):").grid(row=10, column=0, sticky="e")
+entry_measuring_duration = tk.Entry(measure_frame)
+entry_measuring_duration.grid(row=10, column=1)
+
 tk.Label(measure_frame, text="Wire Number:").grid(row=2, column=0, sticky="e")
 entry_wire = tk.Entry(measure_frame)
 entry_wire.grid(row=2, column=1)
@@ -736,13 +744,7 @@ tk.Button(
     command=set_manual_tension,
 ).grid(row=8, column=2)
 
-tk.Label(measure_frame, text="Record Duration (s):").grid(row=9, column=0, sticky="e")
-entry_record_duration = tk.Entry(measure_frame)
-entry_record_duration.grid(row=9, column=1)
 
-tk.Label(measure_frame, text="Measuring Duration (s):").grid(row=10, column=0, sticky="e")
-entry_measuring_duration = tk.Entry(measure_frame)
-entry_measuring_duration.grid(row=10, column=1)
 
 tk.Button(
     measure_frame,
