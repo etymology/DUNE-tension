@@ -170,6 +170,11 @@ def measure_calibrate():
                     t.close()
                 except Exception:
                     pass
+            try:
+                from plc_io import reset_plc
+                reset_plc()
+            except Exception:
+                pass
             stop_event.clear()
 
     Thread(target=run, daemon=True).start()
@@ -189,6 +194,11 @@ def measure_auto():
                     t.close()
                 except Exception:
                     pass
+            try:
+                from plc_io import reset_plc
+                reset_plc()
+            except Exception:
+                pass
             stop_event.clear()
 
     Thread(target=run, daemon=True).start()
@@ -214,6 +224,11 @@ def measure_list():
                     t.close()
                 except Exception:
                     pass
+            try:
+                from plc_io import reset_plc
+                reset_plc()
+            except Exception:
+                pass
             stop_event.clear()
 
     Thread(target=run, daemon=True).start()
@@ -291,6 +306,11 @@ def measure_condition() -> None:
                     t.close()
                 except Exception:
                     pass
+            try:
+                from plc_io import reset_plc
+                reset_plc()
+            except Exception:
+                pass
             stop_event.clear()
 
     Thread(target=run, daemon=True).start()
