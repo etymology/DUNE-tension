@@ -2,6 +2,8 @@ import threading
 from datetime import datetime, timedelta
 from typing import Optional, Callable
 import time
+import queue
+import random
 import numpy as np
 import pandas as pd
 from tension_calculation import calculate_kde_max, tension_plausible
@@ -60,6 +62,7 @@ class Tensiometer:
         start_servo_loop: Optional[Callable[[], None]] = None,
         stop_servo_loop: Optional[Callable[[], None]] = None,
         focus_wiggle: Optional[Callable[[float], None]] = None,
+        servo_trigger: Optional[Callable[[], None]] = None,
     ) -> None:
         self.config = make_config(
             apa_name=apa_name,
@@ -101,10 +104,16 @@ class Tensiometer:
 
         self.start_servo_loop = start_servo_loop or (lambda: None)
         self.stop_servo_loop = stop_servo_loop or (lambda: None)
+        self.servo_trigger_func = servo_trigger or (lambda: None)
 
         # State tracking for winder wiggle thread
         self._wiggle_event: threading.Event | None = None
         self._wiggle_thread: threading.Thread | None = None
+
+        # Asynchronous recording thread state
+        self._record_event: threading.Event | None = None
+        self._record_thread: threading.Thread | None = None
+        self._record_queue: queue.Queue[tuple[np.ndarray, float]] | None = None
 
         self.samplerate = get_samplerate()
         if self.samplerate is None or spoof:
@@ -157,6 +166,38 @@ class Tensiometer:
         self._wiggle_event = None
         self._wiggle_thread = None
         reset_plc()
+
+    def _record_loop(self, wire_x: float, wire_y: float, wiggle_width: float) -> None:
+        assert self._record_event is not None
+        while self._record_event.is_set() and not self.stop_event.is_set():
+            y = random.gauss(wire_y, wiggle_width)
+            self.goto_xy_func(wire_x, y)
+            self.servo_trigger_func()
+            audio, amp = self.record_audio_func(
+                duration=self.config.record_duration, sample_rate=self.samplerate
+            )
+            if self._record_queue is not None:
+                self._record_queue.put((audio, amp))
+
+    def start_recording_loop(self, wire_x: float, wire_y: float, wiggle_width: float) -> None:
+        if self._record_event and self._record_event.is_set():
+            return
+        self._record_event = threading.Event()
+        self._record_event.set()
+        self._record_queue = queue.Queue()
+        self._record_thread = threading.Thread(
+            target=self._record_loop, args=(wire_x, wire_y, wiggle_width), daemon=True
+        )
+        self._record_thread.start()
+
+    def stop_recording_loop(self) -> None:
+        if not self._record_event:
+            return
+        self._record_event.clear()
+        if self._record_thread:
+            self._record_thread.join(timeout=0.1)
+        self._record_event = None
+        self._record_thread = None
 
     def _plot_audio(self, audio_sample) -> None:
         """Save a plot of the recorded audio sample to a temporary file."""
@@ -324,19 +365,16 @@ class Tensiometer:
             duration=self.config.record_duration, sample_rate=self.samplerate
         )
         measuring_timeout = self.config.measuring_duration
-        self.start_wiggle()
+        wiggle_width = abs(getattr(self.config, "dy", 2.0) / 2)
+        self.start_recording_loop(wire_x, wire_y, wiggle_width)
         while (time.time() - start_time) < measuring_timeout:
             if check_stop_event(self.stop_event, "tension measurement interrupted!"):
-                self.stop_wiggle()
-                return None, wire_y
-            record_duration = self.config.record_duration
-
-            audio_sample, amplitude = self.record_audio_func(
-                duration=record_duration, sample_rate=self.samplerate
-            )
-            if check_stop_event(self.stop_event, "tension measurement interrupted!"):
-                self.stop_wiggle()
+                self.stop_recording_loop()
                 return None, wire_y, plc_direction, focus_direction
+            try:
+                audio_sample, amplitude = self._record_queue.get(timeout=0.1)
+            except queue.Empty:
+                continue
             if audio_sample is not None and self.config.plot_audio:
                 self._plot_audio(audio_sample)
             if self.config.save_audio and not self.config.spoof:
@@ -351,7 +389,7 @@ class Tensiometer:
                 if check_stop_event(
                     self.stop_event, "tension measurement interrupted!"
                 ):
-                    self.stop_wiggle()
+                    self.stop_recording_loop()
                     return None, wire_y, plc_direction, focus_direction
                 x, y = self.get_current_xy_position()
 
@@ -419,16 +457,16 @@ class Tensiometer:
                     wire_y = np.average([d.y for d in wires])
                     # current_wiggle = (current_wiggle + 0.1) / 1.5
                     if self.config.samples_per_wire == 1:
-                        self.stop_wiggle()
+                        self.stop_recording_loop()
                         return wires[:1], wire_y, plc_direction, focus_direction
 
                     cluster = has_cluster(
                         wires, "tension", self.config.samples_per_wire
                     )
                     if cluster != []:
-                        self.stop_wiggle()
+                        self.stop_recording_loop()
                         return cluster, wire_y, plc_direction, focus_direction
-        self.stop_wiggle()
+        self.stop_recording_loop()
         return (
             ([] if not self.stop_event or not self.stop_event.is_set() else None),
             wire_y,
@@ -508,7 +546,6 @@ class Tensiometer:
                 time=datetime.now(),
             )
 
-        self.start_servo_loop()
         try:
             plc_dir = getattr(self, "_plc_direction", 1.0)
             focus_dir = getattr(self, "_focus_direction", 1)
@@ -524,7 +561,6 @@ class Tensiometer:
             self._plc_direction = plc_dir
             self._focus_direction = focus_dir
         finally:
-            self.stop_servo_loop()
             reset_plc()
 
         if wires is None:
