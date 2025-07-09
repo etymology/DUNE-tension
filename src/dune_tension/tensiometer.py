@@ -5,7 +5,7 @@ import time
 import numpy as np
 import pandas as pd
 from tension_calculation import calculate_kde_max, tension_plausible
-
+from random import gauss
 try:
     from tension_calculation import has_cluster
 except ImportError:  # fallback for older stubs
@@ -54,7 +54,7 @@ class Tensiometer:
         plot_audio: bool = False,
         record_duration: float = 0.5,
         measuring_duration: float = 10.0,
-        snr: float = 3,
+        snr: float = 1,
         spoof: bool = False,
         spoof_movement: bool = False,
         start_servo_loop: Optional[Callable[[], None]] = None,
@@ -75,7 +75,7 @@ class Tensiometer:
             measuring_duration=measuring_duration,
         )
         self.stop_event = stop_event or threading.Event()
-        self.snr = max(1.0, snr)
+        self.snr = snr
         self.noise_threshold = get_noise_threshold()
         try:
             web_ok = is_web_server_active()
@@ -133,14 +133,13 @@ class Tensiometer:
 
         start_x, start_y = self.get_current_xy_position()
         # Wiggle by roughly half the wire pitch to avoid hitting adjacent wires
-        wiggle_width = abs(getattr(self.config, "dy", 2.0) / 2)
+        wiggle_width = abs(getattr(self.config, "dy", 5.0) / 10)
         def _run() -> None:
             while self._wiggle_event and self._wiggle_event.is_set():
 
-                self.goto_xy_func(start_x, start_y - wiggle_width, speed=wiggle_width)
+                self.goto_xy_func(start_x, gauss(start_y,wiggle_width), speed=300)
                 if self._wiggle_event is not None and not self._wiggle_event.is_set():
                     break
-                self.goto_xy_func(start_x, start_y + wiggle_width, speed=wiggle_width)
                 time.sleep(0.01)
 
         self._wiggle_thread = threading.Thread(target=_run, daemon=True)
