@@ -260,6 +260,7 @@ class ServoController:
         self.servo.setRange(0, 4000, 8000)  # plucking servo
         self.running: Event = Event()
         self.dwell_time: float = 1.0
+        self._pluck_state: bool = False
 
         self.servo.setRange(1, 4000, 8000)  # focus servo
         self.focus_position = focus_position
@@ -296,6 +297,12 @@ class ServoController:
             time.sleep(self.dwell_time)
             self.servo.setTarget(0, 8000)
             time.sleep(self.dwell_time)
+
+    def pluck(self) -> None:
+        """Move the plucking servo alternating between the two extremes."""
+        target = 4000 if self._pluck_state else 8000
+        self._pluck_state = not self._pluck_state
+        self.servo.setTarget(0, target)
 
     def focus_target(self, target: int) -> None:
         # Notify GUI of the command if a callback is registered.  Exceptions are
