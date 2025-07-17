@@ -300,6 +300,15 @@ def measure_condition() -> None:
                 print(f"No wires satisfy: {expr}")
                 return
             print(f"Measuring wires {wires} matching '{expr}'")
+            for wire in wires:
+                clear_wire_range(
+                    t.config.data_path,
+                    t.config.apa_name,
+                    t.config.layer,
+                    t.config.side,
+                    wire,
+                    wire,
+                )
             t.measure_list(wires, preserve_order=False)
         finally:
             if t is not None:
