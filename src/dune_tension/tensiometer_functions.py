@@ -181,7 +181,16 @@ def measure_list(
     collect_func: Callable[[int, float, float], Optional[float]],
     stop_event: Optional[object] = None,
     preserve_order: bool = False,
+    profile: bool = False,
 ):
+    if profile:
+        import cProfile
+        import pstats
+        import io
+
+        profiler = cProfile.Profile()
+        profiler.enable()
+
     print("Loading wire coordinates...")
     triplets = [
         (w, *get_xy_from_file_func(config, w))
@@ -191,6 +200,8 @@ def measure_list(
 
     if not triplets:
         print("No valid wires with known coordinates.")
+        if profile:
+            profiler.disable()
         return
 
     print("getting current position...")
@@ -205,6 +216,18 @@ def measure_list(
     for wire, x, y in ordered_triplets:
         print(f"Measuring wire {wire} at {x},{y}")
         if check_stop_event(stop_event):
+            if profile:
+                profiler.disable()
+                s = io.StringIO()
+                pstats.Stats(profiler, stream=s).sort_stats("cumulative").print_stats()
+                print(s.getvalue())
             return
         collect_func(wire, x, y)
+
+    if profile:
+        profiler.disable()
+        s = io.StringIO()
+        pstats.Stats(profiler, stream=s).sort_stats("cumulative").print_stats()
+        print(s.getvalue())
+
     print("Done measuring wires", wire_list)
