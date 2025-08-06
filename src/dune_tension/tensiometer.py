@@ -255,7 +255,9 @@ class Tensiometer:
                 )
         print("Done measuring all wires")
 
-    def measure_list(self, wire_list: list[int], preserve_order: bool) -> None:
+    def measure_list(
+        self, wire_list: list[int], preserve_order: bool, profile: bool = False
+    ) -> None:
         measure_list(
             config=self.config,
             wire_list=wire_list,
@@ -268,6 +270,7 @@ class Tensiometer:
             ),
             stop_event=self.stop_event,
             preserve_order=preserve_order,
+            profile=profile,
         )
 
     def _collect_samples(
