@@ -33,7 +33,7 @@ def uploadTensions(apa_name: str, layer: str) -> None:
     #     actionTypeFormID, componentUUID, actionData, connection, headers
     # )
 
-    create_layer_action_id = r"684b4098c0b4887458320c4d"
+    create_layer_action_id = r"6878153a16650c54ae5f74bc"
     # print(f" Successfully performed action with ID: {create_layer_action_id}")
 
     tensions_sideA, tensions_sideB = load_tension_summary(apa_name, layer)
@@ -64,4 +64,4 @@ def uploadTensions(apa_name: str, layer: str) -> None:
 
 
 if __name__ == "__main__":
-    uploadTensions("USAPA7", "V")
+    uploadTensions("USAPA9", "G")

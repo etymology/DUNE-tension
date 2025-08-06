@@ -151,7 +151,6 @@ def create_tensiometer():
         start_servo_loop=servo_controller.start_loop,
         stop_servo_loop=servo_controller.stop_loop,
         focus_wiggle=servo_controller.nudge_focus,
-        servo_trigger=servo_controller.pluck,
     )
 
 
