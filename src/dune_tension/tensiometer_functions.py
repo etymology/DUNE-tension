@@ -181,7 +181,7 @@ def measure_list(
     collect_func: Callable[[int, float, float], Optional[float]],
     stop_event: Optional[object] = None,
     preserve_order: bool = False,
-    profile: bool = False,
+    profile: bool = True,
 ):
     if profile:
         import cProfile
