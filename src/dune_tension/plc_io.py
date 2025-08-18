@@ -3,6 +3,8 @@ import threading
 import time
 from random import gauss
 
+from .geometry import comb_positions
+
 # Global lock to ensure exclusive PLC communication
 PLC_LOCK = threading.RLock()
 
@@ -130,17 +132,36 @@ def goto_xy(
     *,
     speed=300,
     deadzone: float = BACKLASH_DEADZONE,
+    check_comb: bool = True,
 ):
     """Move the winder to a given position.
 
     When reversing X direction, assume the first ``deadzone`` mm of travel does
     not result in motion and track the true position accordingly.
+
+    If the straight line to ``(x_target, y_target)`` would cross any
+    ``comb_positions`` in :mod:`geometry`, the move is broken into three
+    segments: vertically to ``y=0``, horizontally to ``x_target`` and finally
+    vertically to ``y_target``.  ``check_comb`` suppresses this logic for the
+    internal calls implementing these segments.
     """
 
     global _TRUE_XY, _LAST_X_DIR, _X_DEADZONE_LEFT
 
+    if check_comb:
+        cur_x = _TRUE_XY[0]
+        crosses = any(
+            (cur_x < c < x_target) or (x_target < c < cur_x) for c in comb_positions
+        )
+        if crosses:
+            goto_xy(cur_x, 0.0, speed=speed, deadzone=deadzone, check_comb=False)
+            goto_xy(x_target, 0.0, speed=speed, deadzone=deadzone, check_comb=False)
+            return goto_xy(
+                x_target, y_target, speed=speed, deadzone=deadzone, check_comb=False
+            )
+
     with PLC_LOCK:
-        if not (1000 < x_target < 7174 and 0 < y_target < 2680):
+        if not (1000 < x_target < 7174 and 0 <= y_target < 2680):
             print(
                 f"Motion target {x_target},{y_target} out of bounds. Please enter a valid position."
             )
@@ -262,8 +283,12 @@ def spoof_get_xy() -> tuple[float, float]:
     return tuple(_SPOOF_XY)
 
 
-def spoof_goto_xy(x_target: float, y_target: float) -> bool:
-    """Pretend to move the winder and update the spoofed position."""
+def spoof_goto_xy(x_target: float, y_target: float, **_: object) -> bool:
+    """Pretend to move the winder and update the spoofed position.
+
+    Extra keyword arguments are accepted for API compatibility with
+    :func:`goto_xy` but ignored.
+    """
     # Reuse bounds check from :func:`goto_xy` for consistency
     if x_target < 0 or x_target > 7174 or y_target < 0 or y_target > 2680:
         print(f"[spoof] Motion target {x_target},{y_target} out of bounds.")
