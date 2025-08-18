@@ -300,6 +300,36 @@ def test_parse_ranges():
     assert main._parse_ranges("1-3,5") == [(1, 3), (5, 5)]
 
 
+def test_measure_list_parses_ranges(monkeypatch):
+    wires = []
+
+    class DummyTensiometer:
+        def measure_list(self, wire_list, preserve_order=False):
+            wires.extend(wire_list)
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(main, "create_tensiometer", lambda: DummyTensiometer())
+    monkeypatch.setattr(main, "entry_wire_list", DummyGetter("3,5-7,10-9"))
+    monkeypatch.setattr(main, "save_state", lambda: None)
+
+    dummy_plc = types.SimpleNamespace(reset_plc=lambda: None)
+    monkeypatch.setitem(sys.modules, "plc_io", dummy_plc)
+
+    class DummyThread:
+        def __init__(self, target, daemon=True):
+            self.target = target
+
+        def start(self):
+            self.target()
+
+    monkeypatch.setattr(main, "Thread", DummyThread)
+
+    main.measure_list()
+    assert wires == [3, 5, 6, 7, 9, 10]
+
+
 def test_clear_range_invokes_cache(monkeypatch):
     called = []
 

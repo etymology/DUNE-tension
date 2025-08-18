@@ -210,11 +210,10 @@ def measure_list():
         t = None
         try:
             t = create_tensiometer()
-            wire_list = [
-                int(w.strip())
-                for w in entry_wire_list.get().split(",")
-                if w.strip().isdigit()
-            ]
+            ranges = _parse_ranges(entry_wire_list.get())
+            wire_list: list[int] = []
+            for start, end in ranges:
+                wire_list.extend(range(start, end + 1))
             save_state()
             print(f"Measuring wires: {wire_list}")
             t.measure_list(wire_list, preserve_order=False)
