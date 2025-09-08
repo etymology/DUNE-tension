@@ -3,7 +3,7 @@ import threading
 import time
 from random import gauss
 
-from .geometry import comb_positions
+from geometry import comb_positions
 
 # Global lock to ensure exclusive PLC communication
 PLC_LOCK = threading.RLock()
@@ -12,7 +12,7 @@ PLC_LOCK = threading.RLock()
 BACKLASH_DEADZONE = 0.5
 
 # Track our best guess of the true position, accounting for backlash
-_TRUE_XY = [6300.0, 200.0]
+_TRUE_XY = [None, None]
 
 # Track the last X movement direction and remaining deadzone to take up
 _LAST_X_DIR = 0
@@ -148,6 +148,9 @@ def goto_xy(
 
     global _TRUE_XY, _LAST_X_DIR, _X_DEADZONE_LEFT
 
+    if _TRUE_XY[0] is None or _TRUE_XY[1] is None:
+        _TRUE_XY[0], _TRUE_XY[1] = get_xy()
+
     if check_comb:
         cur_x = _TRUE_XY[0]
         crosses = any(
@@ -218,6 +221,7 @@ def reset_plc():
         write_tag("STATE", IDLE_STATE)
         set_speed(0)  # Reset speed to a default value
 
+
 def increment(increment_x, increment_y):
     # Use the cached position to avoid reading tags when possible
     with PLC_LOCK:
@@ -255,7 +259,7 @@ def set_speed(speed: float = 300) -> bool:
         print(f"Failed to set speed: {response['error']}")
         return False
 
-    print(f"Speed set to {speed}")
+    # print(f"Speed set to {speed}")
     return True
 
 

@@ -104,7 +104,8 @@ def clear_outliers(
     sigma: float = 3.0,
     confidence_threshold: float = 0.0,
 ) -> list[int]:
-    """Remove wires with tension more than ``sigma`` standard deviations from the mean.
+    """Remove wires whose tension deviates from the 8-wire centered moving average
+    by more than `sigma` times the *global std of residuals* (tension - rolling mean).
 
     Returns the list of wire numbers removed.
     """
@@ -117,18 +118,31 @@ def clear_outliers(
     )
     subset = df[mask].copy()
     subset["tension"] = pd.to_numeric(subset["tension"], errors="coerce")
+    subset["wire_number"] = pd.to_numeric(subset["wire_number"], errors="coerce")
     subset = subset.dropna(subset=["tension", "wire_number"])
     if subset.empty:
         return []
-    mean = subset["tension"].mean()
-    std = subset["tension"].std()
-    if pd.isna(std) or std == 0:
+
+    # Ensure rolling window follows wire order
+    subset = subset.sort_values("wire_number")
+
+    # 8-wire centered moving average (require full window -> edges will be NaN)
+    rolling_mean = subset["tension"].rolling(window=8, center=True, min_periods=8).mean()
+
+    # Residuals from the rolling mean
+    residuals = subset["tension"] - rolling_mean
+
+    # Global std of residuals (ignore edges with NaN rolling mean)
+    resid_std = residuals.std(skipna=True)
+
+    if pd.isna(resid_std) or resid_std == 0:
         return []
-    outliers = (
-        subset[(subset["tension"] - mean).abs() > sigma * std]["wire_number"]
-        .astype(int)
-        .tolist()
-    )
+
+    # Flag outliers where residual magnitude exceeds sigma * global residual std
+    is_outlier = rolling_mean.notna() & (residuals.abs() > sigma * resid_std)
+    outliers = subset.loc[is_outlier, "wire_number"].astype(int).tolist()
+
     for wire in outliers:
         clear_wire_range(file_path, apa_name, layer, side, wire, wire)
+
     return outliers

@@ -8,7 +8,7 @@ WIRE_DENSITY = 0.000152
 MAX_PASSING_TENSION = 8  # Note the minimum depends on the wire length
 MIN_PHYSICAL_TENSION = 2.5
 MAX_PHYSICAL_TENSION = (
-    7  # considering higher than 10 not possible because of winder tension control
+    8  # considering higher than 10 not possible because of winder tension control
 )
 
 
@@ -62,16 +62,16 @@ def has_cluster(data: Sequence[Any], key: str, n: int) -> list[Any]:
     items and returns the first subset whose ``key`` values have a small
     standard deviation (<0.1).
     """
-
     if len(data) < n:
         return []
+    return data
 
-    for subset in combinations(data, n):
-        values = [
-            item[key] if isinstance(item, dict) else getattr(item, key)
-            for item in subset
-        ]
-        if np.std(values) < 0.3:
-            return list(subset)
+    # for subset in combinations(data, n):
+    #     values = [
+    #         item[key] if isinstance(item, dict) else getattr(item, key)
+    #         for item in subset
+    #     ]
+    #     if np.std(values) < 0.5:
+    #         return list(subset)
 
-    return []
+    # return []

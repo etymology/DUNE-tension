@@ -172,6 +172,7 @@ def measure_calibrate():
                     pass
             try:
                 from plc_io import reset_plc
+
                 reset_plc()
             except Exception:
                 pass
@@ -196,6 +197,7 @@ def measure_auto():
                     pass
             try:
                 from plc_io import reset_plc
+
                 reset_plc()
             except Exception:
                 pass
@@ -225,6 +227,7 @@ def measure_list():
                     pass
             try:
                 from plc_io import reset_plc
+
                 reset_plc()
             except Exception:
                 pass
@@ -316,6 +319,7 @@ def measure_condition() -> None:
                     pass
             try:
                 from plc_io import reset_plc
+
                 reset_plc()
             except Exception:
                 pass
@@ -716,7 +720,9 @@ tk.Label(measure_frame, text="Record Duration (s):").grid(row=9, column=0, stick
 entry_record_duration = tk.Entry(measure_frame)
 entry_record_duration.grid(row=9, column=1)
 
-tk.Label(measure_frame, text="Measuring Duration (s):").grid(row=10, column=0, sticky="e")
+tk.Label(measure_frame, text="Measuring Duration (s):").grid(
+    row=10, column=0, sticky="e"
+)
 entry_measuring_duration = tk.Entry(measure_frame)
 entry_measuring_duration.grid(row=10, column=1)
 
@@ -771,7 +777,6 @@ tk.Button(
     text="Apply Tensions",
     command=set_manual_tension,
 ).grid(row=8, column=2)
-
 
 
 tk.Button(

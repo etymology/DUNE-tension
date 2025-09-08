@@ -5,11 +5,11 @@ import socket
 import sys
 
 # Local Python imports and variables
-# from client_credentials import client_id, client_secret, auth0_domain, db_domain
-client_id = "gu5lUudQsZGbonUCqFXMPGtZHdwOHRxF"
-client_secret = "a9BsmEA58qiHcs6KWDyBHWjYX5Yq2sZqNwBrf4uyDHEbJmv16ifi944t2r-svNEZ"
-auth0_domain = "dunedb-prod.us.auth0.com"
-db_domain = "apa.dunedb.org:443"
+from m2m.client_credentials import client_id, client_secret, auth0_domain, db_domain
+# client_id = "gu5lUudQsZGbonUCqFXMPGtZHdwOHRxF"
+# client_secret = "a9BsmEA58qiHcs6KWDyBHWjYX5Yq2sZqNwBrf4uyDHEbJmv16ifi944t2r-svNEZ"
+# auth0_domain = "dunedb-prod.us.auth0.com"
+# db_domain = "apa.dunedb.org:443"
 
 
 #############################################
@@ -53,6 +53,7 @@ def ConnectToAPI():
         # Split the decoded response by double quotation marks, and then extract and set the access token and token type strings
         # The information in the response will always be in the same order, so we can use hardcoded indices to get the token and token type
         data_splits = data.split('"')
+        print(data_splits)
         access_token, token_type = data_splits[3], data_splits[13]
     except http.client.HTTPException as e:
         print(f" ConnectToAPI() [POST /oauth/token] - HTTP EXCEPTION: {e} \n")
@@ -74,7 +75,7 @@ def ConnectToAPI():
         if db_domain == "localhost:12313":
             connection = http.client.HTTPConnection(db_domain, timeout=10)
         else:
-            connection = http.client.HTTPSConnection(db_domain, timeout=10)
+            connection = http.client.HTTPSConnection(db_domain, timeout=60)
 
         return connection, headers
     else:

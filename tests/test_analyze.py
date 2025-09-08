@@ -40,7 +40,6 @@ def setup_module(module):
                 def tolist(self):
                     return list(self)
 
-
             class DummyDF:
                 def __init__(self, data):
                     self._data = {k: _Column(v) for k, v in data.items()}
@@ -52,12 +51,13 @@ def setup_module(module):
                 def columns(self):
                     return list(self._data.keys())
 
-
             def _read_csv(path):
                 p = Path(path)
                 if not p.exists():
                     raise FileNotFoundError(path)
-                lines = [line.strip() for line in p.read_text().splitlines() if line.strip()]
+                lines = [
+                    line.strip() for line in p.read_text().splitlines() if line.strip()
+                ]
                 headers = lines[0].split(",")
                 cols = {h: [] for h in headers}
                 for line in lines[1:]:

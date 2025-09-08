@@ -14,8 +14,10 @@ sys.modules.setdefault("numpy", numpy_stub)
 geo_stub = types.ModuleType("geometry")
 geo_stub.zone_lookup = lambda x: 1
 
+
 def _raise(*_a, **_k):
     raise ValueError("bad")
+
 
 geo_stub.length_lookup = _raise
 sys.modules["geometry"] = geo_stub

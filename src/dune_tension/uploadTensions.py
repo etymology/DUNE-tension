@@ -63,4 +63,4 @@ def uploadTensions(apa_name: str, layer: str, create_layer_action_id :str) -> No
 
 
 if __name__ == "__main__":
-    uploadTensions("USAPA9", "X",r"6893b25ed36683e2d776108e")
+    uploadTensions("USAPA9*", "G",r"68bf085507c9af803121a611")

@@ -346,7 +346,9 @@ def calibrate_background_noise(sample_rate: int, duration: float = 1.0) -> None:
             "sample_rate": sample_rate,
             "magnitude": noise_mag,
         }
-        _noise_threshold = np.mean(np.abs(noise_sample))  # Set threshold to twice the mean amplitude
+        _noise_threshold = np.mean(
+            np.abs(noise_sample)
+        )  # Set threshold to twice the mean amplitude
         try:
             np.savez(
                 _NOISE_FILTER_PATH,
@@ -401,7 +403,7 @@ def analyze_sample(audio_sample, sample_rate, wire_length):
     tension = tension_lookup(length=wire_length, frequency=frequency)
     tension_ok = tension_pass(tension, wire_length)
     if not tension_ok:
-        for i in [2,3,4]:
+        for i in [2, 3, 4]:
             if tension_pass(tension / i**2, wire_length):
                 tension /= i**2
                 frequency /= i

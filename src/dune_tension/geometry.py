@@ -1,14 +1,13 @@
 # functions related to the geometry of the APA
 # geometry constants
-G_LENGTH = 1.285
-X_LENGTH = 1.273
-COMB_SPACING = 1190
-Y_MIN = 200
+X_MIN = 1058
+X_MAX = 7011
+Y_MIN = 181
 Y_MAX = 2460
 
-X_MIN = 1050
-X_MAX = 7050
-COMB_TOLERANCE = 300
+
+G_LENGTH = 1.285
+X_LENGTH = 1.273
 
 comb_positions = [
     X_MIN,
@@ -18,6 +17,7 @@ comb_positions = [
     5770,
     X_MAX,
 ]
+COMB_SPACING = (X_MIN - X_MAX) / 5
 
 
 def zone_lookup(x) -> int:
@@ -28,10 +28,6 @@ def zone_lookup(x) -> int:
         if pos > x:
             return i
     return 0
-
-
-def zone_x_target(zone: int):
-    return [1635, 2825, 4015, 5185, 6365][zone - 1]
 
 
 def refine_position(
@@ -70,70 +66,17 @@ def refine_position(
             candidates.append((x1, y1))
         if is_in_bounds(x2, y2):
             candidates.append((x2, y2))
-
     if not candidates:
         return (x, y)
 
-    # Choose the candidate furthest from limiting lines
+    low_candidates = [
+        c
+        for c in candidates
+        if c[1] < Y_MAX / 2 and score(c) > COMB_SPACING / 2 * 5.75 / 8
+    ]
+    if low_candidates:
+        return max(low_candidates, key=score)
     return max(candidates, key=score)
-
-
-# def refine_position(x, y, dx, dy):
-#     # Compute t where line crosses vertical boundaries x = c
-#     t_boundaries = [(c - x) / dx for c in comb_positions]
-
-#     # Compute t where line crosses horizontal boundaries y = Y_MIN and Y_MAX
-#     t_boundaries.append((Y_MIN - y) / dy)
-#     t_boundaries.append((Y_MAX - y) / dy)
-
-#     # Sort boundary crossings
-#     t_boundaries.sort()
-
-#     # Compute allowed t range based on staying within the inner region
-#     if dx > 0:
-#         t_xmin = (comb_positions[0] - x) / dx
-#         t_xmax = (comb_positions[-1] - x) / dx
-#     else:
-#         t_xmax = (comb_positions[0] - x) / dx
-#         t_xmin = (comb_positions[-1] - x) / dx
-
-#     if dy > 0:
-#         t_ymin = (Y_MIN - y) / dy
-#         t_ymax = (Y_MAX - y) / dy
-#     else:
-#         t_ymax = (Y_MIN - y) / dy
-#         t_ymin = (Y_MAX - y) / dy
-
-#     # Compute the allowed t interval
-#     t_allowed_min = max(t_xmin, t_ymin)
-#     t_allowed_max = min(t_xmax, t_ymax)
-
-#     # Initialize
-#     max_interval = -1
-#     best_t = 0  # default to original point
-
-#     # Find the largest interval within the allowed range
-#     for i in range(len(t_boundaries) - 1):
-#         t_left = t_boundaries[i]
-#         t_right = t_boundaries[i + 1]
-
-#         # Clip interval to allowed range
-#         clipped_left = max(t_left, t_allowed_min)
-#         clipped_right = min(t_right, t_allowed_max)
-
-#         # If the clipped interval is valid
-#         if clipped_right > clipped_left:
-#             interval = clipped_right - clipped_left
-
-#             if interval > max_interval:
-#                 max_interval = interval
-#                 best_t = 0.5 * (clipped_left + clipped_right)
-
-#     # Compute the corresponding point
-#     best_x = x + dx * best_t
-#     best_y = y + dy * best_t
-
-#     return best_x, best_y
 
 
 def length_lookup(layer: str, wire_number: int, zone: int, taped=False):

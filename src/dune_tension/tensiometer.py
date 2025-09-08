@@ -6,6 +6,7 @@ import numpy as np
 import pandas as pd
 from tension_calculation import calculate_kde_max, tension_plausible
 from random import gauss
+
 try:
     from tension_calculation import has_cluster
 except ImportError:  # fallback for older stubs
@@ -133,11 +134,11 @@ class Tensiometer:
 
         start_x, start_y = self.get_current_xy_position()
         # Wiggle by roughly half the wire pitch to avoid hitting adjacent wires
-        wiggle_width = abs(getattr(self.config, "dy", 5.0) / 10)
+        wiggle_width = abs(getattr(self.config, "dy", 5.0) / 20)
+
         def _run() -> None:
             while self._wiggle_event and self._wiggle_event.is_set():
-
-                self.goto_xy_func(start_x, gauss(start_y,wiggle_width), speed=300)
+                self.goto_xy_func(start_x, gauss(start_y, wiggle_width), speed=300)
                 if self._wiggle_event is not None and not self._wiggle_event.is_set():
                     break
                 time.sleep(0.01)
@@ -225,9 +226,9 @@ class Tensiometer:
             self.config.layer, self.config.side, self.config.flipped
         )
 
-        wires_to_measure[:] = [
-            x for x in wires_to_measure if (x >= 20 if low_numbered_high else x <= 1146)
-        ]
+        # wires_to_measure[:] = [
+        #     x for x in wires_to_measure if (x >= 20 if low_numbered_high else x <= 1140)
+        # ]
 
         print("Measuring missing wires...")
         print(f"Missing wires: {wires_to_measure}")
