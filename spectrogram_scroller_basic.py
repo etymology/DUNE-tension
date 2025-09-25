@@ -179,8 +179,8 @@ class ScrollingSpectrogram:
         ac_win_sec: float = 0.5,
         # CREPE
         enable_pitch: bool = True,
-        crepe_capacity: str = "small",
-        crepe_step_ms: int = 20,
+        crepe_capacity: str = "tiny",
+        crepe_step_ms: int = 200,
         crepe_win_sec: float = 0.5,
         crepe_freq_boost: float = 2.0,
     ):
@@ -767,6 +767,24 @@ class ScrollingSpectrogram:
         eff_step_ms = max(1, int(round(self.crepe_step_ms / factor)))
         return compressed, eff_sr, eff_step_ms
 
+    def _crepe_prepare_input(self, x: np.ndarray):
+        factor = self.crepe_freq_boost
+        if factor <= 1.0 or x.size <= 1:
+            return x, float(self.sr), int(self.crepe_step_ms)
+
+        out_len = max(1, int(np.floor(x.size / factor)))
+        if out_len == x.size:
+            return x, float(self.sr), int(self.crepe_step_ms)
+
+        src_idx = np.arange(x.size, dtype=np.float32)
+        tgt_idx = np.arange(out_len, dtype=np.float32) * factor
+        tgt_idx = np.clip(tgt_idx, 0.0, src_idx[-1])
+        compressed = np.interp(tgt_idx, src_idx, x.astype(np.float32)).astype(np.float32)
+
+        eff_sr = float(self.sr) * factor
+        eff_step_ms = max(1, int(round(self.crepe_step_ms / factor)))
+        return compressed, eff_sr, eff_step_ms
+
     def _run_crepe_once(self):
         if not self.enable_pitch:
             return np.nan, 0.0, None
@@ -925,7 +943,7 @@ def parse_args():
         default="small",
         choices=["tiny", "small", "medium", "large", "full"],
     )
-    ap.add_argument("--crepe-step-ms", type=int, default=20)
+    ap.add_argument("--crepe-step-ms", type=int, default=500)
     ap.add_argument("--pitch-win", type=float, default=0.5)
     ap.add_argument("--crepe-freq-boost", type=float, default=2.0)
     return ap.parse_args()
