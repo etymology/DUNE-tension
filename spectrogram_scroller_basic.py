@@ -300,12 +300,7 @@ class ScrollingSpectrogram:
             self.pitch_activation,
             origin="lower",
             aspect="auto",
-            extent=(
-                self.pitch_freq_bins[0],
-                self.pitch_freq_bins[-1],
-                -self.window_sec,
-                0.0,
-            ),
+            extent=(0.0, 1.0, -self.window_sec, 0.0),
             interpolation="nearest",
             cmap="viridis",
             vmin=0.0,
@@ -315,8 +310,7 @@ class ScrollingSpectrogram:
             self.pitch_im, ax=self.ax_pitch, fraction=0.046, pad=0.04
         )
         self.pitch_cbar.set_label("CREPE confidence")
-        self.ax_pitch.set_xlim(self.min_freq, self.max_freq)
-        self.ax_pitch.set_ylim(-self.window_sec, 0.0)  # newest at top (0)
+        self._refresh_pitch_axes()
         self.ax_pitch.set_xlabel("Pitch (Hz)")
         self.ax_pitch.set_ylabel("Time (s)")
         self.ax_pitch.grid(True, alpha=0.25)
@@ -387,6 +381,21 @@ class ScrollingSpectrogram:
         elif event.key == "r":
             self.profile_noise(self.noise_sec, show_status=True)
 
+    def _refresh_pitch_axes(self):
+        if self.pitch_freq_bins.size > 0:
+            xmin = float(self.pitch_freq_bins[0])
+            xmax = float(self.pitch_freq_bins[-1])
+            if not np.isfinite(xmin) or not np.isfinite(xmax) or xmax <= xmin:
+                xmin = 0.0
+                xmax = max(1.0, float(self.max_freq))
+        else:
+            xmin = 0.0
+            xmax = max(1.0, float(self.max_freq))
+
+        self.ax_pitch.set_xlim(xmin, xmax)
+        self.ax_pitch.set_ylim(-self.window_sec, 0.0)
+        self.pitch_im.set_extent((xmin, xmax, -self.window_sec, 0.0))
+
     def _update_freq_axis(self):
         # Spectrogram/Spectrum frequency dimension updates
         self.max_bin = np.searchsorted(self.freqs, self.max_freq, side="right")
@@ -425,7 +434,7 @@ class ScrollingSpectrogram:
 
         # Rebuild Δf axis; update pitch x-limits
         self._rebuild_facf_axis()
-        self.ax_pitch.set_xlim(self.min_freq, self.max_freq)
+        self._refresh_pitch_axes()
 
         self.fig.canvas.draw_idle()
 
@@ -450,15 +459,7 @@ class ScrollingSpectrogram:
             new_pitch[-copy_rows:, :] = self.pitch_activation[-copy_rows:, :]
             self.pitch_activation = new_pitch
             self.pitch_im.set_data(self.pitch_activation)
-        self.ax_pitch.set_ylim(-self.window_sec, 0.0)
-        self.pitch_im.set_extent(
-            (
-                self.pitch_freq_bins[0],
-                self.pitch_freq_bins[-1],
-                -self.window_sec,
-                0.0,
-            )
-        )
+        self._refresh_pitch_axes()
 
         self.fig.canvas.draw_idle()
 
@@ -746,14 +747,25 @@ class ScrollingSpectrogram:
         self.pitch_activation = new_pitch
         self.pitch_freq_bins = new_freqs
         self.pitch_im.set_data(self.pitch_activation)
-        self.pitch_im.set_extent(
-            (
-                self.pitch_freq_bins[0],
-                self.pitch_freq_bins[-1],
-                -self.window_sec,
-                0.0,
-            )
-        )
+        self._refresh_pitch_axes()
+
+    def _crepe_prepare_input(self, x: np.ndarray):
+        factor = self.crepe_freq_boost
+        if factor <= 1.0 or x.size <= 1:
+            return x, float(self.sr), int(self.crepe_step_ms)
+
+        out_len = max(1, int(np.floor(x.size / factor)))
+        if out_len == x.size:
+            return x, float(self.sr), int(self.crepe_step_ms)
+
+        src_idx = np.arange(x.size, dtype=np.float32)
+        tgt_idx = np.arange(out_len, dtype=np.float32) * factor
+        tgt_idx = np.clip(tgt_idx, 0.0, src_idx[-1])
+        compressed = np.interp(tgt_idx, src_idx, x.astype(np.float32)).astype(np.float32)
+
+        eff_sr = float(self.sr) * factor
+        eff_step_ms = max(1, int(round(self.crepe_step_ms / factor)))
+        return compressed, eff_sr, eff_step_ms
 
     def _crepe_prepare_input(self, x: np.ndarray):
         factor = self.crepe_freq_boost
@@ -790,7 +802,6 @@ class ScrollingSpectrogram:
                 x_aug,
                 crepe_sr,
                 step_size=crepe_step_ms,
-
                 model_capacity=self.crepe_capacity,
                 viterbi=True,
                 verbose=0,
