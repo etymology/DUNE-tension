@@ -34,11 +34,34 @@ except Exception:
 try:
     import crepe  # https://github.com/marl/crepe
 
+    try:
+        from crepe.core import FREQUENCY_BINS as _CREPE_FREQ_BINS
+    except Exception:
+        _CREPE_FREQ_BINS = None
+
     _HAS_CREPE = True
 except Exception:
     _HAS_CREPE = False
+    _CREPE_FREQ_BINS = None
 
 EPS = 1e-12
+
+CREPE_DEFAULT_MIN_HZ = 32.70319566257483  # ~= C1
+CREPE_DEFAULT_MAX_HZ = 1975.533205024496  # ~= B6
+
+
+def _make_crepe_freq_axis(n_bins: int) -> np.ndarray:
+    if n_bins <= 0:
+        return np.zeros(0, dtype=np.float32)
+    if _CREPE_FREQ_BINS is not None:
+        base = np.asarray(_CREPE_FREQ_BINS, dtype=np.float32)
+        if base.size == n_bins:
+            return base.copy()
+        x = np.linspace(0, base.size - 1, n_bins, dtype=np.float32)
+        idx = np.arange(base.size, dtype=np.float32)
+        return np.interp(x, idx, base).astype(np.float32)
+    axis = np.geomspace(CREPE_DEFAULT_MIN_HZ, CREPE_DEFAULT_MAX_HZ, n_bins)
+    return axis.astype(np.float32)
 
 
 def dbfs(x: np.ndarray) -> np.ndarray:
@@ -146,7 +169,7 @@ class ScrollingSpectrogram:
         samplerate: int = 44100,
         fft_size: int = 8192,
         hop: int = 512,
-        window_sec: float = 3.0,
+        window_sec: float = 5.0,
         max_freq: float = 2000.0,
         db_range: float = 80.0,
         enable_noise_filter: bool = True,
@@ -197,19 +220,26 @@ class ScrollingSpectrogram:
         self.acf_max_lag_s = 1.0 / self.min_freq
         self.acf_max_lag_samps = max(1, int(round(self.acf_max_lag_s * self.sr)))
 
-        # Figure: 6 rows (spec | spectrum | time-ACF | freq-ACF | freq-ACF-ACF | pitch)
-        self.fig = plt.figure(figsize=(10, 15))
+        # Figure: top row splits spectrogram & CREPE, remaining rows span both columns
+        self.fig = plt.figure(figsize=(14, 15))
         gs = self.fig.add_gridspec(
-            nrows=6, ncols=1, height_ratios=[3, 1, 1, 1, 1, 1], hspace=0.55
+            nrows=5,
+            ncols=2,
+            height_ratios=[3, 1, 1, 1, 1],
+            width_ratios=[1, 1],
+            hspace=0.55,
+            wspace=0.3,
         )
         self.ax_spec = self.fig.add_subplot(gs[0, 0])
-        self.ax_line = self.fig.add_subplot(gs[1, 0])
-        self.ax_acf = self.fig.add_subplot(gs[2, 0])
-        self.ax_facf = self.fig.add_subplot(gs[3, 0])  # frequency-domain ACF vs Δf
+        self.ax_pitch = self.fig.add_subplot(gs[0, 1])
+        self.ax_line = self.fig.add_subplot(gs[1, :])
+        self.ax_acf = self.fig.add_subplot(gs[2, :])
+        self.ax_facf = self.fig.add_subplot(
+            gs[3, :]
+        )  # frequency-domain ACF vs Δf
         self.ax_facf2 = self.fig.add_subplot(
-            gs[4, 0]
+            gs[4, :]
         )  # NEW: autocorr of (frequency-domain ACF) vs Δf
-        self.ax_pitch = self.fig.add_subplot(gs[5, 0])
 
         # --- Spectrogram image: X=freq, Y=time (scroll UP)
         # extent: x [0..max_freq], y [-window..0]; origin lower => top is 0 (newest)
@@ -260,24 +290,27 @@ class ScrollingSpectrogram:
         self.crepe_capacity = str(crepe_capacity)
         self.crepe_step_ms = int(crepe_step_ms)
         self.crepe_win_sec = float(crepe_win_sec)
-        # One dot per time row
-        self.pitch_track_hz = np.full(self.n_rows, np.nan, dtype=np.float32)
-        self.pitch_conf = np.zeros(self.n_rows, dtype=np.float32)
-        self.time_axis_rows = np.linspace(
-            -self.window_sec, 0.0, self.n_rows, dtype=np.float32
+        self.pitch_freq_bins = _make_crepe_freq_axis(360)
+        self.pitch_activation = np.zeros(
+            (self.n_rows, self.pitch_freq_bins.size), dtype=np.float32
         )
-        # scatter: offsets as (x=freq, y=time)
-        self.pitch_scatter = self.ax_pitch.scatter(
-            self.pitch_track_hz,
-            self.time_axis_rows,
-            c=self.pitch_conf,
-            s=14,
+        self.pitch_im = self.ax_pitch.imshow(
+            self.pitch_activation,
+            origin="lower",
+            aspect="auto",
+            extent=(
+                self.pitch_freq_bins[0],
+                self.pitch_freq_bins[-1],
+                -self.window_sec,
+                0.0,
+            ),
+            interpolation="nearest",
             cmap="viridis",
             vmin=0.0,
             vmax=1.0,
         )
         self.pitch_cbar = self.fig.colorbar(
-            self.pitch_scatter, ax=self.ax_pitch, fraction=0.046, pad=0.04
+            self.pitch_im, ax=self.ax_pitch, fraction=0.046, pad=0.04
         )
         self.pitch_cbar.set_label("CREPE confidence")
         self.ax_pitch.set_xlim(self.min_freq, self.max_freq)
@@ -406,22 +439,24 @@ class ScrollingSpectrogram:
         # Update spectrogram extent (y axis)
         self.im.set_extent((0.0, self.freqs[self.max_bin - 1], -self.window_sec, 0.0))
 
-        # Rebuild pitch buffers to match rows
-        new_pitch = np.full(self.n_rows, np.nan, dtype=np.float32)
-        new_conf = np.zeros(self.n_rows, dtype=np.float32)
-        copy_rows = min(len(self.pitch_track_hz), self.n_rows)
-        new_pitch[-copy_rows:] = self.pitch_track_hz[-copy_rows:]
-        new_conf[-copy_rows:] = self.pitch_conf[-copy_rows:]
-        self.pitch_track_hz = new_pitch
-        self.pitch_conf = new_conf
-        self.time_axis_rows = np.linspace(
-            -self.window_sec, 0.0, self.n_rows, dtype=np.float32
-        )
+        # Rebuild pitch activation buffer to match rows
+        if self.pitch_activation.shape[0] != self.n_rows:
+            new_pitch = np.zeros(
+                (self.n_rows, self.pitch_activation.shape[1]), dtype=np.float32
+            )
+            copy_rows = min(self.pitch_activation.shape[0], self.n_rows)
+            new_pitch[-copy_rows:, :] = self.pitch_activation[-copy_rows:, :]
+            self.pitch_activation = new_pitch
+            self.pitch_im.set_data(self.pitch_activation)
         self.ax_pitch.set_ylim(-self.window_sec, 0.0)
-
-        # Update pitch scatter offsets/colors
-        self.pitch_scatter.set_offsets(np.c_[self.pitch_track_hz, self.time_axis_rows])
-        self.pitch_scatter.set_array(self.pitch_conf)
+        self.pitch_im.set_extent(
+            (
+                self.pitch_freq_bins[0],
+                self.pitch_freq_bins[-1],
+                -self.window_sec,
+                0.0,
+            )
+        )
 
         self.fig.canvas.draw_idle()
 
@@ -696,19 +731,41 @@ class ScrollingSpectrogram:
         self._facf2_legend = self.ax_facf2.legend(loc="upper right", framealpha=0.3)
 
     # -------- CREPE pitch (X=freq, Y=time ↑) --------
+
+    def _ensure_pitch_activation_bins(self, n_bins: int):
+        n_bins = max(1, int(n_bins))
+        if self.pitch_activation.shape[1] == n_bins:
+            return
+        new_freqs = _make_crepe_freq_axis(n_bins)
+        new_pitch = np.zeros((self.n_rows, n_bins), dtype=np.float32)
+        min_cols = min(self.pitch_activation.shape[1], n_bins)
+        if min_cols > 0:
+            new_pitch[:, :min_cols] = self.pitch_activation[:, :min_cols]
+        self.pitch_activation = new_pitch
+        self.pitch_freq_bins = new_freqs
+        self.pitch_im.set_data(self.pitch_activation)
+        self.pitch_im.set_extent(
+            (
+                self.pitch_freq_bins[0],
+                self.pitch_freq_bins[-1],
+                -self.window_sec,
+                0.0,
+            )
+        )
+
     def _run_crepe_once(self):
         if not self.enable_pitch:
-            return np.nan, 0.0
+            return np.nan, 0.0, None
         now = time.time()
         if now - self._last_crepe_run < self._crepe_min_interval:
             return None
         if self.td_buf.size < int(self.crepe_win_sec * self.sr):
-            return np.nan, 0.0
+            return np.nan, 0.0, None
         self._last_crepe_run = now
         nwin = int(self.crepe_win_sec * self.sr)
         x = self.td_buf[-nwin:].astype(np.float32)
         try:
-            _, f0, c, _ = crepe.predict(
+            _, f0, c, activation = crepe.predict(
                 x,
                 self.sr,
                 step_size=self.crepe_step_ms,
@@ -720,24 +777,33 @@ class ScrollingSpectrogram:
             c_last = float(c[-1]) if c.size else 0.0
             if not np.isfinite(f0_last) or f0_last <= 0:
                 f0_last, c_last = np.nan, 0.0
-            return f0_last, c_last
+            act_last = None
+            if activation is not None:
+                activation = np.asarray(activation)
+                act_last = activation[-1] if activation.ndim >= 1 else activation
+            return f0_last, c_last, act_last
         except Exception:
             self.enable_pitch = False
-            return np.nan, 0.0
+            return np.nan, 0.0, None
 
     def _update_pitch_plot(self):
         result = self._run_crepe_once()
         if result is None:  # throttled
             return
-        f0_hz, conf = result
-        # Scroll UP: roll rows left (-1 puts newest at end which maps to top via extent)
-        self.pitch_track_hz = np.roll(self.pitch_track_hz, -1)
-        self.pitch_conf = np.roll(self.pitch_conf, -1)
-        self.pitch_track_hz[-1] = f0_hz
-        self.pitch_conf[-1] = conf
-        # Update scatter: offsets are (x=freq, y=time)
-        self.pitch_scatter.set_offsets(np.c_[self.pitch_track_hz, self.time_axis_rows])
-        self.pitch_scatter.set_array(self.pitch_conf)
+        _, _, activation = result
+        if activation is None:
+            activation = np.zeros(self.pitch_activation.shape[1], dtype=np.float32)
+        activation = np.asarray(activation, dtype=np.float32).reshape(-1)
+        if activation.size == 0:
+            activation = np.zeros(self.pitch_activation.shape[1], dtype=np.float32)
+        if activation.size != self.pitch_activation.shape[1]:
+            self._ensure_pitch_activation_bins(activation.size)
+        activation = np.nan_to_num(activation, nan=0.0, posinf=1.0, neginf=0.0)
+        activation = np.clip(activation, 0.0, 1.0)
+        # Scroll UP: roll rows left, newest row at end (top in plot via extent)
+        self.pitch_activation = np.roll(self.pitch_activation, -1, axis=0)
+        self.pitch_activation[-1, :] = activation
+        self.pitch_im.set_data(self.pitch_activation)
 
     # -------- Main processing --------
     def process_new_samples(self, samples: np.ndarray):
@@ -825,7 +891,7 @@ def parse_args():
     ap.add_argument("--samplerate", type=int, default=44100)
     ap.add_argument("--fft", type=int, default=8192)
     ap.add_argument("--hop", type=int, default=512)
-    ap.add_argument("--window", type=float, default=10.0)
+    ap.add_argument("--window", type=float, default=5.0)
     ap.add_argument("--max-freq", type=float, default=2000.0)
     ap.add_argument("--db-range", type=float, default=80.0)
     ap.add_argument("--device", type=str, default=None)
