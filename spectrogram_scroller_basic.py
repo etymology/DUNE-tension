@@ -520,6 +520,38 @@ class ScrollingSpectrogram:
             return np.array([], dtype=int)
         return np.where((y[1:-1] > y[:-2]) & (y[1:-1] >= y[2:]))[0] + 1
 
+    def _compute_prominence(self, y: np.ndarray, peaks: np.ndarray) -> np.ndarray:
+        """Approximate peak prominence for each index in ``peaks``."""
+        if peaks.size == 0:
+            return np.zeros(0, dtype=np.float32)
+
+        prominences = np.zeros(peaks.size, dtype=np.float32)
+        n = y.size
+        for i, peak_idx in enumerate(peaks):
+            height = float(y[peak_idx])
+
+            left_min = height
+            j = int(peak_idx)
+            while j > 0:
+                j -= 1
+                if y[j] > height:
+                    break
+                if y[j] < left_min:
+                    left_min = float(y[j])
+
+            right_min = height
+            j = int(peak_idx)
+            while j < n - 1:
+                j += 1
+                if y[j] > height:
+                    break
+                if y[j] < right_min:
+                    right_min = float(y[j])
+
+            prominences[i] = height - max(left_min, right_min)
+
+        return prominences
+
     def _update_acf_plot(self):
         if self.td_buf.size < self.ac_win_samps:
             return
@@ -554,27 +586,32 @@ class ScrollingSpectrogram:
                 peak_freq = float(self.acf_freq_axis_hz[gi])
                 p2p = float("nan")
             else:
-                gi_rel = int(np.argmax(self.acf_vals[:L][peaks]))
-                gi = int(peaks[gi_rel])
+                prominences = self._compute_prominence(self.acf_vals[:L], peaks)
+                order = np.argsort(prominences)[::-1]
+                gi = int(peaks[order[0]])
                 peak_freq = float(self.acf_freq_axis_hz[gi])
                 if peaks.size >= 2:
-                    sort_idx = np.argsort(self.acf_vals[:L][peaks])[::-1]
-                    p1 = int(peaks[sort_idx[0]])
-                    p2 = int(peaks[sort_idx[1]])
+                    p1 = int(peaks[order[0]])
+                    p2 = int(peaks[order[1]])
                     p2p = abs(
                         float(self.acf_freq_axis_hz[p1] - self.acf_freq_axis_hz[p2])
                     )
                 else:
                     p2p = float("nan")
 
-        # ---- Legend metrics: global max frequency & height delta (0..2)
+        # ---- Legend metrics: most prominent frequency & height delta (0..2)
         if self.acf_freq_axis_hz.size > 0 and np.any(np.isfinite(self.acf_vals)):
             # restrict to the portion actually plotted (finite values)
             mask_finite = np.isfinite(self.acf_vals)
             vals = self.acf_vals[mask_finite]
             freqs_plot = self.acf_freq_axis_hz[mask_finite]
             if vals.size > 0:
-                gi = int(np.argmax(vals))
+                peaks = self._find_local_peaks(vals)
+                if peaks.size > 0:
+                    prominences = self._compute_prominence(vals, peaks)
+                    gi = int(peaks[int(np.argmax(prominences))])
+                else:
+                    gi = int(np.argmax(vals))
                 peak_freq = float(freqs_plot[gi])
                 ymax = float(vals[gi])
                 ymin = float(np.min(vals))
@@ -588,7 +625,7 @@ class ScrollingSpectrogram:
 
         # Update artist & legend
         self.acf_plot.set_data(self.acf_freq_axis_hz, self.acf_vals)
-        label = f"ACF  |  max≈{peak_freq:.1f} Hz  |  Δheight≈{dheight:.2f}"
+        label = f"ACF  |  prom≈{peak_freq:.1f} Hz  |  Δheight≈{dheight:.2f}"
         self.acf_plot.set_label(label)
         if hasattr(self, "_acf_legend") and self._acf_legend:
             self._acf_legend.remove()
@@ -657,16 +694,25 @@ class ScrollingSpectrogram:
             self.facf_vals[:] = vals
             self.facf_plot.set_data(self.facf_shift_axis_hz, self.facf_vals)
 
-        # ---- Legend: first peak Δf
+        # ---- Legend: maximum Δf within [min_freq, max_freq]
         peak_hz = float("nan")
-        if self.facf_vals.size > 3:
-            peaks = self._find_local_peaks(self.facf_vals)
-            if peaks.size > 0:
-                # take the first peak (smallest Δf > 0)
-                peak_hz = float(self.facf_shift_axis_hz[peaks[0]])
-        label = (
-            f"FACF  |  1st peak≈{peak_hz:.1f} Hz" if np.isfinite(peak_hz) else "FACF"
-        )
+        peak_val = float("nan")
+        if self.facf_vals.size > 0:
+            mask = (
+                np.isfinite(self.facf_vals)
+                & (self.facf_shift_axis_hz >= self.min_freq)
+                & (self.facf_shift_axis_hz <= self.max_freq)
+            )
+            if np.any(mask):
+                vals = self.facf_vals[mask]
+                freqs = self.facf_shift_axis_hz[mask]
+                gi = int(np.argmax(vals))
+                peak_hz = float(freqs[gi])
+                peak_val = float(vals[gi])
+        if np.isfinite(peak_hz):
+            label = f"FACF  |  max≈{peak_hz:.1f} Hz  |  val≈{peak_val:.2f}"
+        else:
+            label = "FACF"
         self.facf_plot.set_label(label)
         if hasattr(self, "_facf_legend") and self._facf_legend:
             self._facf_legend.remove()
@@ -719,15 +765,25 @@ class ScrollingSpectrogram:
             self.facf2_vals[:] = vals
 
         self.facf2_plot.set_data(self.facf_shift_axis_hz, self.facf2_vals)
-        # ---- Legend: first peak Δf
+        # ---- Legend: maximum Δf within [min_freq, max_freq]
         peak_hz = float("nan")
-        if self.facf2_vals.size > 3:
-            peaks = self._find_local_peaks(self.facf2_vals)
-            if peaks.size > 0:
-                peak_hz = float(self.facf_shift_axis_hz[peaks[0]])
-        label = (
-            f"FACF²  |  1st peak≈{peak_hz:.1f} Hz" if np.isfinite(peak_hz) else "FACF²"
-        )
+        peak_val = float("nan")
+        if self.facf2_vals.size > 0:
+            mask = (
+                np.isfinite(self.facf2_vals)
+                & (self.facf_shift_axis_hz >= self.min_freq)
+                & (self.facf_shift_axis_hz <= self.max_freq)
+            )
+            if np.any(mask):
+                vals = self.facf2_vals[mask]
+                freqs = self.facf_shift_axis_hz[mask]
+                gi = int(np.argmax(vals))
+                peak_hz = float(freqs[gi])
+                peak_val = float(vals[gi])
+        if np.isfinite(peak_hz):
+            label = f"FACF²  |  max≈{peak_hz:.1f} Hz  |  val≈{peak_val:.2f}"
+        else:
+            label = "FACF²"
         self.facf2_plot.set_label(label)
         if hasattr(self, "_facf2_legend") and self._facf2_legend:
             self._facf2_legend.remove()
