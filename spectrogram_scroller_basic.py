@@ -179,8 +179,8 @@ class ScrollingSpectrogram:
         ac_win_sec: float = 0.5,
         # CREPE
         enable_pitch: bool = True,
-        crepe_capacity: str = "small",
-        crepe_step_ms: int = 20,
+        crepe_capacity: str = "tiny",
+        crepe_step_ms: int = 200,
         crepe_win_sec: float = 0.5,
     ):
         self.source = source
@@ -908,7 +908,7 @@ def parse_args():
         default="small",
         choices=["tiny", "small", "medium", "large", "full"],
     )
-    ap.add_argument("--crepe-step-ms", type=int, default=20)
+    ap.add_argument("--crepe-step-ms", type=int, default=500)
     ap.add_argument("--pitch-win", type=float, default=0.5)
     return ap.parse_args()
 
