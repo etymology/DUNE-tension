@@ -169,7 +169,7 @@ class ScrollingSpectrogram:
         samplerate: int = 44100,
         fft_size: int = 8192,
         hop: int = 512,
-        window_sec: float = 3.0,
+        window_sec: float = 5.0,
         max_freq: float = 2000.0,
         db_range: float = 80.0,
         enable_noise_filter: bool = True,
@@ -220,19 +220,26 @@ class ScrollingSpectrogram:
         self.acf_max_lag_s = 1.0 / self.min_freq
         self.acf_max_lag_samps = max(1, int(round(self.acf_max_lag_s * self.sr)))
 
-        # Figure: 6 rows (spec | spectrum | time-ACF | freq-ACF | freq-ACF-ACF | pitch)
-        self.fig = plt.figure(figsize=(10, 15))
+        # Figure: top row splits spectrogram & CREPE, remaining rows span both columns
+        self.fig = plt.figure(figsize=(14, 15))
         gs = self.fig.add_gridspec(
-            nrows=6, ncols=1, height_ratios=[3, 1, 1, 1, 1, 1], hspace=0.55
+            nrows=5,
+            ncols=2,
+            height_ratios=[3, 1, 1, 1, 1],
+            width_ratios=[1, 1],
+            hspace=0.55,
+            wspace=0.3,
         )
         self.ax_spec = self.fig.add_subplot(gs[0, 0])
-        self.ax_line = self.fig.add_subplot(gs[1, 0])
-        self.ax_acf = self.fig.add_subplot(gs[2, 0])
-        self.ax_facf = self.fig.add_subplot(gs[3, 0])  # frequency-domain ACF vs Δf
+        self.ax_pitch = self.fig.add_subplot(gs[0, 1])
+        self.ax_line = self.fig.add_subplot(gs[1, :])
+        self.ax_acf = self.fig.add_subplot(gs[2, :])
+        self.ax_facf = self.fig.add_subplot(
+            gs[3, :]
+        )  # frequency-domain ACF vs Δf
         self.ax_facf2 = self.fig.add_subplot(
-            gs[4, 0]
+            gs[4, :]
         )  # NEW: autocorr of (frequency-domain ACF) vs Δf
-        self.ax_pitch = self.fig.add_subplot(gs[5, 0])
 
         # --- Spectrogram image: X=freq, Y=time (scroll UP)
         # extent: x [0..max_freq], y [-window..0]; origin lower => top is 0 (newest)
@@ -884,7 +891,7 @@ def parse_args():
     ap.add_argument("--samplerate", type=int, default=44100)
     ap.add_argument("--fft", type=int, default=8192)
     ap.add_argument("--hop", type=int, default=512)
-    ap.add_argument("--window", type=float, default=10.0)
+    ap.add_argument("--window", type=float, default=5.0)
     ap.add_argument("--max-freq", type=float, default=2000.0)
     ap.add_argument("--db-range", type=float, default=80.0)
     ap.add_argument("--device", type=str, default=None)
