@@ -182,6 +182,7 @@ class ScrollingSpectrogram:
         crepe_capacity: str = "small",
         crepe_step_ms: int = 20,
         crepe_win_sec: float = 0.5,
+        crepe_freq_boost: float = 2.0,
     ):
         self.source = source
         self.sr = samplerate
@@ -290,7 +291,8 @@ class ScrollingSpectrogram:
         self.crepe_capacity = str(crepe_capacity)
         self.crepe_step_ms = int(crepe_step_ms)
         self.crepe_win_sec = float(crepe_win_sec)
-        self.pitch_freq_bins = _make_crepe_freq_axis(360)
+        self.crepe_freq_boost = max(1.0, float(crepe_freq_boost))
+        self.pitch_freq_bins = _make_crepe_freq_axis(360) / self.crepe_freq_boost
         self.pitch_activation = np.zeros(
             (self.n_rows, self.pitch_freq_bins.size), dtype=np.float32
         )
@@ -736,7 +738,7 @@ class ScrollingSpectrogram:
         n_bins = max(1, int(n_bins))
         if self.pitch_activation.shape[1] == n_bins:
             return
-        new_freqs = _make_crepe_freq_axis(n_bins)
+        new_freqs = _make_crepe_freq_axis(n_bins) / self.crepe_freq_boost
         new_pitch = np.zeros((self.n_rows, n_bins), dtype=np.float32)
         min_cols = min(self.pitch_activation.shape[1], n_bins)
         if min_cols > 0:
@@ -753,6 +755,20 @@ class ScrollingSpectrogram:
             )
         )
 
+    def _crepe_time_compress(self, x: np.ndarray) -> np.ndarray:
+        factor = self.crepe_freq_boost
+        if factor <= 1.0 or x.size <= 1:
+            return x
+        out_len = max(1, int(np.floor(x.size / factor)))
+        if out_len == x.size:
+            return x
+        src_idx = np.arange(x.size, dtype=np.float32)
+        tgt_idx = np.arange(out_len, dtype=np.float32) * factor
+        # Guard to stay within range; np.interp requires increasing order
+        tgt_idx = np.clip(tgt_idx, 0.0, src_idx[-1])
+        compressed = np.interp(tgt_idx, src_idx, x.astype(np.float32))
+        return compressed.astype(np.float32)
+
     def _run_crepe_once(self):
         if not self.enable_pitch:
             return np.nan, 0.0, None
@@ -764,9 +780,10 @@ class ScrollingSpectrogram:
         self._last_crepe_run = now
         nwin = int(self.crepe_win_sec * self.sr)
         x = self.td_buf[-nwin:].astype(np.float32)
+        x_aug = self._crepe_time_compress(x)
         try:
             _, f0, c, activation = crepe.predict(
-                x,
+                x_aug,
                 self.sr,
                 step_size=self.crepe_step_ms,
                 model_capacity=self.crepe_capacity,
@@ -777,6 +794,8 @@ class ScrollingSpectrogram:
             c_last = float(c[-1]) if c.size else 0.0
             if not np.isfinite(f0_last) or f0_last <= 0:
                 f0_last, c_last = np.nan, 0.0
+            else:
+                f0_last /= self.crepe_freq_boost
             act_last = None
             if activation is not None:
                 activation = np.asarray(activation)
@@ -910,6 +929,7 @@ def parse_args():
     )
     ap.add_argument("--crepe-step-ms", type=int, default=20)
     ap.add_argument("--pitch-win", type=float, default=0.5)
+    ap.add_argument("--crepe-freq-boost", type=float, default=2.0)
     return ap.parse_args()
 
 
@@ -944,6 +964,7 @@ def main():
         crepe_capacity=args.crepe_capacity,
         crepe_step_ms=args.crepe_step_ms,
         crepe_win_sec=args.pitch_win,
+        crepe_freq_boost=args.crepe_freq_boost,
     )
     vis.run()
 
