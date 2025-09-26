@@ -1,4 +1,5 @@
 """CLI for recording audio and comparing pitch detection methods."""
+
 from __future__ import annotations
 
 import argparse
@@ -102,7 +103,9 @@ def record_noise_sample(cfg: PitchCompareConfig) -> np.ndarray:
         )
 
     print(f"[INFO] Recording {cfg.noise_duration:.1f}s of background noise...")
-    noise = sd.rec(duration_samples, samplerate=cfg.sample_rate, channels=1, dtype="float32")
+    noise = sd.rec(
+        duration_samples, samplerate=cfg.sample_rate, channels=1, dtype="float32"
+    )
     sd.wait()
     return np.squeeze(noise).astype(np.float32)
 
@@ -119,14 +122,20 @@ def load_audio(path: Path, target_sr: int) -> tuple[np.ndarray, int]:
         if audio.ndim > 1:
             audio = audio.mean(axis=1)
         if audio.dtype != np.float32:
-            max_val = np.iinfo(audio.dtype).max if np.issubdtype(audio.dtype, np.integer) else 1.0
+            max_val = (
+                np.iinfo(audio.dtype).max
+                if np.issubdtype(audio.dtype, np.integer)
+                else 1.0
+            )
             audio = audio.astype(np.float32) / max_val
     if sr != target_sr:
         if librosa is None:
             raise RuntimeError(
                 "librosa is required to resample audio but is not available."
             )
-        audio = librosa.resample(audio.astype(np.float32), orig_sr=sr, target_sr=target_sr)
+        audio = librosa.resample(
+            audio.astype(np.float32), orig_sr=sr, target_sr=target_sr
+        )
         sr = target_sr
     return audio.astype(np.float32), sr
 
@@ -134,7 +143,9 @@ def load_audio(path: Path, target_sr: int) -> tuple[np.ndarray, int]:
 def acquire_audio(cfg: PitchCompareConfig, noise_rms: float) -> np.ndarray:
     if cfg.input_mode == "file":
         if cfg.input_audio_path is None:
-            raise ValueError("input_audio_path must be provided when input_mode is 'file'")
+            raise ValueError(
+                "input_audio_path must be provided when input_mode is 'file'"
+            )
         audio, _ = load_audio(Path(cfg.input_audio_path), cfg.sample_rate)
         return audio
 
@@ -177,7 +188,9 @@ def acquire_audio(cfg: PitchCompareConfig, noise_rms: float) -> np.ndarray:
     return np.concatenate(collected).astype(np.float32)
 
 
-def compute_noise_profile(noise: np.ndarray, cfg: PitchCompareConfig) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+def compute_noise_profile(
+    noise: np.ndarray, cfg: PitchCompareConfig
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     hop_len = determine_hop_length(cfg)
     win_len = determine_window_length(cfg, hop_len)
     freqs, times, stft = signal.stft(
@@ -208,7 +221,9 @@ def determine_window_length(cfg: PitchCompareConfig, hop_length: int) -> int:
     return win_samples
 
 
-def subtract_noise(audio: np.ndarray, noise_profile: np.ndarray, cfg: PitchCompareConfig) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+def subtract_noise(
+    audio: np.ndarray, noise_profile: np.ndarray, cfg: PitchCompareConfig
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     hop_len = determine_hop_length(cfg)
     win_len = determine_window_length(cfg, hop_len)
     freqs, times, stft = signal.stft(
@@ -237,11 +252,17 @@ def subtract_noise(audio: np.ndarray, noise_profile: np.ndarray, cfg: PitchCompa
     return reconstructed, freqs, times, clean_power
 
 
-def compute_crepe_activation(audio: np.ndarray, cfg: PitchCompareConfig) -> Optional[np.ndarray]:
+def compute_crepe_activation(
+    audio: np.ndarray, cfg: PitchCompareConfig
+) -> Optional[np.ndarray]:
     if crepe is None:
         print("[WARN] crepe is not installed; skipping CREPE activation plot.")
         return None
-    step_ms = cfg.crepe_step_size_ms if cfg.crepe_step_size_ms is not None else determine_hop_length(cfg) * 1000.0 / cfg.sample_rate
+    step_ms = (
+        cfg.crepe_step_size_ms
+        if cfg.crepe_step_size_ms is not None
+        else determine_hop_length(cfg) * 1000.0 / cfg.sample_rate
+    )
     min_step_ms = (10.0 / cfg.min_frequency) * 1000.0
     step_ms = max(step_ms, min_step_ms)
     step_ms = float(step_ms)
@@ -251,7 +272,6 @@ def compute_crepe_activation(audio: np.ndarray, cfg: PitchCompareConfig) -> Opti
         model_capacity=cfg.crepe_model_capacity,
         step_size=int(round(step_ms)),
         viterbi=False,
-        return_activation=True,
     )
     return np.asarray(activation, dtype=np.float32)
 
@@ -262,11 +282,17 @@ def _crepe_like_frequency_axis(num_bins: int) -> np.ndarray:
     return base_freq * (2.0 ** (np.arange(num_bins) / bins_per_octave))
 
 
-def compute_pesto_activation(audio: np.ndarray, cfg: PitchCompareConfig) -> Optional[np.ndarray]:
+def compute_pesto_activation(
+    audio: np.ndarray, cfg: PitchCompareConfig
+) -> Optional[np.ndarray]:
     if pesto_predict is None:
         print("[WARN] pesto is not installed; skipping Pesto activation plot.")
         return None
-    step_ms = cfg.pesto_step_size_ms if cfg.pesto_step_size_ms is not None else determine_hop_length(cfg) * 1000.0 / cfg.sample_rate
+    step_ms = (
+        cfg.pesto_step_size_ms
+        if cfg.pesto_step_size_ms is not None
+        else determine_hop_length(cfg) * 1000.0 / cfg.sample_rate
+    )
     min_step_ms = (10.0 / cfg.min_frequency) * 1000.0
     step_ms = max(step_ms, min_step_ms)
     step_size = max(int(round(step_ms)), 1)
@@ -274,7 +300,6 @@ def compute_pesto_activation(audio: np.ndarray, cfg: PitchCompareConfig) -> Opti
     kwargs: Dict[str, Any] = {
         "step_size": step_size,
         "viterbi": False,
-        "return_activation": True,
     }
 
     if cfg.pesto_model_name:
@@ -303,7 +328,9 @@ def compute_pesto_activation(audio: np.ndarray, cfg: PitchCompareConfig) -> Opti
         )
     except TypeError:
         # Fall back to minimal arguments for older pesto builds.
-        fallback_kwargs = {k: v for k, v in kwargs.items() if k in {"step_size", "return_activation", "viterbi"}}
+        fallback_kwargs = {
+            k: v for k, v in kwargs.items() if k in {"step_size", "viterbi"}
+        }
         _, _, _, activation = pesto_predict(
             audio_buffer,
             cfg.sample_rate,
@@ -325,7 +352,9 @@ def _next_power_of_two(value: int) -> int:
     return 1 << (value - 1).bit_length()
 
 
-def compute_pyin(audio: np.ndarray, cfg: PitchCompareConfig) -> Optional[tuple[np.ndarray, np.ndarray]]:
+def compute_pyin(
+    audio: np.ndarray, cfg: PitchCompareConfig
+) -> Optional[tuple[np.ndarray, np.ndarray]]:
     if librosa is None:
         print("[WARN] librosa is not installed; skipping PYIN plot.")
         return None
@@ -468,7 +497,9 @@ def plot_results(
             plt.close()
 
 
-def save_audio(timestamp: str, audio: np.ndarray, cfg: PitchCompareConfig, output_dir: Path) -> Path:
+def save_audio(
+    timestamp: str, audio: np.ndarray, cfg: PitchCompareConfig, output_dir: Path
+) -> Path:
     audio_path = output_dir / f"{timestamp}_recording.wav"
     scaled = np.clip(audio, -1.0, 1.0)
     wavfile.write(audio_path, cfg.sample_rate, (scaled * 32767).astype(np.int16))
@@ -477,7 +508,11 @@ def save_audio(timestamp: str, audio: np.ndarray, cfg: PitchCompareConfig, outpu
 
 def main(argv: Optional[Iterable[str]] = None) -> None:
     parser = argparse.ArgumentParser(description="Compare pitch detection methods.")
-    parser.add_argument("--config", type=Path, default=Path(__file__).with_name("pitch_compare_config.json"))
+    parser.add_argument(
+        "--config",
+        type=Path,
+        default=Path(__file__).with_name("pitch_compare_config.json"),
+    )
     args = parser.parse_args(list(argv) if argv is not None else None)
 
     cfg = load_config(args.config)
