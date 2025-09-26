@@ -1,0 +1,35 @@
+# Let's simulate the response handling to identify the issue with the JSON decoding.
+
+# Sample code to handle the response and check its content
+import json
+from http.client import HTTPResponse
+
+# Mocking a response object for demonstration purposes
+class MockResponse:
+    def read(self):
+        # Simulate an empty or invalid JSON response
+        return b''
+
+    def getresponse(self):
+        return self
+
+    def status(self):
+        return 200
+
+    def reason(self):
+        return 'OK'
+
+# Create a mock response object
+response = MockResponse()
+
+# Attempt to decode the response
+try:
+    response_data = response.read()
+    print("Raw response data:", response_data.decode('utf-8'))
+    action = json.loads(response_data.decode('utf-8'))
+except json.JSONDecodeError as e:
+    print("JSONDecodeError:", e)
+
+# Check the response status and reason
+print("Response status:", response.status())
+print("Response reason:", response.reason())

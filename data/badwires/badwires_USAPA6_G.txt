@@ -1,0 +1,6 @@
+US_APA6 - Layer G, Side A:
+  No bad wire_numbers
+
+US_APA6 - Layer G, Side B:
+  Bad wire_numbers (missing or no tension_pass=True): 443
+

@@ -2,3 +2,9 @@ frequency_log_*
 __pycache__/
 .mypy_cache/
 settings.json
+audio/*
+venv/*
+images/*
+data/renamed_audio/*
+.venv/*
+data/tension_data/tension_data.db

@@ -1,0 +1,5 @@
+USAPA7 - Layer V, Side A:
+  All wires measured
+USAPA7 - Layer V, Side B:
+  Missing wire_numbers: 9, 1142, 1143, 1144, 1145, 1146
+

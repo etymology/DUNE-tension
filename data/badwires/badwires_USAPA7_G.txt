@@ -1,0 +1,8 @@
+US_APA7 - Layer G, Side A:
+  No bad wire_numbers
+  Outlier wire_numbers (far from moving average): 142, 191
+
+US_APA7 - Layer G, Side B:
+  No bad wire_numbers
+  No outlier wire_numbers
+

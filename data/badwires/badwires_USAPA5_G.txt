@@ -1,0 +1,6 @@
+US_APA5 - Layer G, Side A:
+  Bad wire_numbers (missing or no tension_pass=True): 422, 430
+
+US_APA5 - Layer G, Side B:
+  No bad wire_numbers
+

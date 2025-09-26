@@ -1,0 +1,6 @@
+US_APA5 - Layer X, Side A:
+  No bad wire_numbers
+
+US_APA5 - Layer X, Side B:
+  No bad wire_numbers
+
