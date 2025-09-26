@@ -5,12 +5,9 @@ from __future__ import annotations
 import argparse
 import dataclasses
 import datetime as _dt
-import inspect
-
 import json
 from pathlib import Path
-from typing import Any, Dict, Iterable, Optional
-
+from typing import Any, Dict, Iterable, Optional, Tuple
 import matplotlib.pyplot as plt
 import numpy as np
 from scipy import signal
@@ -255,7 +252,7 @@ def subtract_noise(
 
 def compute_crepe_activation(
     audio: np.ndarray, cfg: PitchCompareConfig
-) -> Optional[np.ndarray]:
+) -> Optional[Tuple[np.ndarray, np.ndarray]]:
     if crepe is None:
         print("[WARN] crepe is not installed; skipping CREPE activation plot.")
         return None
@@ -267,14 +264,17 @@ def compute_crepe_activation(
     min_step_ms = (10.0 / cfg.min_frequency) * 1000.0
     step_ms = max(step_ms, min_step_ms)
     step_ms = float(step_ms)
-    _, _, _, activation = crepe.predict(
+    crepe_times, _, _, activation = crepe.predict(
         audio,
         cfg.sample_rate,
         model_capacity=cfg.crepe_model_capacity,
         step_size=int(round(step_ms)),
         viterbi=False,
     )
-    return np.asarray(activation, dtype=np.float32)
+    return (
+        np.asarray(crepe_times, dtype=np.float32),
+        np.asarray(activation, dtype=np.float32),
+    )
 
 
 def _crepe_like_frequency_axis(num_bins: int) -> np.ndarray:
@@ -285,7 +285,7 @@ def _crepe_like_frequency_axis(num_bins: int) -> np.ndarray:
 
 def compute_pesto_activation(
     audio: np.ndarray, cfg: PitchCompareConfig
-) -> Optional[np.ndarray]:
+) -> Optional[Tuple[np.ndarray, np.ndarray]]:
     if pesto_predict is None:
         print("[WARN] pesto is not installed; skipping Pesto activation plot.")
         return None
@@ -296,51 +296,31 @@ def compute_pesto_activation(
     )
     min_step_ms = (10.0 / cfg.min_frequency) * 1000.0
     step_ms = max(step_ms, min_step_ms)
-    step_size = max(int(round(step_ms)), 1)
 
-    kwargs: Dict[str, Any] = {
-        "step_size": step_size,
-        "viterbi": False,
+    pesto_kwargs: Dict[str, Any] = {
+        "step_size": float(step_ms),
+        "model_name": cfg.pesto_model_name,
     }
-
-    if cfg.pesto_model_name:
-        model_key = "model"
-        try:
-            signature = inspect.signature(pesto_predict)
-        except (TypeError, ValueError):
-            signature = None
-        if signature is not None:
-            params = signature.parameters
-            if "model" in params:
-                model_key = "model"
-            elif "model_capacity" in params:
-                model_key = "model_capacity"
-            elif "checkpoint" in params:
-                model_key = "checkpoint"
-        kwargs[model_key] = cfg.pesto_model_name
 
     audio_buffer = np.asarray(audio, dtype=np.float32)
 
     try:
-        _, _, _, activation = pesto_predict(
+        pesto_times, _, _, activation = pesto_predict(
             audio_buffer,
             cfg.sample_rate,
-            **kwargs,
+            **pesto_kwargs,
         )
     except TypeError:
-        # Fall back to minimal arguments for older pesto builds.
-        fallback_kwargs = {
-            k: v for k, v in kwargs.items() if k in {"step_size", "viterbi"}
-        }
-        _, _, _, activation = pesto_predict(
+        pesto_times, _, _, activation = pesto_predict(
             audio_buffer,
             cfg.sample_rate,
-            **fallback_kwargs,
         )
 
-    activation = np.asarray(activation, dtype=np.float32)
-    return activation
-
+    return (
+        np.asarray(pesto_times, dtype=np.float32),
+        np.asarray(activation, dtype=np.float32),
+    )
+  
 
 def _ensure_even(value: int) -> int:
     return value if value % 2 == 0 else value + 1
@@ -360,42 +340,57 @@ def compute_pyin(
         return None
 
     hop_len = max(determine_hop_length(cfg), 1)
+    hop_len = _ensure_even(hop_len)
     frame_length = determine_window_length(cfg, hop_len)
     frame_length = max(frame_length, hop_len * 2)
     frame_length = _ensure_even(frame_length)
 
-    def run_pyin(hop: int, frame: int) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-        return librosa.pyin(
-            audio,
-            fmin=cfg.min_frequency,
-            fmax=cfg.max_frequency,
-            sr=cfg.sample_rate,
-            frame_length=frame,
-            hop_length=hop,
-        )
+    # Favor numerically stable sizes before the first attempt.
+    hop_candidate = max(_ensure_even(_next_power_of_two(hop_len)), 2)
+    frame_candidate = _ensure_even(_next_power_of_two(frame_length))
+    frame_candidate = max(frame_candidate, hop_candidate * 2)
 
-    try:
-        f0, voiced_flag, voiced_prob = run_pyin(hop_len, frame_length)
-    except Exception as exc:  # pragma: no cover - depends on librosa internals
-        from librosa.util.exceptions import ParameterError
+    try:  # librosa exposes the error in a submodule; guard import here.
+        from librosa.util.exceptions import ParameterError  # type: ignore
+    except Exception:  # pragma: no cover - best effort fallback
+        ParameterError = type("ParameterError", (Exception,), {})  # type: ignore
 
-        if not isinstance(exc, ParameterError):
-            raise
+    last_error: Optional[Exception] = None
 
-        adjusted_hop = _ensure_even(_next_power_of_two(hop_len))
-        adjusted_frame = _next_power_of_two(max(frame_length, len(audio)))
-        adjusted_frame = max(adjusted_frame, adjusted_hop * 2)
-        adjusted_frame = _ensure_even(adjusted_frame)
+    while True:
+        try:
+            f0, _, _ = librosa.pyin(
+                audio,
+                fmin=cfg.min_frequency,
+                fmax=cfg.max_frequency,
+                sr=cfg.sample_rate,
+                frame_length=frame_candidate,
+                hop_length=hop_candidate,
+                center=False,
+            )
+            hop_len = hop_candidate
+            break
+        except ParameterError as exc:  # pragma: no cover - depends on librosa internals
+            last_error = exc
 
-        print(
-            "[WARN] librosa.pyin rejected hop/frame lengths; "
-            "retrying with power-of-two sizes (hop=%d, frame=%d)."
-            % (adjusted_hop, adjusted_frame)
-        )
+            growth_hop = _ensure_even(_next_power_of_two(hop_candidate * 2))
+            growth_frame = _ensure_even(
+                _next_power_of_two(max(frame_candidate * 2, len(audio) + hop_candidate))
+            )
 
-        f0, voiced_flag, voiced_prob = run_pyin(adjusted_hop, adjusted_frame)
+            if growth_frame == frame_candidate and growth_hop == hop_candidate:
+                break
 
-        hop_len = adjusted_hop
+            print(
+                "[WARN] librosa.pyin rejected hop/frame lengths; "
+                "retrying with hop=%d frame=%d." % (growth_hop, growth_frame)
+            )
+
+            hop_candidate = growth_hop
+            frame_candidate = max(growth_frame, hop_candidate * 2)
+    if last_error is not None and "f0" not in locals():
+        raise last_error
+
 
     times = librosa.times_like(f0, sr=cfg.sample_rate, hop_length=hop_len)
     return times, f0
@@ -407,8 +402,8 @@ def plot_results(
     freqs: np.ndarray,
     times: np.ndarray,
     power: np.ndarray,
-    crepe_act: Optional[np.ndarray],
-    pesto_act: Optional[np.ndarray],
+    crepe_result: Optional[Tuple[np.ndarray, np.ndarray]],
+    pesto_result: Optional[Tuple[np.ndarray, np.ndarray]],
     pyin_result: Optional[tuple[np.ndarray, np.ndarray]],
     cfg: PitchCompareConfig,
     output_dir: Path,
@@ -436,8 +431,8 @@ def plot_results(
     plt.colorbar(mesh, ax=ax_spec, label="Power (dB)")
 
     ax_crepe = plt.subplot(4, 1, 3)
-    if crepe_act is not None:
-        crepe_times = np.linspace(0, len(audio) / cfg.sample_rate, crepe_act.shape[0])
+    if crepe_result is not None:
+        crepe_times, crepe_act = crepe_result
         freq_axis = _crepe_like_frequency_axis(crepe_act.shape[1])
         mask = (freq_axis >= cfg.min_frequency) & (freq_axis <= cfg.max_frequency)
         if mask.any():
@@ -454,8 +449,8 @@ def plot_results(
     ax_crepe.set_title("CREPE Activation")
 
     ax_pesto = plt.subplot(4, 1, 4)
-    if pesto_act is not None:
-        pesto_times = np.linspace(0, len(audio) / cfg.sample_rate, pesto_act.shape[0])
+    if pesto_result is not None:
+        pesto_times, pesto_act = pesto_result
         freq_axis = _crepe_like_frequency_axis(pesto_act.shape[1])
         mask = (freq_axis >= cfg.min_frequency) & (freq_axis <= cfg.max_frequency)
         if mask.any():
@@ -529,8 +524,8 @@ def main(argv: Optional[Iterable[str]] = None) -> None:
     audio_path = save_audio(timestamp, filtered_audio, cfg, output_dir)
     print(f"[INFO] Saved filtered audio to {audio_path}")
 
-    crepe_act = compute_crepe_activation(filtered_audio, cfg)
-    pesto_act = compute_pesto_activation(filtered_audio, cfg)
+    crepe_result = compute_crepe_activation(filtered_audio, cfg)
+    pesto_result = compute_pesto_activation(filtered_audio, cfg)
     pyin_result = compute_pyin(filtered_audio, cfg)
 
     plot_results(
@@ -539,8 +534,8 @@ def main(argv: Optional[Iterable[str]] = None) -> None:
         freqs=freqs,
         times=times,
         power=power,
-        crepe_act=crepe_act,
-        pesto_act=pesto_act,
+        crepe_result=crepe_result,
+        pesto_result=pesto_result,
         pyin_result=pyin_result,
         cfg=cfg,
         output_dir=output_dir,
