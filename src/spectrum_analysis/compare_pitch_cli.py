@@ -6,6 +6,7 @@ import argparse
 import dataclasses
 import datetime as _dt
 import inspect
+
 import json
 from pathlib import Path
 from typing import Any, Dict, Iterable, Optional
@@ -15,7 +16,7 @@ import numpy as np
 from scipy import signal
 from scipy.io import wavfile
 
-from .audio import MicSource, sd
+from audio import MicSource, sd
 
 try:  # Optional dependency - may not be available in CI
     import soundfile as sf  # type: ignore
@@ -44,7 +45,7 @@ class PitchCompareConfig:
 
     sample_rate: int = 44100
     noise_duration: float = 2.0
-    snr_threshold_db: float = 10.0
+    snr_threshold_db: float = 3.0
     min_frequency: float = 55.0
     max_frequency: float = 2000.0
     idle_timeout: float = 1.0
@@ -338,7 +339,6 @@ def compute_pesto_activation(
         )
 
     activation = np.asarray(activation, dtype=np.float32)
-
     return activation
 
 
