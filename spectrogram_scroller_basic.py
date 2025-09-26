@@ -5,7 +5,6 @@ Scrolling Spectrogram Visualizer with:
   • Live Spectrum Line (current frame, dBFS)
   • Autocorrelation vs Frequency (time-domain ACF, Hz = 1/lag)
   • Frequency-Domain Autocorrelation vs Δf
-  • CREPE Pitch Track (now: frequency on X, time on Y, scrolling upward)
   • Spectrogram (now: frequency on X, time on Y, scrolling upward)
 
 Keyboard:
@@ -31,37 +30,7 @@ try:
 except Exception:
     sd = None
 
-try:
-    import crepe  # https://github.com/marl/crepe
-
-    try:
-        from crepe.core import FREQUENCY_BINS as _CREPE_FREQ_BINS
-    except Exception:
-        _CREPE_FREQ_BINS = None
-
-    _HAS_CREPE = True
-except Exception:
-    _HAS_CREPE = False
-    _CREPE_FREQ_BINS = None
-
 EPS = 1e-12
-
-CREPE_DEFAULT_MIN_HZ = 32.70319566257483  # ~= C1
-CREPE_DEFAULT_MAX_HZ = 1975.533205024496  # ~= B6
-
-
-def _make_crepe_freq_axis(n_bins: int) -> np.ndarray:
-    if n_bins <= 0:
-        return np.zeros(0, dtype=np.float32)
-    if _CREPE_FREQ_BINS is not None:
-        base = np.asarray(_CREPE_FREQ_BINS, dtype=np.float32)
-        if base.size == n_bins:
-            return base.copy()
-        x = np.linspace(0, base.size - 1, n_bins, dtype=np.float32)
-        idx = np.arange(base.size, dtype=np.float32)
-        return np.interp(x, idx, base).astype(np.float32)
-    axis = np.geomspace(CREPE_DEFAULT_MIN_HZ, CREPE_DEFAULT_MAX_HZ, n_bins)
-    return axis.astype(np.float32)
 
 
 def dbfs(x: np.ndarray) -> np.ndarray:
@@ -177,12 +146,6 @@ class ScrollingSpectrogram:
         over_sub: float = 1.0,
         min_freq: float = 10.0,
         ac_win_sec: float = 0.5,
-        # CREPE
-        enable_pitch: bool = True,
-        crepe_capacity: str = "tiny",
-        crepe_step_ms: int = 200,
-        crepe_win_sec: float = 0.5,
-        crepe_freq_boost: float = 2.0,
     ):
         self.source = source
         self.sr = samplerate
@@ -221,25 +184,20 @@ class ScrollingSpectrogram:
         self.acf_max_lag_s = 1.0 / self.min_freq
         self.acf_max_lag_samps = max(1, int(round(self.acf_max_lag_s * self.sr)))
 
-        # Figure: top row splits spectrogram & CREPE, remaining rows span both columns
-        self.fig = plt.figure(figsize=(14, 15))
+        # Figure: stacked plots (spectrogram + metrics)
+        self.fig = plt.figure(figsize=(14, 12))
         gs = self.fig.add_gridspec(
             nrows=5,
-            ncols=2,
+            ncols=1,
             height_ratios=[3, 1, 1, 1, 1],
-            width_ratios=[1, 1],
             hspace=0.55,
-            wspace=0.3,
         )
         self.ax_spec = self.fig.add_subplot(gs[0, 0])
-        self.ax_pitch = self.fig.add_subplot(gs[0, 1])
-        self.ax_line = self.fig.add_subplot(gs[1, :])
-        self.ax_acf = self.fig.add_subplot(gs[2, :])
-        self.ax_facf = self.fig.add_subplot(
-            gs[3, :]
-        )  # frequency-domain ACF vs Δf
+        self.ax_line = self.fig.add_subplot(gs[1, 0])
+        self.ax_acf = self.fig.add_subplot(gs[2, 0])
+        self.ax_facf = self.fig.add_subplot(gs[3, 0])  # frequency-domain ACF vs Δf
         self.ax_facf2 = self.fig.add_subplot(
-            gs[4, :]
+            gs[4, 0]
         )  # NEW: autocorr of (frequency-domain ACF) vs Δf
 
         # --- Spectrogram image: X=freq, Y=time (scroll UP)
@@ -286,50 +244,8 @@ class ScrollingSpectrogram:
         # Frequency-domain ACF (unchanged)
         self._rebuild_facf_axis()
 
-        # --- CREPE pitch track: X=freq, Y=time, scrolling UP
-        self.enable_pitch = bool(enable_pitch) and _HAS_CREPE
-        self.crepe_capacity = str(crepe_capacity)
-        self.crepe_step_ms = int(crepe_step_ms)
-        self.crepe_win_sec = float(crepe_win_sec)
-        self.crepe_freq_boost = max(1.0, float(crepe_freq_boost))
-        self.pitch_freq_bins = _make_crepe_freq_axis(360) / self.crepe_freq_boost
-        self.pitch_activation = np.zeros(
-            (self.n_rows, self.pitch_freq_bins.size), dtype=np.float32
-        )
-        self.pitch_im = self.ax_pitch.imshow(
-            self.pitch_activation,
-            origin="lower",
-            aspect="auto",
-            extent=(0.0, 1.0, -self.window_sec, 0.0),
-            interpolation="nearest",
-            cmap="viridis",
-            vmin=0.0,
-            vmax=1.0,
-        )
-        self.pitch_cbar = self.fig.colorbar(
-            self.pitch_im, ax=self.ax_pitch, fraction=0.046, pad=0.04
-        )
-        self.pitch_cbar.set_label("CREPE confidence")
-        self._refresh_pitch_axes()
-        self.ax_pitch.set_xlabel("Pitch (Hz)")
-        self.ax_pitch.set_ylabel("Time (s)")
-        self.ax_pitch.grid(True, alpha=0.25)
-        if not _HAS_CREPE:
-            self.ax_pitch.text(
-                0.02,
-                0.8,
-                "Install 'crepe' to enable pitch",
-                transform=self.ax_pitch.transAxes,
-                fontsize=9,
-                color="red",
-                ha="left",
-                va="center",
-            )
-
         self._set_titles()
         self.paused = False
-        self._last_crepe_run = 0.0
-        self._crepe_min_interval = 0.10
 
         self.fig.canvas.mpl_connect("key_press_event", self.on_key)
 
@@ -347,7 +263,6 @@ class ScrollingSpectrogram:
         self.ax_facf.set_title(
             f"Frequency-domain Autocorrelation vs Δf (min {self.min_freq:.1f} Hz … max {self.max_freq:.0f} Hz)"
         )
-        self.ax_pitch.set_title("Pitch (CREPE): X=freq, Y=time ↑, color=confidence")
 
     def on_key(self, event):
         if event.key in ("q", "escape"):
@@ -380,21 +295,6 @@ class ScrollingSpectrogram:
             self.fig.canvas.draw_idle()
         elif event.key == "r":
             self.profile_noise(self.noise_sec, show_status=True)
-
-    def _refresh_pitch_axes(self):
-        if self.pitch_freq_bins.size > 0:
-            xmin = float(self.pitch_freq_bins[0])
-            xmax = float(self.pitch_freq_bins[-1])
-            if not np.isfinite(xmin) or not np.isfinite(xmax) or xmax <= xmin:
-                xmin = 0.0
-                xmax = max(1.0, float(self.max_freq))
-        else:
-            xmin = 0.0
-            xmax = max(1.0, float(self.max_freq))
-
-        self.ax_pitch.set_xlim(xmin, xmax)
-        self.ax_pitch.set_ylim(-self.window_sec, 0.0)
-        self.pitch_im.set_extent((xmin, xmax, -self.window_sec, 0.0))
 
     def _update_freq_axis(self):
         # Spectrogram/Spectrum frequency dimension updates
@@ -432,9 +332,8 @@ class ScrollingSpectrogram:
         self.line_plot.set_data(self.line_freqs, self.last_mag_db)
         self.ax_line.set_xlim(0, self.freqs[self.max_bin - 1])
 
-        # Rebuild Δf axis; update pitch x-limits
+        # Rebuild Δf axis
         self._rebuild_facf_axis()
-        self._refresh_pitch_axes()
 
         self.fig.canvas.draw_idle()
 
@@ -449,17 +348,6 @@ class ScrollingSpectrogram:
         self.n_rows = self.S.shape[0]
         # Update spectrogram extent (y axis)
         self.im.set_extent((0.0, self.freqs[self.max_bin - 1], -self.window_sec, 0.0))
-
-        # Rebuild pitch activation buffer to match rows
-        if self.pitch_activation.shape[0] != self.n_rows:
-            new_pitch = np.zeros(
-                (self.n_rows, self.pitch_activation.shape[1]), dtype=np.float32
-            )
-            copy_rows = min(self.pitch_activation.shape[0], self.n_rows)
-            new_pitch[-copy_rows:, :] = self.pitch_activation[-copy_rows:, :]
-            self.pitch_activation = new_pitch
-            self.pitch_im.set_data(self.pitch_activation)
-        self._refresh_pitch_axes()
 
         self.fig.canvas.draw_idle()
 
@@ -789,122 +677,14 @@ class ScrollingSpectrogram:
             self._facf2_legend.remove()
         self._facf2_legend = self.ax_facf2.legend(loc="upper right", framealpha=0.3)
 
-    # -------- CREPE pitch (X=freq, Y=time ↑) --------
-
-    def _ensure_pitch_activation_bins(self, n_bins: int):
-        n_bins = max(1, int(n_bins))
-        if self.pitch_activation.shape[1] == n_bins:
-            return
-        new_freqs = _make_crepe_freq_axis(n_bins) / self.crepe_freq_boost
-        new_pitch = np.zeros((self.n_rows, n_bins), dtype=np.float32)
-        min_cols = min(self.pitch_activation.shape[1], n_bins)
-        if min_cols > 0:
-            new_pitch[:, :min_cols] = self.pitch_activation[:, :min_cols]
-        self.pitch_activation = new_pitch
-        self.pitch_freq_bins = new_freqs
-        self.pitch_im.set_data(self.pitch_activation)
-        self._refresh_pitch_axes()
-
-    def _crepe_prepare_input(self, x: np.ndarray):
-        factor = self.crepe_freq_boost
-        if factor <= 1.0 or x.size <= 1:
-            return x, float(self.sr), int(self.crepe_step_ms)
-
-        out_len = max(1, int(np.floor(x.size / factor)))
-        if out_len == x.size:
-            return x, float(self.sr), int(self.crepe_step_ms)
-
-        src_idx = np.arange(x.size, dtype=np.float32)
-        tgt_idx = np.arange(out_len, dtype=np.float32) * factor
-        tgt_idx = np.clip(tgt_idx, 0.0, src_idx[-1])
-        compressed = np.interp(tgt_idx, src_idx, x.astype(np.float32)).astype(np.float32)
-
-        eff_sr = float(self.sr) * factor
-        eff_step_ms = max(1, int(round(self.crepe_step_ms / factor)))
-        return compressed, eff_sr, eff_step_ms
-
-    def _crepe_prepare_input(self, x: np.ndarray):
-        factor = self.crepe_freq_boost
-        if factor <= 1.0 or x.size <= 1:
-            return x, float(self.sr), int(self.crepe_step_ms)
-
-        out_len = max(1, int(np.floor(x.size / factor)))
-        if out_len == x.size:
-            return x, float(self.sr), int(self.crepe_step_ms)
-
-        src_idx = np.arange(x.size, dtype=np.float32)
-        tgt_idx = np.arange(out_len, dtype=np.float32) * factor
-        tgt_idx = np.clip(tgt_idx, 0.0, src_idx[-1])
-        compressed = np.interp(tgt_idx, src_idx, x.astype(np.float32)).astype(np.float32)
-
-        eff_sr = float(self.sr) * factor
-        eff_step_ms = max(1, int(round(self.crepe_step_ms / factor)))
-        return compressed, eff_sr, eff_step_ms
-
-    def _run_crepe_once(self):
-        if not self.enable_pitch:
-            return np.nan, 0.0, None
-        now = time.time()
-        if now - self._last_crepe_run < self._crepe_min_interval:
-            return None
-        if self.td_buf.size < int(self.crepe_win_sec * self.sr):
-            return np.nan, 0.0, None
-        self._last_crepe_run = now
-        nwin = int(self.crepe_win_sec * self.sr)
-        x = self.td_buf[-nwin:].astype(np.float32)
-        x_aug, crepe_sr, crepe_step_ms = self._crepe_prepare_input(x)
-        try:
-            _, f0, c, activation = crepe.predict(
-                x_aug,
-                crepe_sr,
-                step_size=crepe_step_ms,
-                model_capacity=self.crepe_capacity,
-                viterbi=True,
-                verbose=0,
-            )
-            f0_last = float(f0[-1]) if f0.size else float("nan")
-            c_last = float(c[-1]) if c.size else 0.0
-            if not np.isfinite(f0_last) or f0_last <= 0:
-                f0_last, c_last = np.nan, 0.0
-            else:
-                f0_last /= self.crepe_freq_boost
-            act_last = None
-            if activation is not None:
-                activation = np.asarray(activation)
-                act_last = activation[-1] if activation.ndim >= 1 else activation
-            return f0_last, c_last, act_last
-        except Exception:
-            self.enable_pitch = False
-            return np.nan, 0.0, None
-
-    def _update_pitch_plot(self):
-        result = self._run_crepe_once()
-        if result is None:  # throttled
-            return
-        _, _, activation = result
-        if activation is None:
-            activation = np.zeros(self.pitch_activation.shape[1], dtype=np.float32)
-        activation = np.asarray(activation, dtype=np.float32).reshape(-1)
-        if activation.size == 0:
-            activation = np.zeros(self.pitch_activation.shape[1], dtype=np.float32)
-        if activation.size != self.pitch_activation.shape[1]:
-            self._ensure_pitch_activation_bins(activation.size)
-        activation = np.nan_to_num(activation, nan=0.0, posinf=1.0, neginf=0.0)
-        activation = np.clip(activation, 0.0, 1.0)
-        # Scroll UP: roll rows left, newest row at end (top in plot via extent)
-        self.pitch_activation = np.roll(self.pitch_activation, -1, axis=0)
-        self.pitch_activation[-1, :] = activation
-        self.pitch_im.set_data(self.pitch_activation)
-
     # -------- Main processing --------
     def process_new_samples(self, samples: np.ndarray):
         if samples.size == 0:
             return
         self.sample_buf = np.concatenate([self.sample_buf, samples])
         self.td_buf = np.concatenate([self.td_buf, samples])
-        keep_td = max(self.ac_win_samps, int(self.crepe_win_sec * self.sr))
-        if self.td_buf.size > keep_td:
-            self.td_buf = self.td_buf[-keep_td:]
+        if self.td_buf.size > self.ac_win_samps:
+            self.td_buf = self.td_buf[-self.ac_win_samps :]
 
         while self.sample_buf.size >= self.fft_size:
             frame = self.sample_buf[: self.fft_size]
@@ -941,10 +721,6 @@ class ScrollingSpectrogram:
         self._update_facf_plot()
         self._update_facf2_plot()
 
-        # Pitch
-        if self.enable_pitch:
-            self._update_pitch_plot()
-
         self.fig.canvas.draw_idle()
 
     def run(self):
@@ -977,7 +753,7 @@ class ScrollingSpectrogram:
 
 def parse_args():
     ap = argparse.ArgumentParser(
-        description="Scrolling Spectrogram + Spectrum + ACFs + CREPE Pitch"
+        description="Scrolling Spectrogram + Spectrum + Autocorrelation views"
     )
     ap.add_argument("--samplerate", type=int, default=44100)
     ap.add_argument("--fft", type=int, default=8192)
@@ -991,17 +767,6 @@ def parse_args():
     ap.add_argument("--over-sub", type=float, default=1.0)
     ap.add_argument("--no-noise-filter", action="store_true")
     ap.add_argument("--min-freq", type=float, default=10.0)
-    # CREPE
-    ap.add_argument("--no-pitch", action="store_true")
-    ap.add_argument(
-        "--crepe-capacity",
-        type=str,
-        default="small",
-        choices=["tiny", "small", "medium", "large", "full"],
-    )
-    ap.add_argument("--crepe-step-ms", type=int, default=500)
-    ap.add_argument("--pitch-win", type=float, default=0.5)
-    ap.add_argument("--crepe-freq-boost", type=float, default=2.0)
     return ap.parse_args()
 
 
@@ -1032,11 +797,6 @@ def main():
         over_sub=args.over_sub,
         min_freq=args.min_freq,
         ac_win_sec=0.5,
-        enable_pitch=(not args.no_pitch),
-        crepe_capacity=args.crepe_capacity,
-        crepe_step_ms=args.crepe_step_ms,
-        crepe_win_sec=args.pitch_win,
-        crepe_freq_boost=args.crepe_freq_boost,
     )
     vis.run()
 
