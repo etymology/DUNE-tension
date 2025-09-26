@@ -8,13 +8,12 @@ import datetime as _dt
 import json
 from pathlib import Path
 from typing import Any, Dict, Iterable, Optional, Tuple
-
 import matplotlib.pyplot as plt
 import numpy as np
 from scipy import signal
 from scipy.io import wavfile
 
-from .audio import MicSource, sd
+from audio import MicSource, sd
 
 try:  # Optional dependency - may not be available in CI
     import soundfile as sf  # type: ignore
@@ -43,7 +42,7 @@ class PitchCompareConfig:
 
     sample_rate: int = 44100
     noise_duration: float = 2.0
-    snr_threshold_db: float = 10.0
+    snr_threshold_db: float = 3.0
     min_frequency: float = 55.0
     max_frequency: float = 2000.0
     idle_timeout: float = 1.0
@@ -321,7 +320,7 @@ def compute_pesto_activation(
         np.asarray(pesto_times, dtype=np.float32),
         np.asarray(activation, dtype=np.float32),
     )
-
+  
 
 def _ensure_even(value: int) -> int:
     return value if value % 2 == 0 else value + 1
@@ -391,6 +390,7 @@ def compute_pyin(
             frame_candidate = max(growth_frame, hop_candidate * 2)
     if last_error is not None and "f0" not in locals():
         raise last_error
+
 
     times = librosa.times_like(f0, sr=cfg.sample_rate, hop_length=hop_len)
     return times, f0
