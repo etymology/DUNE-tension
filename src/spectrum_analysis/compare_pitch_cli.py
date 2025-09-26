@@ -5,6 +5,8 @@ from __future__ import annotations
 import argparse
 import dataclasses
 import datetime as _dt
+import inspect
+
 import json
 from pathlib import Path
 from typing import Any, Dict, Iterable, Optional
@@ -57,7 +59,7 @@ class PitchCompareConfig:
     show_plots: bool = True
     crepe_model_capacity: str = "full"
     crepe_step_size_ms: Optional[float] = None
-    pesto_model_name: str = ("mir-1k_g7",)
+    pesto_model_name: str = "mir-1k_g7"
     pesto_step_size_ms: Optional[float] = None
     over_subtraction: float = 1.0
 
@@ -272,7 +274,13 @@ def compute_crepe_activation(
         step_size=int(round(step_ms)),
         viterbi=False,
     )
-    return activation
+    return np.asarray(activation, dtype=np.float32)
+
+
+def _crepe_like_frequency_axis(num_bins: int) -> np.ndarray:
+    base_freq = 32.703195662574764  # C1 in Hz; matches CREPE/PESTO documentation
+    bins_per_octave = 60.0  # 20 cents per bin
+    return base_freq * (2.0 ** (np.arange(num_bins) / bins_per_octave))
 
 
 def compute_pesto_activation(
@@ -288,9 +296,49 @@ def compute_pesto_activation(
     )
     min_step_ms = (10.0 / cfg.min_frequency) * 1000.0
     step_ms = max(step_ms, min_step_ms)
+    step_size = max(int(round(step_ms)), 1)
 
-    # Some pesto versions may not accept model_capacity; retry without it.
-    _, _, _, activation = pesto_predict(audio, cfg.sample_rate,step_size=step_ms)
+    kwargs: Dict[str, Any] = {
+        "step_size": step_size,
+        "viterbi": False,
+    }
+
+    if cfg.pesto_model_name:
+        model_key = "model"
+        try:
+            signature = inspect.signature(pesto_predict)
+        except (TypeError, ValueError):
+            signature = None
+        if signature is not None:
+            params = signature.parameters
+            if "model" in params:
+                model_key = "model"
+            elif "model_capacity" in params:
+                model_key = "model_capacity"
+            elif "checkpoint" in params:
+                model_key = "checkpoint"
+        kwargs[model_key] = cfg.pesto_model_name
+
+    audio_buffer = np.asarray(audio, dtype=np.float32)
+
+    try:
+        _, _, _, activation = pesto_predict(
+            audio_buffer,
+            cfg.sample_rate,
+            **kwargs,
+        )
+    except TypeError:
+        # Fall back to minimal arguments for older pesto builds.
+        fallback_kwargs = {
+            k: v for k, v in kwargs.items() if k in {"step_size", "viterbi"}
+        }
+        _, _, _, activation = pesto_predict(
+            audio_buffer,
+            cfg.sample_rate,
+            **fallback_kwargs,
+        )
+
+    activation = np.asarray(activation, dtype=np.float32)
     return activation
 
 
@@ -390,14 +438,17 @@ def plot_results(
     ax_crepe = plt.subplot(4, 1, 3)
     if crepe_act is not None:
         crepe_times = np.linspace(0, len(audio) / cfg.sample_rate, crepe_act.shape[0])
-        mesh_crepe = ax_crepe.pcolormesh(
-            crepe_times,
-            np.linspace(cfg.min_frequency, cfg.max_frequency, crepe_act.shape[1]),
-            crepe_act.T,
-            shading="nearest",
-            cmap="viridis",
-        )
-        plt.colorbar(mesh_crepe, ax=ax_crepe, label="Activation")
+        freq_axis = _crepe_like_frequency_axis(crepe_act.shape[1])
+        mask = (freq_axis >= cfg.min_frequency) & (freq_axis <= cfg.max_frequency)
+        if mask.any():
+            mesh_crepe = ax_crepe.pcolormesh(
+                crepe_times,
+                freq_axis[mask],
+                crepe_act[:, mask].T,
+                shading="nearest",
+                cmap="viridis",
+            )
+            plt.colorbar(mesh_crepe, ax=ax_crepe, label="Activation")
     ax_crepe.set_ylim(cfg.min_frequency, cfg.max_frequency)
     ax_crepe.set_ylabel("Frequency (Hz)")
     ax_crepe.set_title("CREPE Activation")
@@ -405,14 +456,17 @@ def plot_results(
     ax_pesto = plt.subplot(4, 1, 4)
     if pesto_act is not None:
         pesto_times = np.linspace(0, len(audio) / cfg.sample_rate, pesto_act.shape[0])
-        mesh_pesto = ax_pesto.pcolormesh(
-            pesto_times,
-            np.linspace(cfg.min_frequency, cfg.max_frequency, pesto_act.shape[1]),
-            pesto_act.T,
-            shading="nearest",
-            cmap="plasma",
-        )
-        plt.colorbar(mesh_pesto, ax=ax_pesto, label="Activation")
+        freq_axis = _crepe_like_frequency_axis(pesto_act.shape[1])
+        mask = (freq_axis >= cfg.min_frequency) & (freq_axis <= cfg.max_frequency)
+        if mask.any():
+            mesh_pesto = ax_pesto.pcolormesh(
+                pesto_times,
+                freq_axis[mask],
+                pesto_act[:, mask].T,
+                shading="nearest",
+                cmap="plasma",
+            )
+            plt.colorbar(mesh_pesto, ax=ax_pesto, label="Activation")
     ax_pesto.set_ylim(cfg.min_frequency, cfg.max_frequency)
     ax_pesto.set_ylabel("Frequency (Hz)")
     ax_pesto.set_xlabel("Time (s)")
