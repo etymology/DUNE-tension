@@ -26,6 +26,9 @@ class SpectrogramConfig:
     over_sub: float = 1.0
     min_freq: float = 10.0
     ac_win_sec: float = 0.5
+    snr_trigger: float = 3.0
+    snr_release: float = 3.0
+    pre_record_sec: float = 0.1
 
 
 class ScrollingSpectrogram:
@@ -67,6 +70,18 @@ class ScrollingSpectrogram:
         self.min_freq = max(1e-6, float(config.min_freq))
         self.acf_max_lag_s = 1.0 / self.min_freq
         self.acf_max_lag_samps = max(1, int(round(self.acf_max_lag_s * self.sr)))
+
+        self.snr_trigger = float(getattr(config, "snr_trigger", 3.0))
+        self.snr_release = float(getattr(config, "snr_release", self.snr_trigger))
+        self.pre_record_sec = float(getattr(config, "pre_record_sec", 0.1))
+        self.pre_record_samples = max(0, int(round(self.pre_record_sec * self.sr)))
+        self.pre_buffer = np.zeros(0, dtype=np.float32)
+        self.recording_active = False
+        self.recorded_samples = np.zeros(0, dtype=np.float32)
+        self._use_full_analysis = False
+        self._mag_accum = np.zeros(self.max_bin, dtype=np.float64)
+        self._frame_count = 0
+        self.noise_rms = 1e-6
 
         self.fig = plt.figure(figsize=(14, 12))
         gs = self.fig.add_gridspec(
@@ -120,6 +135,7 @@ class ScrollingSpectrogram:
         self._set_titles()
         self.paused = False
         self.fig.canvas.mpl_connect("key_press_event", self.on_key)
+        self._reset_processing_state()
 
     # ------------------------------------------------------------------
     # Event handlers & UI updates
@@ -171,6 +187,112 @@ class ScrollingSpectrogram:
         elif event.key == "r":
             self.profile_noise(self.noise_sec, show_status=True)
 
+    def _reset_processing_state(self) -> None:
+        self.sample_buf = np.zeros(0, dtype=np.float32)
+        self.td_buf = np.zeros(0, dtype=np.float32)
+        if self.S.size:
+            self.S[:, :] = -120.0
+        self.last_mag_db = np.full_like(self.line_freqs, -120.0, dtype=np.float32)
+        self.last_mag_lin = np.zeros_like(self.line_freqs, dtype=np.float32)
+        if hasattr(self, "acf_vals") and self.acf_vals.size:
+            self.acf_vals[:] = 0.0
+        if hasattr(self, "facf_vals") and self.facf_vals.size:
+            self.facf_vals[:] = 0.0
+        if hasattr(self, "facf2_vals") and self.facf2_vals.size:
+            self.facf2_vals[:] = 0.0
+        self._mag_accum = np.zeros(self.max_bin, dtype=np.float64)
+        self._frame_count = 0
+        self._use_full_analysis = False
+
+    def _update_pre_buffer(self, samples: np.ndarray) -> None:
+        if self.pre_record_samples <= 0 or samples.size == 0:
+            return
+        joined = (
+            samples.astype(np.float32, copy=False)
+            if self.pre_buffer.size == 0
+            else np.concatenate([self.pre_buffer, samples]).astype(
+                np.float32, copy=False
+            )
+        )
+        if joined.size > self.pre_record_samples:
+            joined = joined[-self.pre_record_samples :]
+        self.pre_buffer = joined
+
+    def _compute_snr(self, samples: np.ndarray) -> float:
+        if samples.size == 0:
+            return 0.0
+        rms = float(np.sqrt(np.mean(samples.astype(np.float64) ** 2)))
+        noise = float(self.noise_rms) if self.noise_rms and self.noise_rms > 0 else 1e-6
+        return rms / noise if noise > 0 else float("inf")
+
+    def _start_recording(self) -> None:
+        self.recording_active = True
+        self._reset_processing_state()
+        self.recorded_samples = np.zeros(0, dtype=np.float32)
+        self._use_full_analysis = False
+
+    def _append_recording(self, samples: np.ndarray) -> bool:
+        if samples.size == 0:
+            return False
+        data = samples.astype(np.float32, copy=False)
+        if self.recorded_samples.size == 0:
+            self.recorded_samples = data.copy()
+        else:
+            self.recorded_samples = np.concatenate([self.recorded_samples, data])
+        self.process_new_samples(data)
+        return True
+
+    def _finalize_recording(self) -> None:
+        if self.recorded_samples.size == 0:
+            self._use_full_analysis = False
+            return
+        if self._frame_count > 0:
+            avg_mag = (self._mag_accum / max(1, self._frame_count)).astype(np.float32)
+        else:
+            frame = self.recorded_samples[: self.fft_size]
+            if frame.size < self.fft_size:
+                frame = np.pad(frame, (0, self.fft_size - frame.size))
+            avg_mag = self._apply_noise_filter(self._spec_mag(frame)).astype(np.float32)
+        avg_mag = np.maximum(avg_mag, 0.0)
+        if avg_mag.size != self.max_bin:
+            if avg_mag.size > self.max_bin:
+                avg_mag = avg_mag[: self.max_bin]
+            else:
+                avg_mag = np.pad(avg_mag, (0, self.max_bin - avg_mag.size))
+        self.last_mag_lin = avg_mag
+        self.last_mag_db = dbfs(np.maximum(avg_mag, 1e-12))
+        self._use_full_analysis = True
+        self._mag_accum = np.zeros(self.max_bin, dtype=np.float64)
+        self._frame_count = 0
+
+    def _stop_recording(self) -> bool:
+        if not self.recording_active:
+            return False
+        self.recording_active = False
+        self._finalize_recording()
+        return True
+
+    def _handle_chunk(self, chunk: np.ndarray) -> bool:
+        if chunk.size == 0:
+            return False
+        chunk = chunk.astype(np.float32, copy=False)
+        pre_snapshot = self.pre_buffer.copy()
+        self._update_pre_buffer(chunk)
+        snr = self._compute_snr(chunk)
+        changed = False
+        if self.recording_active:
+            changed = self._append_recording(chunk)
+            if snr < self.snr_release:
+                changed = self._stop_recording() or changed
+        else:
+            if snr >= self.snr_trigger:
+                self._start_recording()
+                changed = True
+                if pre_snapshot.size:
+                    changed = self._append_recording(pre_snapshot) or changed
+                changed = self._append_recording(chunk) or changed
+        return changed
+
     def _update_freq_axis(self) -> None:
         self.max_bin = np.searchsorted(self.freqs, self.max_freq, side="right")
         self.max_bin = max(2, min(self.max_bin, len(self.freqs)))
@@ -200,6 +322,15 @@ class ScrollingSpectrogram:
                 (0, self.max_bin - self.last_mag_lin.size),
                 constant_values=0.0,
             )
+        if hasattr(self, "_mag_accum"):
+            if self._mag_accum.size >= self.max_bin:
+                self._mag_accum = self._mag_accum[: self.max_bin]
+            else:
+                self._mag_accum = np.pad(
+                    self._mag_accum,
+                    (0, self.max_bin - self._mag_accum.size),
+                    constant_values=0.0,
+                )
         self.line_plot.set_data(self.line_freqs, self.last_mag_db)
         self.ax_line.set_xlim(0, self.freqs[self.max_bin - 1])
 
@@ -242,6 +373,7 @@ class ScrollingSpectrogram:
         target_samples = int(self.sr * max(0.2, seconds))
         buf = np.zeros(0, dtype=np.float32)
         mags = []
+        noise_chunks: list[np.ndarray] = []
         t0 = time.time()
         timeout = max(3.0, seconds * 3.0)
         collected = 0
@@ -250,6 +382,7 @@ class ScrollingSpectrogram:
             if chunk.size == 0:
                 continue
             buf = np.concatenate([buf, chunk])
+            noise_chunks.append(chunk.astype(np.float32, copy=False))
             collected += chunk.size
             while buf.size >= self.fft_size:
                 frame = buf[: self.fft_size]
@@ -263,6 +396,11 @@ class ScrollingSpectrogram:
             if len(mags) == 0
             else np.median(np.vstack(mags), axis=0).astype(np.float32)
         )
+        if noise_chunks:
+            noise_td = np.concatenate(noise_chunks)
+            self.noise_rms = float(np.sqrt(np.mean(noise_td.astype(np.float64) ** 2)))
+        else:
+            self.noise_rms = 1e-6
         self._set_titles()
         self.fig.canvas.draw_idle()
 
@@ -308,9 +446,12 @@ class ScrollingSpectrogram:
         return prominences
 
     def _update_acf_plot(self) -> None:
-        if self.td_buf.size < self.ac_win_samps:
-            return
-        x = self.td_buf[-self.ac_win_samps :].astype(np.float32)
+        if self._use_full_analysis and self.recorded_samples.size >= 2:
+            x = self.recorded_samples.astype(np.float32)
+        else:
+            if self.td_buf.size < self.ac_win_samps:
+                return
+            x = self.td_buf[-self.ac_win_samps :].astype(np.float32)
         x = x - np.mean(x)
         power = np.sum(x * x)
         if power <= 1e-12:
@@ -543,6 +684,12 @@ class ScrollingSpectrogram:
             mag = self._apply_noise_filter(mag)
             S_db = dbfs(mag)
 
+            if self.recording_active:
+                if self._mag_accum.size != self.max_bin:
+                    self._mag_accum = np.zeros(self.max_bin, dtype=np.float64)
+                self._mag_accum[: len(mag)] += mag
+                self._frame_count += 1
+
             self.S = np.roll(self.S, -1, axis=0)
             self.S[-1, : len(S_db)] = S_db
             if len(S_db) < self.S.shape[1]:
@@ -578,15 +725,17 @@ class ScrollingSpectrogram:
                 if self.paused:
                     return
                 drained = 0
+                updated = False
                 while True:
                     chunk = self.source.read()
                     if chunk.size == 0:
                         break
-                    self.process_new_samples(chunk)
+                    updated = self._handle_chunk(chunk) or updated
                     drained += 1
                     if drained > 12:
                         break
-                self.update_plot()
+                if updated or self.recording_active:
+                    self.update_plot()
 
             timer = self.fig.canvas.new_timer(interval=30)
             timer.add_callback(_on_timer, None)
