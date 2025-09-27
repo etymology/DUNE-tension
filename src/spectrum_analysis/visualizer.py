@@ -1,4 +1,5 @@
 """Matplotlib-based scrolling spectrogram visualizer."""
+
 from __future__ import annotations
 
 import time
@@ -19,7 +20,7 @@ class SpectrogramConfig:
     hop: int = 512
     window_sec: float = 5.0
     max_freq: float = 2000.0
-    db_range: float = 80.0
+    db_range: float = 70.0
     enable_noise_filter: bool = True
     noise_sec: float = 2.0
     over_sub: float = 1.0
@@ -30,7 +31,9 @@ class SpectrogramConfig:
 class ScrollingSpectrogram:
     """Interactive matplotlib spectrogram visualizer."""
 
-    def __init__(self, source: AudioSource, config: Optional[SpectrogramConfig] = None) -> None:
+    def __init__(
+        self, source: AudioSource, config: Optional[SpectrogramConfig] = None
+    ) -> None:
         if config is None:
             config = SpectrogramConfig()
         self.config = config
@@ -66,7 +69,9 @@ class ScrollingSpectrogram:
         self.acf_max_lag_samps = max(1, int(round(self.acf_max_lag_s * self.sr)))
 
         self.fig = plt.figure(figsize=(14, 12))
-        gs = self.fig.add_gridspec(nrows=5, ncols=1, height_ratios=[3, 1, 1, 1, 1], hspace=0.55)
+        gs = self.fig.add_gridspec(
+            nrows=5, ncols=1, height_ratios=[3, 1, 1, 1, 1], hspace=0.55
+        )
         self.ax_spec = self.fig.add_subplot(gs[0, 0])
         self.ax_line = self.fig.add_subplot(gs[1, 0])
         self.ax_acf = self.fig.add_subplot(gs[2, 0])
@@ -100,7 +105,9 @@ class ScrollingSpectrogram:
         mask_acf = self.acf_freq_axis_hz <= self.max_freq
         self.acf_freq_axis_hz = self.acf_freq_axis_hz[mask_acf]
         self.acf_vals = np.zeros_like(self.acf_freq_axis_hz, dtype=np.float32)
-        (self.acf_plot,) = self.ax_acf.plot(self.acf_freq_axis_hz, self.acf_vals, lw=1.0, label="ACF")
+        (self.acf_plot,) = self.ax_acf.plot(
+            self.acf_freq_axis_hz, self.acf_vals, lw=1.0, label="ACF"
+        )
         self.ax_acf.set_xlim(self.min_freq, self.max_freq)
         self.ax_acf.set_ylim(-1.0, 1.0)
         self.ax_acf.set_xlabel("Frequency (Hz) (from 1/lag)")
@@ -180,11 +187,19 @@ class ScrollingSpectrogram:
         if self.last_mag_db.size >= self.max_bin:
             self.last_mag_db = self.last_mag_db[: self.max_bin]
         else:
-            self.last_mag_db = np.pad(self.last_mag_db, (0, self.max_bin - self.last_mag_db.size), constant_values=-120.0)
+            self.last_mag_db = np.pad(
+                self.last_mag_db,
+                (0, self.max_bin - self.last_mag_db.size),
+                constant_values=-120.0,
+            )
         if self.last_mag_lin.size >= self.max_bin:
             self.last_mag_lin = self.last_mag_lin[: self.max_bin]
         else:
-            self.last_mag_lin = np.pad(self.last_mag_lin, (0, self.max_bin - self.last_mag_lin.size), constant_values=0.0)
+            self.last_mag_lin = np.pad(
+                self.last_mag_lin,
+                (0, self.max_bin - self.last_mag_lin.size),
+                constant_values=0.0,
+            )
         self.line_plot.set_data(self.line_freqs, self.last_mag_db)
         self.ax_line.set_xlim(0, self.freqs[self.max_bin - 1])
 
@@ -243,7 +258,11 @@ class ScrollingSpectrogram:
                 if len(mags) > 2000:
                     break
 
-        self.noise_mag = None if len(mags) == 0 else np.median(np.vstack(mags), axis=0).astype(np.float32)
+        self.noise_mag = (
+            None
+            if len(mags) == 0
+            else np.median(np.vstack(mags), axis=0).astype(np.float32)
+        )
         self._set_titles()
         self.fig.canvas.draw_idle()
 
@@ -329,7 +348,9 @@ class ScrollingSpectrogram:
                 if peaks.size >= 2:
                     p1 = int(peaks[order[0]])
                     p2 = int(peaks[order[1]])
-                    p2p = abs(float(self.acf_freq_axis_hz[p1] - self.acf_freq_axis_hz[p2]))
+                    p2p = abs(
+                        float(self.acf_freq_axis_hz[p1] - self.acf_freq_axis_hz[p2])
+                    )
                 else:
                     p2p = float("nan")
 
@@ -367,7 +388,9 @@ class ScrollingSpectrogram:
         shift_min_bins = max(1, int(np.ceil(self.min_freq / df)))
         shift_max_bins = max(shift_min_bins, int(np.floor(self.max_freq / df)))
 
-        self.facf_shift_axis_hz = (np.arange(shift_min_bins, shift_max_bins + 1) * df).astype(np.float32)
+        self.facf_shift_axis_hz = (
+            np.arange(shift_min_bins, shift_max_bins + 1) * df
+        ).astype(np.float32)
         if self.facf_shift_axis_hz.size == 0:
             self.facf_shift_axis_hz = np.array([self.min_freq], dtype=np.float32)
 
