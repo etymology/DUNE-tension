@@ -1,18 +1,18 @@
 {
   "sample_rate": 44100,
-  "noise_duration": 1.0,
+  "noise_duration": 2,
   "snr_threshold_db": 3.0,
-  "min_frequency": 50.0,
-  "max_frequency": 1500.0,
+  "min_frequency": 30.0,
+  "max_frequency": 200.0,
   "idle_timeout": 1.0,
   "max_record_seconds": 20.0,
   "analysis_window_sec": 0.5,
   "step_size_sec": 0.5,
   "input_mode": "file",
-  "input_audio_path": "/home/ben/DUNE-tension/data/20250927-130218_recording.wav",
+  "input_audio_path": "/home/ben/DUNE-tension/data/test_fixture/20250927-093959_recording.wav",
   "show_plots": true,
   "crepe_model_capacity": "tiny",
   "pesto_model_name": "mir-1k_g7",
   "over_subtraction": 1.1,
-  "spoof factor": 2.0
+  "spoof factor": 0.5
 }

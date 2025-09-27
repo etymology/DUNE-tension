@@ -247,29 +247,62 @@ def subtract_noise(
 def compute_crepe_activation(
     audio: np.ndarray,
     cfg: PitchCompareConfig,
-    sample_rate_override: Optional[float] = None,
+    spoof_factor: Optional[float] = None,
 ) -> Optional[Tuple[np.ndarray, np.ndarray]]:
     if crepe is None:
         print("[WARN] crepe is not installed; skipping CREPE activation plot.")
         return None
-    crepe_sr = cfg.sample_rate if sample_rate_override is None else sample_rate_override
+    crepe_sr = (
+        cfg.sample_rate if spoof_factor is None else cfg.sample_rate / spoof_factor
+    )
     if not np.isfinite(crepe_sr) or crepe_sr <= 0:
         raise ValueError("CREPE sample rate must be positive and finite.")
     if cfg.crepe_step_size_ms is not None:
         step_ms = float(cfg.crepe_step_size_ms)
     else:
         hop_samples = determine_hop_length(cfg)
-        step_sec = hop_samples / cfg.sample_rate
+        step_sec = hop_samples / crepe_sr
         step_ms = step_sec * 1000.0
     min_step_ms = (10.0 / cfg.min_frequency) * 1000.0
     step_ms = float(max(step_ms, min_step_ms))
-    crepe_times, _, _, activation = crepe.predict(
+
+    activation = crepe.get_activation(
         audio,
         int(round(crepe_sr)),
         model_capacity=cfg.crepe_model_capacity,
+        center=True,
         step_size=int(round(step_ms)),
-        viterbi=False,
+        verbose=True,
     )
+    if spoof_factor is not None and spoof_factor != 1.0:
+        # Because we sampled at a different rate, we need to adjust the
+        # activation bins to match the original frequency scale. When we
+        # spoofed the sample rate by a factor of spoof_factor, the
+        # frequencies were scaled by the same factor. In CREPE's 60-bin
+        # per-octave scale, this corresponds to a shift of:
+        #   bin_shift = log2(spoof_factor) * 60
+        num_bins = activation.shape[1]
+        bin_shift = int(round(np.log2(spoof_factor) * 60.0))
+        if abs(bin_shift) < num_bins:
+            if bin_shift > 0:
+                activation = np.pad(
+                    activation, ((0, 0), (bin_shift, 0)), mode="constant"
+                )[:, :num_bins]
+            elif bin_shift < 0:
+                activation = np.pad(
+                    activation, ((0, 0), (0, -bin_shift)), mode="constant"
+                )[:, -bin_shift:]
+        else:
+            activation = np.zeros_like(activation)
+
+    confidence = activation.max(axis=1)
+
+    cents = crepe.core.to_local_average_cents(activation)
+
+    frequency = 10 * 2 ** (cents / 1200)
+    frequency[np.isnan(frequency)] = 0
+
+    crepe_times = np.arange(confidence.shape[0]) * step_ms / 1000.0
     return (
         np.asarray(crepe_times, dtype=np.float32),
         np.asarray(activation, dtype=np.float32),
@@ -411,17 +444,11 @@ def main(argv: Optional[Iterable[str]] = None) -> None:
     if not np.isfinite(spoof_factor) or spoof_factor <= 0:
         print("[WARN] Invalid spoof factor; defaulting to 1.0.")
         spoof_factor = 1.0
-    spoofed_sr = cfg.sample_rate / spoof_factor
-    spoofed_sr = max(spoofed_sr, 1.0)
-    spoof_label = (
-        f"CREPE Activation (Spoofed {int(round(spoofed_sr))} Hz; ÷{spoof_factor:g})"
-        if spoof_factor != 1.0
-        else f"CREPE Activation (Spoofed {int(round(spoofed_sr))} Hz)"
-    )
+    spoof_label = f"CREPE Activation (Spoofed {int(round(cfg.sample_rate / spoof_factor))} Hz; ÷{spoof_factor:g})"
     crepe_spoofed = compute_crepe_activation(
         filtered_audio,
         cfg,
-        sample_rate_override=spoofed_sr,
+        spoof_factor=spoof_factor,
     )
     crepe_results.append((spoof_label, crepe_spoofed))
 
