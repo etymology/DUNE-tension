@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Legacy entrypoint for the scrolling spectrogram visualizer."""
+"""Canonical entry point for the scrolling spectrogram visualizer."""
 
 from spectrum_analysis.cli import main
 
