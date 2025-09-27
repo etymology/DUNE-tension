@@ -7,7 +7,7 @@ import dataclasses
 import datetime as _dt
 import json
 from pathlib import Path
-from typing import Any, Dict, Iterable, Optional, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Tuple
 import matplotlib.pyplot as plt
 import numpy as np
 from scipy import signal
@@ -52,11 +52,14 @@ class PitchCompareConfig:
     crepe_model_capacity: str = "full"
     crepe_step_size_ms: Optional[float] = None
     over_subtraction: float = 1.0
+    spoof_factor: float = 2.0
 
     @staticmethod
     def from_dict(raw: Dict[str, Any]) -> "PitchCompareConfig":
+        alias_map = {"spoof factor": "spoof_factor"}
+        normalized = {alias_map.get(k, k): v for k, v in raw.items()}
         known = {f.name for f in dataclasses.fields(PitchCompareConfig)}
-        filtered = {k: v for k, v in raw.items() if k in known}
+        filtered = {k: v for k, v in normalized.items() if k in known}
         return PitchCompareConfig(**filtered)
 
 
@@ -242,22 +245,27 @@ def subtract_noise(
 
 
 def compute_crepe_activation(
-    audio: np.ndarray, cfg: PitchCompareConfig
+    audio: np.ndarray,
+    cfg: PitchCompareConfig,
+    sample_rate_override: Optional[float] = None,
 ) -> Optional[Tuple[np.ndarray, np.ndarray]]:
     if crepe is None:
         print("[WARN] crepe is not installed; skipping CREPE activation plot.")
         return None
-    step_ms = (
-        cfg.crepe_step_size_ms
-        if cfg.crepe_step_size_ms is not None
-        else determine_hop_length(cfg) * 1000.0 / cfg.sample_rate
-    )
+    crepe_sr = cfg.sample_rate if sample_rate_override is None else sample_rate_override
+    if not np.isfinite(crepe_sr) or crepe_sr <= 0:
+        raise ValueError("CREPE sample rate must be positive and finite.")
+    if cfg.crepe_step_size_ms is not None:
+        step_ms = float(cfg.crepe_step_size_ms)
+    else:
+        hop_samples = determine_hop_length(cfg)
+        step_sec = hop_samples / cfg.sample_rate
+        step_ms = step_sec * 1000.0
     min_step_ms = (10.0 / cfg.min_frequency) * 1000.0
-    step_ms = max(step_ms, min_step_ms)
-    step_ms = float(step_ms)
+    step_ms = float(max(step_ms, min_step_ms))
     crepe_times, _, _, activation = crepe.predict(
         audio,
-        cfg.sample_rate,
+        int(round(crepe_sr)),
         model_capacity=cfg.crepe_model_capacity,
         step_size=int(round(step_ms)),
         viterbi=False,
@@ -280,12 +288,14 @@ def plot_results(
     freqs: np.ndarray,
     times: np.ndarray,
     power: np.ndarray,
-    crepe_result: Optional[Tuple[np.ndarray, np.ndarray]],
+    crepe_results: List[Tuple[str, Optional[Tuple[np.ndarray, np.ndarray]]]],
     cfg: PitchCompareConfig,
     output_dir: Path,
 ) -> None:
-    plt.figure(figsize=(12, 8))
-    ax_wave = plt.subplot(3, 1, 1)
+    fig = plt.figure(figsize=(14, 8))
+    grid = fig.add_gridspec(3, 2, height_ratios=[1.0, 1.0, 1.0])
+
+    ax_wave = fig.add_subplot(grid[0, :])
     t = np.arange(len(audio)) / cfg.sample_rate
     ax_wave.plot(t, audio)
     ax_wave.set_title("Waveform")
@@ -293,7 +303,7 @@ def plot_results(
     ax_wave.set_xlabel("Time (s)")
     ax_wave.set_ylabel("Amplitude")
 
-    ax_spec = plt.subplot(3, 1, 2)
+    ax_spec = fig.add_subplot(grid[1, :])
     mesh = ax_spec.pcolormesh(
         times,
         freqs,
@@ -304,33 +314,59 @@ def plot_results(
     ax_spec.set_ylim(cfg.min_frequency, cfg.max_frequency)
     ax_spec.set_ylabel("Frequency (Hz)")
     ax_spec.set_title("Spectrogram (Noise-Reduced)")
-    plt.colorbar(mesh, ax=ax_spec, label="Power (dB)")
+    fig.colorbar(mesh, ax=ax_spec, label="Power (dB)")
 
-    ax_crepe = plt.subplot(3, 1, 3)
-    if crepe_result is not None:
-        crepe_times, crepe_act = crepe_result
-        freq_axis = _crepe_like_frequency_axis(crepe_act.shape[1])
-        mask = (freq_axis >= cfg.min_frequency) & (freq_axis <= cfg.max_frequency)
-        if mask.any():
-            mesh_crepe = ax_crepe.pcolormesh(
-                crepe_times,
-                freq_axis[mask],
-                crepe_act[:, mask].T,
-                shading="nearest",
-                cmap="viridis",
+    crepe_axes = [fig.add_subplot(grid[2, 0]), fig.add_subplot(grid[2, 1])]
+    for idx, ax in enumerate(crepe_axes):
+        label, result = ("", None)
+        if idx < len(crepe_results):
+            label, result = crepe_results[idx]
+        if result is not None:
+            crepe_times, crepe_act = result
+            freq_axis = _crepe_like_frequency_axis(crepe_act.shape[1])
+            mask = (freq_axis >= cfg.min_frequency) & (freq_axis <= cfg.max_frequency)
+            if mask.any():
+                mesh_crepe = ax.pcolormesh(
+                    crepe_times,
+                    freq_axis[mask],
+                    crepe_act[:, mask].T,
+                    shading="nearest",
+                    cmap="viridis",
+                )
+                fig.colorbar(mesh_crepe, ax=ax, label="Activation")
+            else:
+                ax.text(
+                    0.5,
+                    0.5,
+                    "No activation bins within frequency range.",
+                    ha="center",
+                    va="center",
+                    transform=ax.transAxes,
+                )
+        else:
+            ax.text(
+                0.5,
+                0.5,
+                "CREPE activation unavailable.",
+                ha="center",
+                va="center",
+                transform=ax.transAxes,
             )
-            plt.colorbar(mesh_crepe, ax=ax_crepe, label="Activation")
-    ax_crepe.set_ylim(cfg.min_frequency, cfg.max_frequency)
-    ax_crepe.set_ylabel("Frequency (Hz)")
-    ax_crepe.set_title("CREPE Activation")
+        ax.set_ylim(cfg.min_frequency, cfg.max_frequency)
+        if idx == 0:
+            ax.set_ylabel("Frequency (Hz)")
+        else:
+            ax.set_ylabel("")
+        ax.set_xlabel("Time (s)")
+        ax.set_title(label or "CREPE Activation")
 
-    plt.tight_layout()
+    fig.tight_layout()
     fig_path = output_dir / f"{timestamp}_comparison.png"
-    plt.savefig(fig_path, dpi=150)
+    fig.savefig(fig_path, dpi=150)
     if cfg.show_plots:
         plt.show()
     else:
-        plt.close()
+        plt.close(fig)
 
 
 def save_audio(
@@ -365,7 +401,29 @@ def main(argv: Optional[Iterable[str]] = None) -> None:
     audio_path = save_audio(timestamp, filtered_audio, cfg, output_dir)
     print(f"[INFO] Saved filtered audio to {audio_path}")
 
-    crepe_result = compute_crepe_activation(filtered_audio, cfg)
+    crepe_results: List[Tuple[str, Optional[Tuple[np.ndarray, np.ndarray]]]] = []
+
+    crepe_real = compute_crepe_activation(filtered_audio, cfg)
+    real_label = f"CREPE Activation ({cfg.sample_rate} Hz Real)"
+    crepe_results.append((real_label, crepe_real))
+
+    spoof_factor = cfg.spoof_factor
+    if not np.isfinite(spoof_factor) or spoof_factor <= 0:
+        print("[WARN] Invalid spoof factor; defaulting to 1.0.")
+        spoof_factor = 1.0
+    spoofed_sr = cfg.sample_rate / spoof_factor
+    spoofed_sr = max(spoofed_sr, 1.0)
+    spoof_label = (
+        f"CREPE Activation (Spoofed {int(round(spoofed_sr))} Hz; ÷{spoof_factor:g})"
+        if spoof_factor != 1.0
+        else f"CREPE Activation (Spoofed {int(round(spoofed_sr))} Hz)"
+    )
+    crepe_spoofed = compute_crepe_activation(
+        filtered_audio,
+        cfg,
+        sample_rate_override=spoofed_sr,
+    )
+    crepe_results.append((spoof_label, crepe_spoofed))
 
     plot_results(
         timestamp=timestamp,
@@ -373,7 +431,7 @@ def main(argv: Optional[Iterable[str]] = None) -> None:
         freqs=freqs,
         times=times,
         power=power,
-        crepe_result=crepe_result,
+        crepe_results=crepe_results,
         cfg=cfg,
         output_dir=output_dir,
     )
