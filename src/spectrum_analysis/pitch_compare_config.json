@@ -13,5 +13,6 @@
   "show_plots": true,
   "crepe_model_capacity": "tiny",
   "pesto_model_name": "mir-1k_g7",
-  "over_subtraction": 1.1
+  "over_subtraction": 1.1,
+  "spoof factor": 2.0
 }
