@@ -1,0 +1,16 @@
+{
+  "samplerate": 44100,
+  "fft_size": 8192,
+  "hop": 512,
+  "window_sec": 5.0,
+  "max_freq": 2000.0,
+  "db_range": 80.0,
+  "enable_noise_filter": true,
+  "noise_sec": 2.0,
+  "over_sub": 1.0,
+  "min_freq": 10.0,
+  "ac_win_sec": 0.5,
+  "snr_trigger": 3.0,
+  "snr_release": 3.0,
+  "pre_record_sec": 0.1
+}
