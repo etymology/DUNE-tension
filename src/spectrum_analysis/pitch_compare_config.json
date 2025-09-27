@@ -1,0 +1,17 @@
+{
+  "sample_rate": 44100,
+  "noise_duration": 1.0,
+  "snr_threshold_db": 3.0,
+  "min_frequency": 25.0,
+  "max_frequency": 500.0,
+  "idle_timeout": 1.0,
+  "max_record_seconds": 20.0,
+  "analysis_window_sec": 0.1,
+  "step_size_sec": 0.2,
+  "input_mode": "mic",
+  "output_directory": "data",
+  "show_plots": true,
+  "crepe_model_capacity": "tiny",
+  "pesto_model_name": "mir-1k_g7",
+  "over_subtraction": 1.1
+}
