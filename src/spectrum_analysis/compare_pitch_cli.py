@@ -245,6 +245,34 @@ def subtract_noise(
     return reconstructed, freqs, times, clean_power
 
 
+def apply_volume_equalization(audio: np.ndarray, cfg: PitchCompareConfig) -> np.ndarray:
+    if audio.size == 0:
+        return audio
+
+    sample_rate = float(cfg.sample_rate)
+    min_freq = max(float(cfg.min_frequency), 1.0)
+    max_freq = max(float(cfg.max_frequency), min_freq)
+    cutoff_hz = max(min_freq * 0.25, 1.0)
+    cutoff_hz = min(cutoff_hz, max_freq)
+
+    rc = 1.0 / (2.0 * np.pi * cutoff_hz)
+    alpha = np.exp(-1.0 / (sample_rate * rc))
+    alpha = float(np.clip(alpha, 0.0, 0.9999))
+
+    b = [1.0 - alpha]
+    a = [1.0, -alpha]
+
+    squared = np.square(audio, dtype=np.float32)
+    envelope_sq, _ = signal.lfilter(b, a, squared, zi=[squared[0]])
+    envelope = np.sqrt(envelope_sq + 1e-12).astype(np.float32, copy=False)
+
+    desired_gain = 1.0 / np.clip(envelope, 1e-6, None)
+    desired_gain = np.minimum(desired_gain, 10.0)
+    smoothed_gain, _ = signal.lfilter(b, a, desired_gain, zi=[desired_gain[0]])
+
+    return audio * smoothed_gain.astype(audio.dtype, copy=False)
+
+
 def compute_crepe_activation(
     audio: np.ndarray,
     cfg: PitchCompareConfig,
@@ -267,8 +295,17 @@ def compute_crepe_activation(
     min_step_ms = (10.0 / cfg.min_frequency) * 1000.0
     step_ms = float(max(step_ms, min_step_ms))
 
+    normalized_audio = np.asarray(audio, dtype=np.float32)
+    normalized_audio = normalized_audio - float(np.mean(normalized_audio))
+    normalized_audio = apply_volume_equalization(normalized_audio, cfg)
+    rms = float(np.sqrt(np.mean(np.square(normalized_audio))))
+    if rms > 0.0:
+        normalized_audio = normalized_audio / rms
+    else:
+        normalized_audio = np.zeros_like(normalized_audio)
+
     activation = crepe.get_activation(
-        audio,
+        normalized_audio,
         int(round(crepe_sr)),
         model_capacity=cfg.crepe_model_capacity,
         center=True,
