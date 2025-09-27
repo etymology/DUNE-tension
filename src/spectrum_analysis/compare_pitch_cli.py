@@ -12,6 +12,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from scipy import signal
 from scipy.io import wavfile
+import torch
 
 from audio import MicSource, sd
 
@@ -29,6 +30,24 @@ try:  # Optional dependency - heavy ML models
     from pesto import predict as pesto_predict  # type: ignore
 except Exception:  # pragma: no cover - dependency may be absent
     pesto_predict = None  # type: ignore
+else:  # pragma: no cover - shim runtime incompatibilities in bundled models
+    try:
+        from pesto import data as _pesto_data  # type: ignore
+    except Exception:  # pragma: no cover - best effort optional patch
+        _pesto_data = None  # type: ignore
+    if _pesto_data is not None:
+        _orig_reset_hcqt = _pesto_data.Preprocessor._reset_hcqt_kernels
+
+        if not getattr(_orig_reset_hcqt, "_gamma_patch", False):
+            def _patched_reset(self):  # type: ignore[override]
+                hcqt_kwargs = getattr(self, "hcqt_kwargs", None)
+                if isinstance(hcqt_kwargs, dict):
+                    hcqt_kwargs.pop("gamma", None)
+                return _orig_reset_hcqt(self)
+
+            _orig_reset_hcqt._gamma_patch = True  # type: ignore[attr-defined]
+            _patched_reset._gamma_patch = True  # type: ignore[attr-defined]
+            _pesto_data.Preprocessor._reset_hcqt_kernels = _patched_reset
 
 try:  # Optional dependency - full audio analysis toolkit
     import librosa  # type: ignore
@@ -197,7 +216,6 @@ def compute_noise_profile(
         window="hann",
         nperseg=win_len,
         noverlap=win_len - hop_len,
-        boundary=None,
         padded=False,
     )
     power = np.mean(np.abs(stft) ** 2, axis=1, keepdims=True)
@@ -230,7 +248,6 @@ def subtract_noise(
         window="hann",
         nperseg=win_len,
         noverlap=win_len - hop_len,
-        boundary=None,
         padded=False,
     )
     power = np.abs(stft) ** 2
@@ -304,17 +321,20 @@ def compute_pesto_activation(
 
     audio_buffer = np.asarray(audio, dtype=np.float32)
 
-    try:
-        pesto_times, _, _, activation = pesto_predict(
-            audio_buffer,
-            cfg.sample_rate,
-            **pesto_kwargs,
-        )
-    except TypeError:
-        pesto_times, _, _, activation = pesto_predict(
-            audio_buffer,
-            cfg.sample_rate,
-        )
+    # convert audio buffer from numpy array to torch tensor
+    audio_tensor = torch.from_numpy(audio_buffer)
+
+    # try:
+    pesto_times, _, _, activation = pesto_predict(
+        audio_tensor,
+        cfg.sample_rate,
+        **pesto_kwargs,
+    )
+    # except TypeError:
+    #     pesto_times, _, _, activation = pesto_predict(
+    #         audio_tensor,
+    #         cfg.sample_rate,
+    #     )
 
     return (
         np.asarray(pesto_times, dtype=np.float32),
