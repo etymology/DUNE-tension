@@ -6,8 +6,6 @@
   "max_frequency": 200.0,
   "idle_timeout": 1.0,
   "max_record_seconds": 20.0,
-  "analysis_window_sec": 0.5,
-  "step_size_sec": 0.5,
   "input_mode": "file",
   "input_audio_path": "/home/ben/DUNE-tension/data/test_fixture/20250927-093959_recording.wav",
   "show_plots": true,
