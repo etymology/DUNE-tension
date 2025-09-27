@@ -11,10 +11,13 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
 import numpy as np
+from numpy.lib.stride_tricks import as_strided
 from scipy import signal
 from scipy.io import wavfile
 
 from audio_sources import MicSource, sd
+
+CREPE_FRAME_TARGET_RMS = 0.5
 
 try:  # Optional dependency - may not be available in CI
     import soundfile as sf  # type: ignore
@@ -287,7 +290,7 @@ def compute_crepe_activation(
     max_step_ms = max((window_samples * 0.75) / crepe_sr * 1000.0, 1.0)
     step_ms = float(np.clip(step_ms, 1.0, max_step_ms))
 
-    activation = crepe.get_activation(
+    activation = _get_activation_with_frame_gain(
         audio,
         int(round(crepe_sr)),
         model_capacity=cfg.crepe_model_capacity,
@@ -521,3 +524,57 @@ def main(argv: Optional[Iterable[str]] = None) -> None:
 
 if __name__ == "__main__":  # pragma: no cover - CLI entry point
     main()
+
+
+def _get_activation_with_frame_gain(
+    audio: np.ndarray,
+    sr: int,
+    *,
+    model_capacity: str = "full",
+    center: bool = True,
+    step_size: int = 10,
+    verbose: int = 1,
+    target_rms: float = CREPE_FRAME_TARGET_RMS,
+) -> np.ndarray:
+    """Copy of :func:`crepe.core.get_activation` with per-frame RMS gain."""
+
+    if crepe is None:  # pragma: no cover - handled by caller
+        raise RuntimeError("CREPE is not available")
+
+    model = crepe.core.build_and_load_model(model_capacity)
+    model_srate = crepe.core.model_srate
+
+    if audio.ndim == 2:
+        audio = audio.mean(axis=1)
+    audio = audio.astype(np.float32)
+
+    if sr != model_srate:
+        from resampy import resample  # type: ignore
+
+        audio = resample(audio, sr, model_srate)
+        sr = model_srate
+
+    if center:
+        audio = np.pad(audio, 512, mode="constant", constant_values=0)
+
+    hop_length = int(model_srate * step_size / 1000)
+    n_frames = 1 + int((len(audio) - 1024) / hop_length)
+    frames = as_strided(
+        audio,
+        shape=(1024, n_frames),
+        strides=(audio.itemsize, hop_length * audio.itemsize),
+    )
+    frames = frames.transpose().copy()
+
+    frame_means = np.mean(frames, axis=1, keepdims=True)
+    frames -= frame_means
+    frame_stds = np.std(frames, axis=1, keepdims=True)
+    frame_stds = np.clip(frame_stds, 1e-8, None)
+    frames /= frame_stds
+
+    if target_rms > 0.0:
+        frames *= np.float32(target_rms)
+
+    frames = np.asarray(frames, dtype=np.float32)
+
+    return model.predict(frames, verbose=verbose)
