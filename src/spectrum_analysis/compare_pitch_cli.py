@@ -378,22 +378,35 @@ def plot_results(
                     transform=ax.transAxes,
                 )
             if crepe_act.size:
-                average_activations = crepe_act.mean(axis=0, keepdims=True)
-                cents = crepe.core.to_local_average_cents(average_activations)
-                frequency = 10 * 2 ** (cents / 1200.0)
-                confidence = average_activations.max(axis=1)
+                voiced_threshold = 0.5
+                frame_confidence = crepe_act.max(axis=1)
+                voiced_mask = frame_confidence >= voiced_threshold
 
-                freq_value = float(np.squeeze(frequency))
-                conf_value = float(np.squeeze(confidence))
-
-                if not np.isfinite(freq_value):
-                    freq_value = 0.0
-                if not np.isfinite(conf_value):
-                    conf_value = 0.0
-
-                legend_label = (
-                    f"Fundamental: {freq_value:.2f} Hz\nConfidence: {conf_value:.3f}"
+                average_activations = (
+                    crepe_act[voiced_mask].mean(axis=0, keepdims=True)
+                    if voiced_mask.any()
+                    else None
                 )
+
+                if (
+                    average_activations is not None
+                    and np.isfinite(average_activations).all()
+                ):
+                    cents = crepe.core.to_local_average_cents(average_activations)
+                    frequency = 10 * 2 ** (cents / 1200.0)
+                    confidence = average_activations.max(axis=1)
+
+                    freq_value = float(np.squeeze(frequency))
+                    conf_value = float(np.squeeze(confidence))
+
+                    if not np.isfinite(freq_value):
+                        freq_value = 0.0
+                    if not np.isfinite(conf_value):
+                        conf_value = 0.0
+
+                    legend_label = f"Fundamental: {freq_value:.2f} Hz\nConfidence: {conf_value:.3f}"
+                else:
+                    legend_label = "Fundamental: N/A\nConfidence: N/A"
                 dummy_handle = Line2D([], [], color="none")
                 ax.legend(
                     [dummy_handle], [legend_label], loc="upper right", frameon=True
