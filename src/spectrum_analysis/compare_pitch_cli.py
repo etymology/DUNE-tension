@@ -43,8 +43,6 @@ class PitchCompareConfig:
     max_frequency: float = 2000.0
     idle_timeout: float = 1.0
     max_record_seconds: float = 30.0
-    analysis_window_sec: float = 0.1
-    step_size_sec: Optional[float] = None
     input_mode: str = "mic"
     input_audio_path: Optional[str] = None
     noise_audio_path: Optional[str] = None
@@ -144,7 +142,7 @@ def acquire_audio(cfg: PitchCompareConfig, noise_rms: float) -> np.ndarray:
         audio, _ = load_audio(Path(cfg.input_audio_path), cfg.sample_rate)
         return audio
 
-    hop = determine_hop_length(cfg)
+    _, hop = determine_window_and_hop(cfg)
     source = MicSource(cfg.sample_rate, hop)
     source.start()
     print("[INFO] Listening for audio events...")
@@ -186,8 +184,7 @@ def acquire_audio(cfg: PitchCompareConfig, noise_rms: float) -> np.ndarray:
 def compute_noise_profile(
     noise: np.ndarray, cfg: PitchCompareConfig
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    hop_len = determine_hop_length(cfg)
-    win_len = determine_window_length(cfg, hop_len)
+    win_len, hop_len = determine_window_and_hop(cfg, len(noise))
     freqs, times, stft = signal.stft(
         noise,
         fs=cfg.sample_rate,
@@ -200,26 +197,48 @@ def compute_noise_profile(
     return freqs, times, power
 
 
-def determine_hop_length(cfg: PitchCompareConfig) -> int:
-    min_step = 10.0 / max(cfg.min_frequency, 1e-6)
-    step_sec = cfg.step_size_sec if cfg.step_size_sec is not None else min_step
-    step_sec = max(step_sec, min_step)
-    return max(int(round(step_sec * cfg.sample_rate)), 1)
+def determine_window_and_hop(
+    cfg: PitchCompareConfig, total_samples: Optional[int] = None
+) -> tuple[int, int]:
+    sample_rate = cfg.sample_rate
+    if sample_rate <= 0:
+        raise ValueError("sample_rate must be positive to determine window parameters.")
+    min_frequency = max(cfg.min_frequency, 1e-12)
 
+    if total_samples is None:
+        desired_window_samples = int(round((8.0 / min_frequency) * sample_rate))
+        total_samples = max(desired_window_samples, 1)
+    else:
+        total_samples = max(int(total_samples), 1)
 
-def determine_window_length(cfg: PitchCompareConfig, hop_length: int) -> int:
-    win_samples = int(round(cfg.analysis_window_sec * cfg.sample_rate))
-    win_samples = max(win_samples, hop_length * 2)
-    if win_samples % 2 == 1:
-        win_samples += 1
-    return win_samples
+    total_duration = total_samples / sample_rate
+    desired_window_sec = 8.0 / min_frequency
+    window_sec = min(desired_window_sec, total_duration)
+    if not np.isfinite(window_sec) or window_sec <= 0:
+        window_sec = total_duration if total_duration > 0 else 1.0 / sample_rate
+
+    window_samples = int(round(window_sec * sample_rate))
+    window_samples = max(min(window_samples, total_samples), 1)
+
+    if total_samples >= 2 and window_samples < 2:
+        window_samples = min(2, total_samples)
+
+    if window_samples > 1 and window_samples % 2 == 1:
+        if window_samples < total_samples:
+            window_samples += 1
+        else:
+            window_samples = max(window_samples - 1, 1)
+
+    hop_samples = int(np.floor(window_samples * 0.75))
+    hop_samples = max(min(hop_samples, window_samples), 1)
+
+    return window_samples, hop_samples
 
 
 def subtract_noise(
     audio: np.ndarray, noise_profile: np.ndarray, cfg: PitchCompareConfig
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    hop_len = determine_hop_length(cfg)
-    win_len = determine_window_length(cfg, hop_len)
+    win_len, hop_len = determine_window_and_hop(cfg, len(audio))
     freqs, times, stft = signal.stft(
         audio,
         fs=cfg.sample_rate,
@@ -258,14 +277,15 @@ def compute_crepe_activation(
     )
     if not np.isfinite(crepe_sr) or crepe_sr <= 0:
         raise ValueError("CREPE sample rate must be positive and finite.")
+    window_samples, hop_samples = determine_window_and_hop(cfg, len(audio))
     if cfg.crepe_step_size_ms is not None:
         step_ms = float(cfg.crepe_step_size_ms)
     else:
-        hop_samples = determine_hop_length(cfg)
         step_sec = hop_samples / crepe_sr
-        step_ms = step_sec * 1000.0
-    min_step_ms = (10.0 / cfg.min_frequency) * 1000.0
-    step_ms = float(max(step_ms, min_step_ms))
+        step_ms = max(step_sec * 1000.0, 1.0)
+
+    max_step_ms = max((window_samples * 0.75) / crepe_sr * 1000.0, 1.0)
+    step_ms = float(np.clip(step_ms, 1.0, max_step_ms))
 
     activation = crepe.get_activation(
         audio,
