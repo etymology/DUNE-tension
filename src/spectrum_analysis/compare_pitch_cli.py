@@ -14,7 +14,7 @@ from scipy import signal
 from scipy.io import wavfile
 import torch
 
-from audio import MicSource, sd
+from audio_sources import MicSource, sd
 
 try:  # Optional dependency - may not be available in CI
     import soundfile as sf  # type: ignore
@@ -27,7 +27,7 @@ except Exception:  # pragma: no cover - dependency may be absent
     crepe = None  # type: ignore
 
 try:  # Optional dependency - heavy ML models
-    from pesto import predict as pesto_predict  # type: ignore
+    from pesto import p as pesto_predict  # type: ignore
 except Exception:  # pragma: no cover - dependency may be absent
     pesto_predict = None  # type: ignore
 else:  # pragma: no cover - shim runtime incompatibilities in bundled models
@@ -50,7 +50,7 @@ else:  # pragma: no cover - shim runtime incompatibilities in bundled models
             _pesto_data.Preprocessor._reset_hcqt_kernels = _patched_reset
 
 try:  # Optional dependency - full audio analysis toolkit
-    import librosa  # type: ignore
+    import l  # type: ignore
 except Exception:  # pragma: no cover - dependency may be absent
     librosa = None  # type: ignore
 
@@ -377,37 +377,37 @@ def compute_pyin(
 
     last_error: Optional[Exception] = None
 
-    while True:
-        try:
-            f0, _, _ = librosa.pyin(
-                audio,
-                fmin=cfg.min_frequency,
-                fmax=cfg.max_frequency,
-                sr=cfg.sample_rate,
-                frame_length=frame_candidate,
-                hop_length=hop_candidate,
-                center=False,
-            )
-            hop_len = hop_candidate
-            break
-        except ParameterError as exc:  # pragma: no cover - depends on librosa internals
-            last_error = exc
+    # while True:
+    # try:
+    f0, _, _ = librosa.pyin(
+        audio,
+        fmin=cfg.min_frequency,
+        fmax=cfg.max_frequency,
+        sr=cfg.sample_rate,
+        frame_length=frame_candidate,
+        hop_length=hop_candidate,
+        center=False,
+    )
+    hop_len = hop_candidate
+    # break
+    # except ParameterError as exc:  # pragma: no cover - depends on librosa internals
+    #     last_error = exc
 
-            growth_hop = _ensure_even(_next_power_of_two(hop_candidate * 2))
-            growth_frame = _ensure_even(
-                _next_power_of_two(max(frame_candidate * 2, len(audio) + hop_candidate))
-            )
+    #     growth_hop = _ensure_even(_next_power_of_two(hop_candidate * 2))
+    #     growth_frame = _ensure_even(
+    #         _next_power_of_two(max(frame_candidate * 2, len(audio) + hop_candidate))
+    #     )
 
-            if growth_frame == frame_candidate and growth_hop == hop_candidate:
-                break
+    #     if growth_frame == frame_candidate and growth_hop == hop_candidate:
+    #         break
 
-            print(
-                "[WARN] librosa.pyin rejected hop/frame lengths; "
-                "retrying with hop=%d frame=%d." % (growth_hop, growth_frame)
-            )
+    #     print(
+    #         "[WARN] librosa.pyin rejected hop/frame lengths; "
+    #         "retrying with hop=%d frame=%d." % (growth_hop, growth_frame)
+    #     )
 
-            hop_candidate = growth_hop
-            frame_candidate = max(growth_frame, hop_candidate * 2)
+    #     hop_candidate = growth_hop
+    #     frame_candidate = max(growth_frame, hop_candidate * 2)
     if last_error is not None and "f0" not in locals():
         raise last_error
 

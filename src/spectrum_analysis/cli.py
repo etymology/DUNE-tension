@@ -7,8 +7,8 @@ import json
 from importlib import resources
 from typing import Any
 
-from .audio import DemoSource, MicSource, sd
-from .visualizer import ScrollingSpectrogram, SpectrogramConfig
+from spectrum_analysis.audio_sources import DemoSource, MicSource, sd
+from spectrum_analysis.visualizer import ScrollingSpectrogram, SpectrogramConfig
 
 _SCROLLER_CONFIG_NAME = "spectrogram_scroller_basic_config.json"
 
