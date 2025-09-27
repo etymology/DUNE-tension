@@ -9,6 +9,7 @@ import json
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 import matplotlib.pyplot as plt
+from matplotlib.lines import Line2D
 import numpy as np
 from scipy import signal
 from scipy.io import wavfile
@@ -375,6 +376,27 @@ def plot_results(
                     ha="center",
                     va="center",
                     transform=ax.transAxes,
+                )
+            if crepe_act.size:
+                average_activations = crepe_act.mean(axis=0, keepdims=True)
+                cents = crepe.core.to_local_average_cents(average_activations)
+                frequency = 10 * 2 ** (cents / 1200.0)
+                confidence = average_activations.max(axis=1)
+
+                freq_value = float(np.squeeze(frequency))
+                conf_value = float(np.squeeze(confidence))
+
+                if not np.isfinite(freq_value):
+                    freq_value = 0.0
+                if not np.isfinite(conf_value):
+                    conf_value = 0.0
+
+                legend_label = (
+                    f"Fundamental: {freq_value:.2f} Hz\nConfidence: {conf_value:.3f}"
+                )
+                dummy_handle = Line2D([], [], color="none")
+                ax.legend(
+                    [dummy_handle], [legend_label], loc="upper right", frameon=True
                 )
         else:
             ax.text(
