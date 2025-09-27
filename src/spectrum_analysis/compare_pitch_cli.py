@@ -407,7 +407,6 @@ def plot_results(
                     legend_label = f"Fundamental: {freq_value:.2f} Hz\nConfidence: {conf_value:.3f}"
                 else:
                     legend_label = "Fundamental: N/A\nConfidence: N/A"
-
                 dummy_handle = Line2D([], [], color="none")
                 ax.legend(
                     [dummy_handle], [legend_label], loc="upper right", frameon=True
