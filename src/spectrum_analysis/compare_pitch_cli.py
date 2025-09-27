@@ -30,6 +30,11 @@ try:  # Optional dependency - heavy ML models
 except Exception:  # pragma: no cover - dependency may be absent
     pesto_predict = None  # type: ignore
 
+try:  # Optional dependency - pesto backend
+    import torch
+except Exception:  # pragma: no cover - dependency may be absent
+    torch = None  # type: ignore
+
 try:  # Optional dependency - full audio analysis toolkit
     import librosa  # type: ignore
 except Exception:  # pragma: no cover - dependency may be absent
@@ -289,6 +294,12 @@ def compute_pesto_activation(
     if pesto_predict is None:
         print("[WARN] pesto is not installed; skipping Pesto activation plot.")
         return None
+    if torch is None:
+        print(
+            "[WARN] torch is required for pesto predictions but is not available; "
+            "skipping Pesto activation plot."
+        )
+        return None
     step_ms = (
         cfg.pesto_step_size_ms
         if cfg.pesto_step_size_ms is not None
@@ -303,16 +314,22 @@ def compute_pesto_activation(
     }
 
     audio_buffer = np.asarray(audio, dtype=np.float32)
+    if audio_buffer.ndim != 1:
+        audio_buffer = np.squeeze(audio_buffer)
+    if audio_buffer.ndim == 0:
+        audio_buffer = audio_buffer.reshape(1)
+    audio_buffer = np.ascontiguousarray(audio_buffer, dtype=np.float32)
+    pesto_input = torch.from_numpy(audio_buffer).to(dtype=torch.float32)
 
     try:
         pesto_times, _, _, activation = pesto_predict(
-            audio_buffer,
+            pesto_input,
             cfg.sample_rate,
             **pesto_kwargs,
         )
     except TypeError:
         pesto_times, _, _, activation = pesto_predict(
-            audio_buffer,
+            pesto_input,
             cfg.sample_rate,
         )
 
@@ -320,7 +337,7 @@ def compute_pesto_activation(
         np.asarray(pesto_times, dtype=np.float32),
         np.asarray(activation, dtype=np.float32),
     )
-  
+
 
 def _ensure_even(value: int) -> int:
     return value if value % 2 == 0 else value + 1
@@ -390,7 +407,6 @@ def compute_pyin(
             frame_candidate = max(growth_frame, hop_candidate * 2)
     if last_error is not None and "f0" not in locals():
         raise last_error
-
 
     times = librosa.times_like(f0, sr=cfg.sample_rate, hop_length=hop_len)
     return times, f0
