@@ -41,6 +41,8 @@ class PitchCompareConfig:
     snr_threshold_db: float = 3.0
     min_frequency: float = 55.0
     max_frequency: float = 2000.0
+    min_oscillations_per_window: float = 8.0
+    min_window_overlap: float = 0.25
     idle_timeout: float = 1.0
     max_record_seconds: float = 30.0
     input_mode: str = "mic"
@@ -204,15 +206,23 @@ def determine_window_and_hop(
     if sample_rate <= 0:
         raise ValueError("sample_rate must be positive to determine window parameters.")
     min_frequency = max(cfg.min_frequency, 1e-12)
+    min_oscillations = max(cfg.min_oscillations_per_window, 1e-12)
+
+    min_overlap = float(cfg.min_window_overlap)
+    if not np.isfinite(min_overlap):
+        min_overlap = 0.0
+    min_overlap = float(np.clip(min_overlap, 0.0, 0.999))
 
     if total_samples is None:
-        desired_window_samples = int(round((8.0 / min_frequency) * sample_rate))
+        desired_window_samples = int(
+            round((min_oscillations / min_frequency) * sample_rate)
+        )
         total_samples = max(desired_window_samples, 1)
     else:
         total_samples = max(int(total_samples), 1)
 
     total_duration = total_samples / sample_rate
-    desired_window_sec = 8.0 / min_frequency
+    desired_window_sec = min_oscillations / min_frequency
     window_sec = min(desired_window_sec, total_duration)
     if not np.isfinite(window_sec) or window_sec <= 0:
         window_sec = total_duration if total_duration > 0 else 1.0 / sample_rate
@@ -229,7 +239,8 @@ def determine_window_and_hop(
         else:
             window_samples = max(window_samples - 1, 1)
 
-    hop_samples = int(np.floor(window_samples * 0.75))
+    max_step_fraction = max(1.0 - min_overlap, 0.0)
+    hop_samples = int(np.floor(window_samples * max_step_fraction))
     hop_samples = max(min(hop_samples, window_samples), 1)
 
     return window_samples, hop_samples
@@ -284,7 +295,9 @@ def compute_crepe_activation(
         step_sec = hop_samples / crepe_sr
         step_ms = max(step_sec * 1000.0, 1.0)
 
-    max_step_ms = max((window_samples * 0.75) / crepe_sr * 1000.0, 1.0)
+    min_overlap = float(np.clip(cfg.min_window_overlap, 0.0, 0.999))
+    max_step_fraction = max(1.0 - min_overlap, 0.0)
+    max_step_ms = max((window_samples * max_step_fraction) / crepe_sr * 1000.0, 1.0)
     step_ms = float(np.clip(step_ms, 1.0, max_step_ms))
 
     activation = crepe.get_activation(
