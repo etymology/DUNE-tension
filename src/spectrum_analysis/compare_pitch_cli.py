@@ -41,8 +41,8 @@ class PitchCompareConfig:
     snr_threshold_db: float = 3.0
     min_frequency: float = 55.0
     max_frequency: float = 2000.0
-    min_oscillations_per_window: float = 8.0
-    min_window_overlap: float = 0.25
+    min_oscillations_per_window: float = 20.0
+    min_window_overlap: float = 0.8
     idle_timeout: float = 1.0
     max_record_seconds: float = 30.0
     input_mode: str = "mic"
@@ -53,7 +53,7 @@ class PitchCompareConfig:
     crepe_model_capacity: str = "full"
     crepe_step_size_ms: Optional[float] = None
     over_subtraction: float = 1.0
-    spoof_factor: float = 2.0
+    spoof_factor: float = 0.5
 
     @staticmethod
     def from_dict(raw: Dict[str, Any]) -> "PitchCompareConfig":
@@ -411,7 +411,8 @@ def plot_results(
                     transform=ax.transAxes,
                 )
             if crepe_act.size:
-                voiced_threshold = 0.5
+                # the voiced thresholed is half the average of all nonzero confidences
+                voiced_threshold = 0.5 * np.mean(crepe_act[crepe_act > 0])
                 frame_confidence = crepe_act.max(axis=1)
                 voiced_mask = frame_confidence >= voiced_threshold
 
