@@ -32,6 +32,7 @@ from crepe_analysis import (
 
 CREPE_FRAME_TARGET_RMS = 1
 
+
 @dataclasses.dataclass
 class PitchCompareConfig:
     """Configuration loaded from JSON for pitch comparison runs."""
@@ -314,14 +315,21 @@ def main(argv: Optional[Iterable[str]] = None) -> None:
     ensure_output_dir(output_dir)
     timestamp = _dt.datetime.now().strftime("%Y%m%d-%H%M%S")
 
-    noise = record_noise_sample(cfg)
-    noise_rms = float(np.sqrt(np.mean(np.square(noise)) + 1e-12))
-    _, _, noise_profile = compute_noise_profile(noise, cfg)
-    audio = acquire_audio(cfg, noise_rms)
-    filtered_audio, freqs, times, power = subtract_noise(audio, noise_profile, cfg)
+    is_file_input = cfg.input_mode == "file"
 
-    audio_path = save_audio(timestamp, filtered_audio, cfg, output_dir)
-    print(f"[INFO] Saved filtered audio to {audio_path}")
+    if is_file_input:
+        audio = acquire_audio(cfg, 0.0)
+        filtered_audio = audio
+        freqs = times = power = None
+    else:
+        noise = record_noise_sample(cfg)
+        noise_rms = float(np.sqrt(np.mean(np.square(noise)) + 1e-12))
+        _, _, noise_profile = compute_noise_profile(noise, cfg)
+        audio = acquire_audio(cfg, noise_rms)
+        filtered_audio, freqs, times, power = subtract_noise(audio, noise_profile, cfg)
+
+        audio_path = save_audio(timestamp, filtered_audio, cfg, output_dir)
+        print(f"[INFO] Saved filtered audio to {audio_path}")
 
     crepe_results: List[Tuple[str, Optional[Tuple[np.ndarray, np.ndarray]]]] = []
 
@@ -346,16 +354,22 @@ def main(argv: Optional[Iterable[str]] = None) -> None:
     )
     crepe_results.append((sr_augmented_label, crepe_scaled))
 
-    plot_results(
-        timestamp=timestamp,
-        audio=filtered_audio,
-        freqs=freqs,
-        times=times,
-        power=power,
-        crepe_results=crepe_results,
-        cfg=cfg,
-        output_dir=output_dir,
-    )
+    if (
+        not is_file_input
+        and freqs is not None
+        and times is not None
+        and power is not None
+    ):
+        plot_results(
+            timestamp=timestamp,
+            audio=filtered_audio,
+            freqs=freqs,
+            times=times,
+            power=power,
+            crepe_results=crepe_results,
+            cfg=cfg,
+            output_dir=output_dir,
+        )
 
 
 if __name__ == "__main__":  # pragma: no cover - CLI entry point
