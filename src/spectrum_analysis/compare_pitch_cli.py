@@ -384,12 +384,61 @@ def _compute_crepe_crop_limits(
     else:
         freq_limit = freqs[min(freq_idx + 1, freqs.size - 1)]
 
-    x_limits = (times[0], max(time_limit, times[0]))
-    y_limits = (
-        min_frequency,
-        float(np.clip(freq_limit, min_frequency, max_frequency)),
-    )
+    min_time = float(times[0])
+    max_time = float(times[-1]) if times.size else min_time
+    base_left = min_time
+    base_right = max(time_limit, base_left)
+
+    base_bottom = min_frequency
+    base_top = float(np.clip(freq_limit, min_frequency, max_frequency))
+
+    x_limits = _expand_with_margin(base_left, base_right, min_time, max_time)
+    y_limits = _expand_with_margin(base_bottom, base_top, min_frequency, max_frequency)
     return x_limits, y_limits
+
+
+def _expand_with_margin(
+    lower: float,
+    upper: float,
+    min_bound: float,
+    max_bound: float,
+    margin_fraction: float = 0.1,
+) -> Tuple[float, float]:
+    lower = float(lower)
+    upper = float(upper)
+    min_bound = float(min_bound)
+    max_bound = float(max_bound)
+
+    if upper < lower:
+        lower, upper = upper, lower
+
+    span = upper - lower
+    if not np.isfinite(span) or span <= 0.0:
+        span = 0.0
+
+    margin = span * float(margin_fraction)
+    expanded_lower = lower - margin
+    expanded_upper = upper + margin
+
+    if expanded_lower < min_bound:
+        deficit = min_bound - expanded_lower
+        expanded_lower = min_bound
+        expanded_upper = min(expanded_upper + deficit, max_bound)
+
+    if expanded_upper > max_bound:
+        deficit = expanded_upper - max_bound
+        expanded_upper = max_bound
+        expanded_lower = max(expanded_lower - deficit, min_bound)
+
+    expanded_lower = max(expanded_lower, min_bound)
+    expanded_upper = min(expanded_upper, max_bound)
+
+    if expanded_upper < expanded_lower:
+        mid = 0.5 * (expanded_lower + expanded_upper)
+        expanded_lower = expanded_upper = np.clip(mid, min_bound, max_bound)
+
+    return expanded_lower, expanded_upper
+
 
 
 def _activation_summary_label(activation: np.ndarray) -> str:
