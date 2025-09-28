@@ -18,18 +18,19 @@ import numpy as np
 
 from audio_sources import MicSource, sd
 
-from .audio_processing import (
+from audio_processing import (
     compute_noise_profile,
     determine_window_and_hop,
     load_audio,
     subtract_noise,
 )
-from .crepe_analysis import (
+from crepe_analysis import (
     compute_crepe_activation,
     crepe_frequency_axis,
     summarize_activation,
 )
 
+CREPE_FRAME_TARGET_RMS = 1
 
 @dataclasses.dataclass
 class PitchCompareConfig:
@@ -51,12 +52,12 @@ class PitchCompareConfig:
     show_plots: bool = True
     crepe_model_capacity: str = "full"
     crepe_step_size_ms: Optional[float] = None
-    over_subtraction: float = 1.0
-    spoof_factor: float = 0.5
+    over_subtraction: float = 1.0  # Noise reduction factor
+    sr_augment_factor: float = 2.0  # Factor to scale sample rate for CREPE
 
     @staticmethod
     def from_dict(raw: Dict[str, Any]) -> "PitchCompareConfig":
-        alias_map = {"spoof factor": "spoof_factor"}
+        alias_map = {"sr_augment_factor": "sr_augment_factor"}
         normalized = {alias_map.get(k, k): v for k, v in raw.items()}
         known = {f.name for f in dataclasses.fields(PitchCompareConfig)}
         filtered = {k: v for k, v in normalized.items() if k in known}
@@ -328,18 +329,22 @@ def main(argv: Optional[Iterable[str]] = None) -> None:
     real_label = f"CREPE Activation ({cfg.sample_rate} Hz Real)"
     crepe_results.append((real_label, crepe_real))
 
-    spoof_factor = cfg.spoof_factor
-    if not np.isfinite(spoof_factor) or spoof_factor <= 0:
-        print("[WARN] Invalid spoof factor; defaulting to 1.0.")
-        spoof_factor = 1.0
-    spoof_sr = (
-        int(round(cfg.sample_rate / spoof_factor)) if spoof_factor else cfg.sample_rate
+    sr_augment_factor = cfg.sr_augment_factor
+    if not np.isfinite(sr_augment_factor) or sr_augment_factor <= 0:
+        print("[WARN] Invalid augment factor; defaulting to 1.0.")
+        sr_augment_factor = 1.0
+    augmented_sr = (
+        int(round(cfg.sample_rate * sr_augment_factor))
+        if sr_augment_factor
+        else cfg.sample_rate
     )
-    spoof_label = f"CREPE Activation (Spoofed {spoof_sr} Hz; ÷{spoof_factor:g})"
-    crepe_spoofed = compute_crepe_activation(
-        filtered_audio, cfg, spoof_factor=spoof_factor
+    sr_augmented_label = (
+        f"CREPE Activation (augmented sr {augmented_sr} Hz; x{sr_augment_factor:g})"
     )
-    crepe_results.append((spoof_label, crepe_spoofed))
+    crepe_scaled = compute_crepe_activation(
+        filtered_audio, cfg, sr_augment_factor=sr_augment_factor
+    )
+    crepe_results.append((sr_augmented_label, crepe_scaled))
 
     plot_results(
         timestamp=timestamp,
@@ -351,60 +356,6 @@ def main(argv: Optional[Iterable[str]] = None) -> None:
         cfg=cfg,
         output_dir=output_dir,
     )
-
-
-def _get_activation_with_frame_gain(
-    audio: np.ndarray,
-    sr: int,
-    *,
-    model_capacity: str = "full",
-    center: bool = True,
-    step_size: int = 10,
-    verbose: int = 1,
-    target_rms: float = CREPE_FRAME_TARGET_RMS,
-) -> np.ndarray:
-    """Copy of :func:`crepe.core.get_activation` with per-frame RMS gain."""
-
-    if crepe is None:  # pragma: no cover - handled by caller
-        raise RuntimeError("CREPE is not available")
-
-    model = crepe.core.build_and_load_model(model_capacity)
-    model_srate = crepe.core.model_srate
-
-    if audio.ndim == 2:
-        audio = audio.mean(axis=1)
-    audio = audio.astype(np.float32)
-
-    if sr != model_srate:
-        from resampy import resample  # type: ignore
-
-        audio = resample(audio, sr, model_srate)
-        sr = model_srate
-
-    if center:
-        audio = np.pad(audio, 512, mode="constant", constant_values=0)
-
-    hop_length = int(model_srate * step_size / 1000)
-    n_frames = 1 + int((len(audio) - 1024) / hop_length)
-    frames = as_strided(
-        audio,
-        shape=(1024, n_frames),
-        strides=(audio.itemsize, hop_length * audio.itemsize),
-    )
-    frames = frames.transpose().copy()
-
-    frame_means = np.mean(frames, axis=1, keepdims=True)
-    frames -= frame_means
-    frame_stds = np.std(frames, axis=1, keepdims=True)
-    frame_stds = np.clip(frame_stds, 1e-8, None)
-    frames /= frame_stds
-
-    if target_rms > 0.0:
-        frames *= np.float32(target_rms)
-
-    frames = np.asarray(frames, dtype=np.float32)
-
-    return model.predict(frames, verbose=verbose)
 
 
 if __name__ == "__main__":  # pragma: no cover - CLI entry point

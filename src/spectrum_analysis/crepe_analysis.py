@@ -7,7 +7,7 @@ from typing import Optional, Tuple, TYPE_CHECKING
 import numpy as np
 from numpy.lib.stride_tricks import as_strided
 
-from .audio_processing import determine_window_and_hop
+from audio_processing import determine_window_and_hop
 
 CREPE_FRAME_TARGET_RMS = 0.5
 
@@ -17,22 +17,24 @@ except Exception:  # pragma: no cover - dependency may be absent
     crepe = None  # type: ignore
 
 if TYPE_CHECKING:  # pragma: no cover - only for type checking
-    from .compare_pitch_cli import PitchCompareConfig
+    from compare_pitch_cli import PitchCompareConfig
 
 
 def compute_crepe_activation(
     audio: np.ndarray,
     cfg: "PitchCompareConfig",
-    spoof_factor: Optional[float] = None,
+    sr_augment_factor: Optional[float] = None,
 ) -> Optional[Tuple[np.ndarray, np.ndarray]]:
-    """Compute CREPE activations for a signal, with optional spoofing."""
+    """Compute CREPE activations for a signal, with optional preprocessing augment of sample rate."""
 
     if crepe is None:
         print("[WARN] crepe is not installed; skipping CREPE activation plot.")
         return None
 
     crepe_sr = (
-        cfg.sample_rate if spoof_factor is None else cfg.sample_rate / spoof_factor
+        cfg.sample_rate
+        if sr_augment_factor is None
+        else cfg.sample_rate * sr_augment_factor
     )
     if not np.isfinite(crepe_sr) or crepe_sr <= 0:
         raise ValueError("CREPE sample rate must be positive and finite.")
@@ -58,8 +60,8 @@ def compute_crepe_activation(
         verbose=True,
     )
 
-    if spoof_factor is not None and spoof_factor != 1.0:
-        activation = _despoof_activation(activation, spoof_factor)
+    if sr_augment_factor is not None and sr_augment_factor != 1.0:
+        activation = _reverse_sr_augment(activation, sr_augment_factor)
 
     frame_count = activation.shape[0]
     crepe_times = np.arange(frame_count) * step_ms / 1000.0
@@ -69,11 +71,11 @@ def compute_crepe_activation(
     )
 
 
-def _despoof_activation(activation: np.ndarray, spoof_factor: float) -> np.ndarray:
-    """Shift CREPE activation bins to account for spoofed sample rate."""
+def _reverse_sr_augment(activation: np.ndarray, sr_augment_factor: float) -> np.ndarray:
+    """Shift CREPE activation bins to account for scaled sample rate."""
 
     num_bins = activation.shape[1]
-    bin_shift = int(round(np.log2(spoof_factor) * 60.0))
+    bin_shift = int(round(-np.log2(sr_augment_factor) * 60.0))
     if abs(bin_shift) < num_bins:
         if bin_shift > 0:
             activation = np.pad(activation, ((0, 0), (bin_shift, 0)), mode="constant")[

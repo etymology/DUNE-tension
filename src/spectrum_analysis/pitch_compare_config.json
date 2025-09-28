@@ -3,7 +3,7 @@
   "noise_duration": 2,
   "snr_threshold_db": 3.0,
   "min_frequency": 30.0,
-  "max_frequency": 100.0,
+  "max_frequency": 1000.0,
   "min_oscillations_per_window": 20.0,
   "min_window_overlap": 0.8,
   "idle_timeout": 1.0,
@@ -14,5 +14,5 @@
   "crepe_model_capacity": "tiny",
   "pesto_model_name": "mir-1k_g7",
   "over_subtraction": 1.1,
-  "spoof factor": 0.125
+  "sr_augment_factor": 20
 }
