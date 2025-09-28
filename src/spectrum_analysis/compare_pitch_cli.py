@@ -55,6 +55,7 @@ class PitchCompareConfig:
     crepe_step_size_ms: Optional[float] = None
     over_subtraction: float = 1.0  # Noise reduction factor
     sr_augment_factor: float = 2.0  # Factor to scale sample rate for CREPE
+    crepe_activation_coverage: float = 0.9
 
     @staticmethod
     def from_dict(raw: Dict[str, Any]) -> "PitchCompareConfig":
@@ -165,7 +166,7 @@ def plot_results(
     audio: np.ndarray,
     freqs: np.ndarray,
     times: np.ndarray,
-    power: np.ndarray,
+    power: Optional[np.ndarray],
     crepe_results: List[Tuple[str, Optional[Tuple[np.ndarray, np.ndarray]]]],
     cfg: PitchCompareConfig,
     output_dir: Path,
@@ -204,17 +205,31 @@ def _add_spectrogram_plot(
     location: slice,
     freqs: np.ndarray,
     times: np.ndarray,
-    power: np.ndarray,
+    power: Optional[np.ndarray],
     cfg: PitchCompareConfig,
 ) -> Axes:
     ax = fig.add_subplot(location)
-    mesh = ax.pcolormesh(
-        times, freqs, 10 * np.log10(power + 1e-12), shading="gouraud", cmap="magma"
-    )
+    if power is None:
+        ax.text(
+            0.5,
+            0.5,
+            "Spectrogram unavailable.",
+            ha="center",
+            va="center",
+            transform=ax.transAxes,
+        )
+    else:
+        mesh = ax.pcolormesh(
+            times,
+            freqs,
+            10 * np.log10(np.asarray(power, dtype=float) + 1e-12),
+            shading="gouraud",
+            cmap="magma",
+        )
+        fig.colorbar(mesh, ax=ax, label="Power (dB)")
     ax.set_ylim(cfg.min_frequency, cfg.max_frequency)
     ax.set_ylabel("Frequency (Hz)")
     ax.set_title("Spectrogram (Noise-Reduced)")
-    fig.colorbar(mesh, ax=ax, label="Power (dB)")
     return ax
 
 
@@ -240,11 +255,17 @@ def _render_crepe_axis(
     result: Optional[Tuple[np.ndarray, np.ndarray]],
     cfg: PitchCompareConfig,
 ) -> None:
+    x_limits: Optional[Tuple[float, float]] = None
+    y_limits: Optional[Tuple[float, float]] = None
     if result is not None:
         crepe_times, crepe_act = result
         freq_axis = crepe_frequency_axis(crepe_act.shape[1])
         mask = (freq_axis >= cfg.min_frequency) & (freq_axis <= cfg.max_frequency)
         if mask.any():
+            coverage = getattr(cfg, "crepe_activation_coverage", 0.9)
+            if not np.isfinite(coverage):
+                coverage = 1.0
+            coverage = float(np.clip(coverage, 0.0, 1.0))
             mesh = ax.pcolormesh(
                 crepe_times,
                 freq_axis[mask],
@@ -253,6 +274,19 @@ def _render_crepe_axis(
                 cmap="viridis",
             )
             fig.colorbar(mesh, ax=ax, label="Activation")
+
+            masked_activation = crepe_act[:, mask]
+            freq_values = freq_axis[mask]
+            limits = _compute_crepe_crop_limits(
+                crepe_times,
+                freq_values,
+                masked_activation,
+                coverage,
+                cfg.min_frequency,
+                cfg.max_frequency,
+            )
+            if limits is not None:
+                x_limits, y_limits = limits
         else:
             ax.text(
                 0.5,
@@ -262,6 +296,11 @@ def _render_crepe_axis(
                 va="center",
                 transform=ax.transAxes,
             )
+
+        if x_limits is None and crepe_times.size:
+            x_limits = (crepe_times[0], crepe_times[-1])
+        if y_limits is None:
+            y_limits = (cfg.min_frequency, cfg.max_frequency)
 
         legend_label = _activation_summary_label(crepe_act)
         dummy_handle = Line2D([], [], color="none")
@@ -275,11 +314,71 @@ def _render_crepe_axis(
             va="center",
             transform=ax.transAxes,
         )
+        y_limits = (cfg.min_frequency, cfg.max_frequency)
 
-    ax.set_ylim(cfg.min_frequency, cfg.max_frequency)
+    if x_limits is not None:
+        ax.set_xlim(*x_limits)
+    if y_limits is not None:
+        ax.set_ylim(*y_limits)
     ax.set_ylabel("Frequency (Hz)")
     ax.set_xlabel("Time (s)")
     ax.set_title(label or "CREPE Activation")
+
+
+def _compute_crepe_crop_limits(
+    times: np.ndarray,
+    freqs: np.ndarray,
+    activation: np.ndarray,
+    coverage: float,
+    min_frequency: float,
+    max_frequency: float,
+) -> Optional[Tuple[Tuple[float, float], Tuple[float, float]]]:
+    if activation.size == 0 or times.size == 0 or freqs.size == 0:
+        return None
+
+    coverage = float(np.clip(coverage, 0.0, 1.0))
+    positive_activation = np.where(activation > 0.0, activation, 0.0)
+    total_activation = float(positive_activation.sum())
+    if total_activation <= 0.0:
+        return None
+
+    if coverage <= 0.0:
+        return None
+    if coverage >= 1.0:
+        x_limits = (times[0], times[-1]) if times.size else None
+        y_limits = (min_frequency, max_frequency)
+        if x_limits is None:
+            return None
+        return x_limits, y_limits
+
+    cumulative = np.cumsum(np.cumsum(positive_activation, axis=0), axis=1)
+    target = coverage * total_activation
+    coverage_mask = cumulative >= target
+    if not coverage_mask.any():
+        return None
+
+    time_bins = np.arange(1, activation.shape[0] + 1, dtype=np.int32)[:, None]
+    freq_bins = np.arange(1, activation.shape[1] + 1, dtype=np.int32)[None, :]
+    areas = np.where(coverage_mask, time_bins * freq_bins, np.inf)
+    flat_index = int(np.argmin(areas))
+    time_idx, freq_idx = np.unravel_index(flat_index, activation.shape)
+
+    if times.size == 1:
+        time_limit = times[0]
+    else:
+        time_limit = times[min(time_idx + 1, times.size - 1)]
+
+    if freqs.size == 1:
+        freq_limit = freqs[0]
+    else:
+        freq_limit = freqs[min(freq_idx + 1, freqs.size - 1)]
+
+    x_limits = (times[0], max(time_limit, times[0]))
+    y_limits = (
+        min_frequency,
+        float(np.clip(freq_limit, min_frequency, max_frequency)),
+    )
+    return x_limits, y_limits
 
 
 def _activation_summary_label(activation: np.ndarray) -> str:
