@@ -27,7 +27,7 @@ from audio_processing import (
 from crepe_analysis import (
     compute_crepe_activation,
     crepe_frequency_axis,
-    summarize_activation,
+    activation_to_frequency_confidence,
 )
 
 CREPE_FRAME_TARGET_RMS = 1
@@ -282,7 +282,7 @@ def _render_crepe_axis(
 
 
 def _activation_summary_label(activation: np.ndarray) -> str:
-    freq_value, conf_value = summarize_activation(activation)
+    freq_value, conf_value = activation_to_frequency_confidence(activation)
     if not np.isfinite(freq_value) or not np.isfinite(conf_value):
         return "Fundamental: N/A\nConfidence: N/A"
     return f"Fundamental: {freq_value:.2f} Hz\nConfidence: {conf_value:.3f}"

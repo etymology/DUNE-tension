@@ -90,7 +90,7 @@ def _reverse_sr_augment(activation: np.ndarray, sr_augment_factor: float) -> np.
     return activation
 
 
-def summarize_activation(activation: np.ndarray) -> Tuple[float, float]:
+def activation_to_frequency_confidence(activation: np.ndarray) -> Tuple[float, float]:
     """Return fundamental frequency and confidence summary for an activation map."""
 
     if crepe is None:
