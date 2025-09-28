@@ -65,6 +65,8 @@ def compute_crepe_activation(
 
     frame_count = activation.shape[0]
     crepe_times = np.arange(frame_count) * step_ms / 1000.0
+    if sr_augment_factor is not None:
+        crepe_times = crepe_times * sr_augment_factor
     return (
         np.asarray(crepe_times, dtype=np.float32),
         np.asarray(activation, dtype=np.float32),

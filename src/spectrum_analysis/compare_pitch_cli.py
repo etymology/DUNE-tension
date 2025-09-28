@@ -32,6 +32,7 @@ from crepe_analysis import (
 
 CREPE_FRAME_TARGET_RMS = 1
 
+
 @dataclasses.dataclass
 class PitchCompareConfig:
     """Configuration loaded from JSON for pitch comparison runs."""
@@ -54,6 +55,7 @@ class PitchCompareConfig:
     crepe_step_size_ms: Optional[float] = None
     over_subtraction: float = 1.0  # Noise reduction factor
     sr_augment_factor: float = 2.0  # Factor to scale sample rate for CREPE
+    crepe_activation_coverage: float = 0.99
 
     @staticmethod
     def from_dict(raw: Dict[str, Any]) -> "PitchCompareConfig":
@@ -239,11 +241,17 @@ def _render_crepe_axis(
     result: Optional[Tuple[np.ndarray, np.ndarray]],
     cfg: PitchCompareConfig,
 ) -> None:
+    x_limits: Optional[Tuple[float, float]] = None
+    y_limits: Optional[Tuple[float, float]] = None
     if result is not None:
         crepe_times, crepe_act = result
         freq_axis = crepe_frequency_axis(crepe_act.shape[1])
         mask = (freq_axis >= cfg.min_frequency) & (freq_axis <= cfg.max_frequency)
         if mask.any():
+            coverage = getattr(cfg, "crepe_activation_coverage", 0.99)
+            if not np.isfinite(coverage) or coverage <= 0:
+                coverage = 1.0
+            coverage = min(float(coverage), 1.0)
             mesh = ax.pcolormesh(
                 crepe_times,
                 freq_axis[mask],
@@ -252,6 +260,41 @@ def _render_crepe_axis(
                 cmap="viridis",
             )
             fig.colorbar(mesh, ax=ax, label="Activation")
+
+            masked_activation = crepe_act[:, mask]
+            total_activation = float(masked_activation.sum())
+            if total_activation > 0 and coverage < 1.0:
+                cumulative = masked_activation.cumsum(axis=0).cumsum(axis=1)
+                target = coverage * total_activation
+                coverage_mask = cumulative >= target
+                if coverage_mask.any():
+                    time_bins = np.arange(1, masked_activation.shape[0] + 1)[:, None]
+                    freq_bins = np.arange(1, masked_activation.shape[1] + 1)[None, :]
+                    areas = time_bins * freq_bins
+                    areas = np.where(coverage_mask, areas, np.inf)
+                    flat_index = int(np.argmin(areas))
+                    time_idx, freq_idx = np.unravel_index(
+                        flat_index, masked_activation.shape
+                    )
+                    time_values = crepe_times
+                    freq_values = freq_axis[mask]
+                    if time_values.size > 1:
+                        time_limit = time_values[
+                            min(time_idx + 1, time_values.size - 1)
+                        ]
+                    else:
+                        time_limit = time_values[0]
+                    if freq_values.size > 1:
+                        freq_limit = freq_values[
+                            min(freq_idx + 1, freq_values.size - 1)
+                        ]
+                    else:
+                        freq_limit = freq_values[0]
+                    x_limits = (time_values[0], time_limit)
+                    y_limits = (cfg.min_frequency, max(freq_limit, cfg.min_frequency))
+            elif total_activation > 0 and coverage >= 1.0:
+                x_limits = (crepe_times[0], crepe_times[-1])
+                y_limits = (cfg.min_frequency, cfg.max_frequency)
         else:
             ax.text(
                 0.5,
@@ -261,6 +304,11 @@ def _render_crepe_axis(
                 va="center",
                 transform=ax.transAxes,
             )
+
+        if x_limits is None and crepe_times.size:
+            x_limits = (crepe_times[0], crepe_times[-1])
+        if y_limits is None:
+            y_limits = (cfg.min_frequency, cfg.max_frequency)
 
         legend_label = _activation_summary_label(crepe_act)
         dummy_handle = Line2D([], [], color="none")
@@ -274,8 +322,12 @@ def _render_crepe_axis(
             va="center",
             transform=ax.transAxes,
         )
+        y_limits = (cfg.min_frequency, cfg.max_frequency)
 
-    ax.set_ylim(cfg.min_frequency, cfg.max_frequency)
+    if x_limits is not None:
+        ax.set_xlim(*x_limits)
+    if y_limits is not None:
+        ax.set_ylim(*y_limits)
     ax.set_ylabel("Frequency (Hz)")
     ax.set_xlabel("Time (s)")
     ax.set_title(label or "CREPE Activation")
@@ -314,14 +366,21 @@ def main(argv: Optional[Iterable[str]] = None) -> None:
     ensure_output_dir(output_dir)
     timestamp = _dt.datetime.now().strftime("%Y%m%d-%H%M%S")
 
-    noise = record_noise_sample(cfg)
-    noise_rms = float(np.sqrt(np.mean(np.square(noise)) + 1e-12))
-    _, _, noise_profile = compute_noise_profile(noise, cfg)
-    audio = acquire_audio(cfg, noise_rms)
-    filtered_audio, freqs, times, power = subtract_noise(audio, noise_profile, cfg)
+    is_file_input = cfg.input_mode == "file"
 
-    audio_path = save_audio(timestamp, filtered_audio, cfg, output_dir)
-    print(f"[INFO] Saved filtered audio to {audio_path}")
+    if is_file_input:
+        audio = acquire_audio(cfg, 0.0)
+        filtered_audio = audio
+        freqs = times = power = None
+    else:
+        noise = record_noise_sample(cfg)
+        noise_rms = float(np.sqrt(np.mean(np.square(noise)) + 1e-12))
+        _, _, noise_profile = compute_noise_profile(noise, cfg)
+        audio = acquire_audio(cfg, noise_rms)
+        filtered_audio, freqs, times, power = subtract_noise(audio, noise_profile, cfg)
+
+        audio_path = save_audio(timestamp, filtered_audio, cfg, output_dir)
+        print(f"[INFO] Saved filtered audio to {audio_path}")
 
     crepe_results: List[Tuple[str, Optional[Tuple[np.ndarray, np.ndarray]]]] = []
 
@@ -346,16 +405,22 @@ def main(argv: Optional[Iterable[str]] = None) -> None:
     )
     crepe_results.append((sr_augmented_label, crepe_scaled))
 
-    plot_results(
-        timestamp=timestamp,
-        audio=filtered_audio,
-        freqs=freqs,
-        times=times,
-        power=power,
-        crepe_results=crepe_results,
-        cfg=cfg,
-        output_dir=output_dir,
-    )
+    if (
+        not is_file_input
+        and freqs is not None
+        and times is not None
+        and power is not None
+    ):
+        plot_results(
+            timestamp=timestamp,
+            audio=filtered_audio,
+            freqs=freqs,
+            times=times,
+            power=power,
+            crepe_results=crepe_results,
+            cfg=cfg,
+            output_dir=output_dir,
+        )
 
 
 if __name__ == "__main__":  # pragma: no cover - CLI entry point

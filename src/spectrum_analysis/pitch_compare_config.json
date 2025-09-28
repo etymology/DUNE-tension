@@ -14,5 +14,6 @@
   "crepe_model_capacity": "tiny",
   "pesto_model_name": "mir-1k_g7",
   "over_subtraction": 1.1,
-  "sr_augment_factor": 4
+  "sr_augment_factor": 4,
+  "crepe_activation_coverage": 0.99
 }
