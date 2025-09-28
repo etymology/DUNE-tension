@@ -426,18 +426,7 @@ def save_audio(
     return audio_path
 
 
-def main(argv: Optional[Iterable[str]] = None) -> None:
-    parser = argparse.ArgumentParser(description="Compare pitch detection methods.")
-    parser.add_argument(
-        "--config",
-        type=Path,
-        default=Path(__file__).with_name("pitch_compare_config.json"),
-    )
-    args = parser.parse_args(list(argv) if argv is not None else None)
-
-    cfg = load_config(args.config)
-    output_dir = Path(cfg.output_directory)
-    ensure_output_dir(output_dir)
+def _run_comparison(cfg: PitchCompareConfig, output_dir: Path) -> None:
     timestamp = _dt.datetime.now().strftime("%Y%m%d-%H%M%S")
 
     is_file_input = cfg.input_mode == "file"
@@ -499,6 +488,43 @@ def main(argv: Optional[Iterable[str]] = None) -> None:
             cfg=cfg,
             output_dir=output_dir,
         )
+
+
+def main(argv: Optional[Iterable[str]] = None) -> None:
+    parser = argparse.ArgumentParser(description="Compare pitch detection methods.")
+    parser.add_argument(
+        "--config",
+        type=Path,
+        default=Path(__file__).with_name("pitch_compare_config.json"),
+    )
+    args = parser.parse_args(list(argv) if argv is not None else None)
+
+    cfg = load_config(args.config)
+    output_dir = Path(cfg.output_directory)
+    ensure_output_dir(output_dir)
+
+    if cfg.input_mode == "file" and cfg.input_audio_path is not None:
+        input_path = Path(cfg.input_audio_path)
+        if input_path.is_dir():
+            wav_files = sorted(
+                path
+                for path in input_path.iterdir()
+                if path.is_file() and path.suffix.lower() == ".wav"
+            )
+            if not wav_files:
+                raise ValueError(
+                    f"No .wav files found in directory: {input_path}"  # noqa: TRY003
+                )
+
+            for wav_file in wav_files:
+                print(f"[INFO] Processing {wav_file}")
+                _run_comparison(
+                    dataclasses.replace(cfg, input_audio_path=str(wav_file)),
+                    output_dir,
+                )
+            return
+
+    _run_comparison(cfg, output_dir)
 
 
 if __name__ == "__main__":  # pragma: no cover - CLI entry point
