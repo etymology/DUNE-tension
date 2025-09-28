@@ -1,4 +1,5 @@
 """Audio source abstractions used by the spectrogram visualizer."""
+
 from __future__ import annotations
 
 import queue
@@ -31,7 +32,9 @@ class MicSource(AudioSource):
 
     def __init__(self, samplerate: int, hop: int, device: Optional[str] = None) -> None:
         if sd is None:
-            raise RuntimeError("sounddevice is not available. Install it or use --demo.")
+            raise RuntimeError(
+                "sounddevice is not available. Install it or use --demo."
+            )
 
         self.samplerate = samplerate
         self.hop = hop
@@ -40,7 +43,9 @@ class MicSource(AudioSource):
         self.stream = None
         self._stopped = threading.Event()
 
-    def _callback(self, indata, frames, time_info, status):  # pragma: no cover - sounddevice callback
+    def _callback(
+        self, indata, frames, time_info, status
+    ):  # pragma: no cover - sounddevice callback
         if indata.ndim == 2 and indata.shape[1] > 1:
             mono = indata.mean(axis=1).copy()
         else:
