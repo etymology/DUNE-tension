@@ -30,6 +30,7 @@ from crepe_analysis import (
 )
 
 CREPE_FRAME_TARGET_RMS = 1
+CREPE_IDEAL_PITCH = 600.0  # Hz
 
 
 @dataclasses.dataclass
@@ -469,7 +470,7 @@ def main(argv: Optional[Iterable[str]] = None) -> None:
         print("[WARN] Invalid expected f0; defaulting augment factor to 1.0.")
         sr_augment_factor = 1.0
     else:
-        sr_augment_factor = 1000.0 / expected_f0
+        sr_augment_factor = CREPE_IDEAL_PITCH / expected_f0
     augmented_sr = (
         int(round(cfg.sample_rate * sr_augment_factor))
         if sr_augment_factor
@@ -483,22 +484,16 @@ def main(argv: Optional[Iterable[str]] = None) -> None:
     )
     crepe_results.append((sr_augmented_label, crepe_scaled))
 
-    if (
-        not is_file_input
-        and freqs is not None
-        and times is not None
-        and power is not None
-    ):
-        plot_results(
-            timestamp=timestamp,
-            audio=filtered_audio,
-            freqs=freqs,
-            times=times,
-            power=power,
-            crepe_results=crepe_results,
-            cfg=cfg,
-            output_dir=output_dir,
-        )
+    plot_results(
+        timestamp=timestamp,
+        audio=filtered_audio,
+        freqs=freqs,
+        times=times,
+        power=power,
+        crepe_results=crepe_results,
+        cfg=cfg,
+        output_dir=output_dir,
+    )
 
 
 if __name__ == "__main__":  # pragma: no cover - CLI entry point
