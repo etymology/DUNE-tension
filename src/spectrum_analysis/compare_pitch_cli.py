@@ -19,6 +19,7 @@ from audio_sources import MicSource, sd
 
 from audio_processing import (
     compute_noise_profile,
+    compute_spectrogram,
     determine_window_and_hop,
     load_audio,
     subtract_noise,
@@ -239,7 +240,11 @@ def _add_spectrogram_plot(
         fig.colorbar(mesh, ax=ax, label="Power (dB)")
     ax.set_ylim(cfg.min_frequency, cfg.max_frequency)
     ax.set_ylabel("Frequency (Hz)")
-    ax.set_title("Spectrogram (Noise-Reduced)")
+    if cfg.input_mode == "file":
+        title = "Spectrogram"
+    else:
+        title = "Spectrogram (Noise-Reduced)"
+    ax.set_title(title)
     return ax
 
 
@@ -427,18 +432,7 @@ def save_audio(
     return audio_path
 
 
-def main(argv: Optional[Iterable[str]] = None) -> None:
-    parser = argparse.ArgumentParser(description="Compare pitch detection methods.")
-    parser.add_argument(
-        "--config",
-        type=Path,
-        default=Path(__file__).with_name("pitch_compare_config.json"),
-    )
-    args = parser.parse_args(list(argv) if argv is not None else None)
-
-    cfg = load_config(args.config)
-    output_dir = Path(cfg.output_directory)
-    ensure_output_dir(output_dir)
+def _run_comparison(cfg: PitchCompareConfig, output_dir: Path) -> None:
     timestamp = _dt.datetime.now().strftime("%Y%m%d-%H%M%S")
 
     is_file_input = cfg.input_mode == "file"
@@ -446,7 +440,7 @@ def main(argv: Optional[Iterable[str]] = None) -> None:
     if is_file_input:
         audio = acquire_audio(cfg, 0.0)
         filtered_audio = audio
-        freqs = times = power = None
+        freqs, times, power = compute_spectrogram(filtered_audio, cfg)
     else:
         noise = record_noise_sample(cfg)
         noise_rms = float(np.sqrt(np.mean(np.square(noise)) + 1e-12))
@@ -494,6 +488,43 @@ def main(argv: Optional[Iterable[str]] = None) -> None:
         cfg=cfg,
         output_dir=output_dir,
     )
+
+
+def main(argv: Optional[Iterable[str]] = None) -> None:
+    parser = argparse.ArgumentParser(description="Compare pitch detection methods.")
+    parser.add_argument(
+        "--config",
+        type=Path,
+        default=Path(__file__).with_name("pitch_compare_config.json"),
+    )
+    args = parser.parse_args(list(argv) if argv is not None else None)
+
+    cfg = load_config(args.config)
+    output_dir = Path(cfg.output_directory)
+    ensure_output_dir(output_dir)
+
+    if cfg.input_mode == "file" and cfg.input_audio_path is not None:
+        input_path = Path(cfg.input_audio_path)
+        if input_path.is_dir():
+            wav_files = sorted(
+                path
+                for path in input_path.iterdir()
+                if path.is_file() and path.suffix.lower() == ".wav"
+            )
+            if not wav_files:
+                raise ValueError(
+                    f"No .wav files found in directory: {input_path}"  # noqa: TRY003
+                )
+
+            for wav_file in wav_files:
+                print(f"[INFO] Processing {wav_file}")
+                _run_comparison(
+                    dataclasses.replace(cfg, input_audio_path=str(wav_file)),
+                    output_dir,
+                )
+            return
+
+    _run_comparison(cfg, output_dir)
 
 
 if __name__ == "__main__":  # pragma: no cover - CLI entry point
