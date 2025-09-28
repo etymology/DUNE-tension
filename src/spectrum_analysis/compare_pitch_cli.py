@@ -17,7 +17,7 @@ from scipy.io import wavfile
 
 from audio_sources import MicSource, sd
 
-CREPE_FRAME_TARGET_RMS = 0.5
+CREPE_FRAME_TARGET_RMS = 1
 
 try:  # Optional dependency - may not be available in CI
     import soundfile as sf  # type: ignore
@@ -334,11 +334,6 @@ def compute_crepe_activation(
 
     confidence = activation.max(axis=1)
 
-    cents = crepe.core.to_local_average_cents(activation)
-
-    frequency = 10 * 2 ** (cents / 1200)
-    frequency[np.isnan(frequency)] = 0
-
     crepe_times = np.arange(confidence.shape[0]) * step_ms / 1000.0
     return (
         np.asarray(crepe_times, dtype=np.float32),
@@ -414,7 +409,7 @@ def plot_results(
                     transform=ax.transAxes,
                 )
             if crepe_act.size:
-                # the voiced thresholed is half the average of all nonzero confidences
+                # the voiced threshold is half the average of all nonzero confidences
                 voiced_threshold = 0.5 * np.mean(crepe_act[crepe_act > 0])
                 frame_confidence = crepe_act.max(axis=1)
                 voiced_mask = frame_confidence >= voiced_threshold
@@ -536,10 +531,6 @@ def main(argv: Optional[Iterable[str]] = None) -> None:
     )
 
 
-if __name__ == "__main__":  # pragma: no cover - CLI entry point
-    main()
-
-
 def _get_activation_with_frame_gain(
     audio: np.ndarray,
     sr: int,
@@ -592,3 +583,7 @@ def _get_activation_with_frame_gain(
     frames = np.asarray(frames, dtype=np.float32)
 
     return model.predict(frames, verbose=verbose)
+
+
+if __name__ == "__main__":  # pragma: no cover - CLI entry point
+    main()
