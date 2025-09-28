@@ -13,7 +13,6 @@ import matplotlib.pyplot as plt
 from matplotlib.axes import Axes
 from matplotlib.figure import Figure
 from matplotlib.gridspec import GridSpec
-from matplotlib.lines import Line2D
 import numpy as np
 
 from audio_sources import MicSource, sd
@@ -178,7 +177,7 @@ def plot_results(
     _add_spectrogram_plot(fig, grid[1, :], freqs, times, power, cfg)
     _populate_crepe_axes(fig, grid, 2, crepe_results, cfg)
 
-    fig.tight_layout()
+    fig.tight_layout(rect=(0, 0, 0.92, 1))
     fig_path = output_dir / f"{timestamp}_comparison.png"
     fig.savefig(fig_path, dpi=150)
     if cfg.show_plots:
@@ -303,8 +302,20 @@ def _render_crepe_axis(
             y_limits = (cfg.min_frequency, cfg.max_frequency)
 
         legend_label = _activation_summary_label(crepe_act)
-        dummy_handle = Line2D([], [], color="none")
-        ax.legend([dummy_handle], [legend_label], loc="upper right", frameon=True)
+        ax.text(
+            1.02,
+            1.0,
+            legend_label,
+            transform=ax.transAxes,
+            ha="left",
+            va="top",
+            bbox={
+                "boxstyle": "round,pad=0.4",
+                "facecolor": "white",
+                "edgecolor": "lightgray",
+                "alpha": 0.9,
+            },
+        )
     else:
         ax.text(
             0.5,
