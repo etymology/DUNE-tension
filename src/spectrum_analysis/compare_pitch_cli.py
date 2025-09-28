@@ -53,13 +53,23 @@ class PitchCompareConfig:
     crepe_model_capacity: str = "full"
     crepe_step_size_ms: Optional[float] = None
     over_subtraction: float = 1.0  # Noise reduction factor
-    sr_augment_factor: float = 2.0  # Factor to scale sample rate for CREPE
+    expected_f0: Optional[float] = (
+        None  # Expected fundamental frequency for CREPE scaling
+    )
     crepe_activation_coverage: float = 0.9
 
     @staticmethod
     def from_dict(raw: Dict[str, Any]) -> "PitchCompareConfig":
-        alias_map = {"sr_augment_factor": "sr_augment_factor"}
-        normalized = {alias_map.get(k, k): v for k, v in raw.items()}
+        normalized = dict(raw)
+
+        if "expected_f0" not in normalized and "sr_augment_factor" in normalized:
+            try:
+                sr_factor = float(normalized["sr_augment_factor"])
+            except (TypeError, ValueError):
+                sr_factor = float("nan")
+            if np.isfinite(sr_factor) and sr_factor > 0:
+                normalized["expected_f0"] = 1000.0 / sr_factor
+
         known = {f.name for f in dataclasses.fields(PitchCompareConfig)}
         filtered = {k: v for k, v in normalized.items() if k in known}
         return PitchCompareConfig(**filtered)
@@ -384,12 +394,61 @@ def _compute_crepe_crop_limits(
     else:
         freq_limit = freqs[min(freq_idx + 1, freqs.size - 1)]
 
-    x_limits = (times[0], max(time_limit, times[0]))
-    y_limits = (
-        min_frequency,
-        float(np.clip(freq_limit, min_frequency, max_frequency)),
-    )
+    min_time = float(times[0])
+    max_time = float(times[-1]) if times.size else min_time
+    base_left = min_time
+    base_right = max(time_limit, base_left)
+
+    base_bottom = min_frequency
+    base_top = float(np.clip(freq_limit, min_frequency, max_frequency))
+
+    x_limits = _expand_with_margin(base_left, base_right, min_time, max_time)
+    y_limits = _expand_with_margin(base_bottom, base_top, min_frequency, max_frequency)
     return x_limits, y_limits
+
+
+def _expand_with_margin(
+    lower: float,
+    upper: float,
+    min_bound: float,
+    max_bound: float,
+    margin_fraction: float = 0.1,
+) -> Tuple[float, float]:
+    lower = float(lower)
+    upper = float(upper)
+    min_bound = float(min_bound)
+    max_bound = float(max_bound)
+
+    if upper < lower:
+        lower, upper = upper, lower
+
+    span = upper - lower
+    if not np.isfinite(span) or span <= 0.0:
+        span = 0.0
+
+    margin = span * float(margin_fraction)
+    expanded_lower = lower - margin
+    expanded_upper = upper + margin
+
+    if expanded_lower < min_bound:
+        deficit = min_bound - expanded_lower
+        expanded_lower = min_bound
+        expanded_upper = min(expanded_upper + deficit, max_bound)
+
+    if expanded_upper > max_bound:
+        deficit = expanded_upper - max_bound
+        expanded_upper = max_bound
+        expanded_lower = max(expanded_lower - deficit, min_bound)
+
+    expanded_lower = max(expanded_lower, min_bound)
+    expanded_upper = min(expanded_upper, max_bound)
+
+    if expanded_upper < expanded_lower:
+        mid = 0.5 * (expanded_lower + expanded_upper)
+        expanded_lower = expanded_upper = np.clip(mid, min_bound, max_bound)
+
+    return expanded_lower, expanded_upper
+
 
 
 def _activation_summary_label(activation: np.ndarray) -> str:
@@ -447,10 +506,14 @@ def main(argv: Optional[Iterable[str]] = None) -> None:
     real_label = f"CREPE Activation ({cfg.sample_rate} Hz Real)"
     crepe_results.append((real_label, crepe_real))
 
-    sr_augment_factor = cfg.sr_augment_factor
-    if not np.isfinite(sr_augment_factor) or sr_augment_factor <= 0:
-        print("[WARN] Invalid augment factor; defaulting to 1.0.")
+    expected_f0 = cfg.expected_f0
+    if expected_f0 is None:
         sr_augment_factor = 1.0
+    elif not np.isfinite(expected_f0) or expected_f0 <= 0:
+        print("[WARN] Invalid expected f0; defaulting augment factor to 1.0.")
+        sr_augment_factor = 1.0
+    else:
+        sr_augment_factor = 1000.0 / expected_f0
     augmented_sr = (
         int(round(cfg.sample_rate * sr_augment_factor))
         if sr_augment_factor
