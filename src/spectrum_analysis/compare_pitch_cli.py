@@ -420,6 +420,104 @@ def _activation_summary_label(activation: np.ndarray) -> str:
     return f"Fundamental: {freq_value:.2f} Hz\nConfidence: {conf_value:.3f}"
 
 
+def find_activation_clusters(
+    freqs: np.ndarray,
+    times: np.ndarray,
+    activation: np.ndarray,
+) -> list[tuple[float, float]]:
+    """Identify activation clusters and rank them by volume.
+
+    Parameters
+    ----------
+    freqs:
+        Frequency bin centers with shape ``(F,)``.
+    times:
+        Time bin centers with shape ``(T,)``.
+    activation:
+        Activation magnitudes with shape ``(F, T)``.
+
+    Returns
+    -------
+    list[tuple[float, float]]
+        A list of ``(average_frequency, volume)`` pairs sorted by descending
+        volume. The ``average_frequency`` is the activation-weighted time
+        average of the frequency for the cluster and ``volume`` is calculated as
+        the integral of the activation over time using the frame durations.
+    """
+
+    freqs = np.asarray(freqs, dtype=float)
+    times = np.asarray(times, dtype=float)
+    activation = np.asarray(activation, dtype=float)
+
+    if freqs.ndim != 1 or times.ndim != 1:
+        raise ValueError("`freqs` and `times` must be one-dimensional arrays.")
+
+    if activation.shape != (freqs.size, times.size):
+        raise ValueError(
+            "`activation` must have shape (freqs.size, times.size).",
+        )
+
+    if activation.size == 0:
+        return []
+
+    if times.size == 1:
+        frame_durations = np.array([1.0], dtype=float)
+    else:
+        frame_steps = np.diff(times)
+        last_step = frame_steps[-1] if frame_steps.size else 0.0
+        if last_step <= 0.0:
+            last_step = 1.0
+        frame_durations = np.concatenate([frame_steps, [last_step]])
+        frame_durations = np.where(frame_durations > 0.0, frame_durations, last_step)
+
+    positive_mask = activation > 0.0
+    if not positive_mask.any():
+        return []
+
+    visited = np.zeros_like(positive_mask, dtype=bool)
+    clusters: list[tuple[float, float]] = []
+
+    freq_values = freqs.reshape(-1, 1)
+
+    for freq_idx in range(freqs.size):
+        for time_idx in range(times.size):
+            if not positive_mask[freq_idx, time_idx] or visited[freq_idx, time_idx]:
+                continue
+
+            stack = [(freq_idx, time_idx)]
+            visited[freq_idx, time_idx] = True
+
+            volume = 0.0
+            freq_weight = 0.0
+
+            while stack:
+                f_idx, t_idx = stack.pop()
+                weight = activation[f_idx, t_idx] * frame_durations[t_idx]
+                volume += weight
+                freq_weight += freq_values[f_idx, 0] * weight
+
+                for n_f, n_t in (
+                    (f_idx - 1, t_idx),
+                    (f_idx + 1, t_idx),
+                    (f_idx, t_idx - 1),
+                    (f_idx, t_idx + 1),
+                ):
+                    if (
+                        0 <= n_f < freqs.size
+                        and 0 <= n_t < times.size
+                        and positive_mask[n_f, n_t]
+                        and not visited[n_f, n_t]
+                    ):
+                        visited[n_f, n_t] = True
+                        stack.append((n_f, n_t))
+
+            if volume > 0.0:
+                clusters.append((freq_weight / volume, volume))
+
+    clusters.sort(key=lambda item: item[1], reverse=True)
+    return clusters
+
+
 def save_audio(
     timestamp: str, audio: np.ndarray, cfg: PitchCompareConfig, output_dir: Path
 ) -> Path:
