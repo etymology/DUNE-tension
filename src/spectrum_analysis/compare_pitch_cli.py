@@ -53,13 +53,23 @@ class PitchCompareConfig:
     crepe_model_capacity: str = "full"
     crepe_step_size_ms: Optional[float] = None
     over_subtraction: float = 1.0  # Noise reduction factor
-    sr_augment_factor: float = 2.0  # Factor to scale sample rate for CREPE
+    expected_f0: Optional[float] = (
+        None  # Expected fundamental frequency for CREPE scaling
+    )
     crepe_activation_coverage: float = 0.9
 
     @staticmethod
     def from_dict(raw: Dict[str, Any]) -> "PitchCompareConfig":
-        alias_map = {"sr_augment_factor": "sr_augment_factor"}
-        normalized = {alias_map.get(k, k): v for k, v in raw.items()}
+        normalized = dict(raw)
+
+        if "expected_f0" not in normalized and "sr_augment_factor" in normalized:
+            try:
+                sr_factor = float(normalized["sr_augment_factor"])
+            except (TypeError, ValueError):
+                sr_factor = float("nan")
+            if np.isfinite(sr_factor) and sr_factor > 0:
+                normalized["expected_f0"] = 1000.0 / sr_factor
+
         known = {f.name for f in dataclasses.fields(PitchCompareConfig)}
         filtered = {k: v for k, v in normalized.items() if k in known}
         return PitchCompareConfig(**filtered)
@@ -496,10 +506,14 @@ def main(argv: Optional[Iterable[str]] = None) -> None:
     real_label = f"CREPE Activation ({cfg.sample_rate} Hz Real)"
     crepe_results.append((real_label, crepe_real))
 
-    sr_augment_factor = cfg.sr_augment_factor
-    if not np.isfinite(sr_augment_factor) or sr_augment_factor <= 0:
-        print("[WARN] Invalid augment factor; defaulting to 1.0.")
+    expected_f0 = cfg.expected_f0
+    if expected_f0 is None:
         sr_augment_factor = 1.0
+    elif not np.isfinite(expected_f0) or expected_f0 <= 0:
+        print("[WARN] Invalid expected f0; defaulting augment factor to 1.0.")
+        sr_augment_factor = 1.0
+    else:
+        sr_augment_factor = 1000.0 / expected_f0
     augmented_sr = (
         int(round(cfg.sample_rate * sr_augment_factor))
         if sr_augment_factor
