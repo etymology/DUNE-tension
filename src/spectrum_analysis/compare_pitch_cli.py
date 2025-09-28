@@ -19,6 +19,7 @@ from audio_sources import MicSource, sd
 
 from audio_processing import (
     compute_noise_profile,
+    compute_spectrogram,
     determine_window_and_hop,
     load_audio,
     subtract_noise,
@@ -238,7 +239,11 @@ def _add_spectrogram_plot(
         fig.colorbar(mesh, ax=ax, label="Power (dB)")
     ax.set_ylim(cfg.min_frequency, cfg.max_frequency)
     ax.set_ylabel("Frequency (Hz)")
-    ax.set_title("Spectrogram (Noise-Reduced)")
+    if cfg.input_mode == "file":
+        title = "Spectrogram"
+    else:
+        title = "Spectrogram (Noise-Reduced)"
+    ax.set_title(title)
     return ax
 
 
@@ -445,7 +450,7 @@ def main(argv: Optional[Iterable[str]] = None) -> None:
     if is_file_input:
         audio = acquire_audio(cfg, 0.0)
         filtered_audio = audio
-        freqs = times = power = None
+        freqs, times, power = compute_spectrogram(filtered_audio, cfg)
     else:
         noise = record_noise_sample(cfg)
         noise_rms = float(np.sqrt(np.mean(np.square(noise)) + 1e-12))
@@ -483,12 +488,7 @@ def main(argv: Optional[Iterable[str]] = None) -> None:
     )
     crepe_results.append((sr_augmented_label, crepe_scaled))
 
-    if (
-        not is_file_input
-        and freqs is not None
-        and times is not None
-        and power is not None
-    ):
+    if freqs is not None and times is not None and power is not None:
         plot_results(
             timestamp=timestamp,
             audio=filtered_audio,

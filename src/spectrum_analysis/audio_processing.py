@@ -126,6 +126,24 @@ def compute_noise_profile(
     return freqs, times, power
 
 
+def compute_spectrogram(
+    audio: np.ndarray, cfg: "PitchCompareConfig"
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Compute a magnitude spectrogram for ``audio``."""
+
+    win_len, hop_len = determine_window_and_hop(cfg, len(audio))
+    freqs, times, stft = signal.stft(
+        audio,
+        fs=cfg.sample_rate,
+        window="hann",
+        nperseg=win_len,
+        noverlap=win_len - hop_len,
+        padded=False,
+    )
+    power = np.abs(stft) ** 2
+    return freqs, times, power
+
+
 def subtract_noise(
     audio: np.ndarray, noise_profile: np.ndarray, cfg: "PitchCompareConfig"
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
