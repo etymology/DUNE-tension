@@ -539,11 +539,10 @@ def find_activation_clusters(
         frame_durations = np.array([1.0], dtype=float)
     else:
         frame_steps = np.diff(times)
-        last_step = frame_steps[-1] if frame_steps.size else 0.0
-        if last_step <= 0.0:
-            last_step = 1.0
-        frame_durations = np.concatenate([frame_steps, [last_step]])
-        frame_durations = np.where(frame_durations > 0.0, frame_durations, last_step)
+        if np.any(frame_steps <= 0.0):
+            raise ValueError("`times` must be strictly increasing.")
+        frame_durations = np.concatenate([frame_steps, frame_steps[-1:]])
+        frame_durations = frame_durations.astype(float, copy=False)
 
     positive_mask = activation > 0.0
     if not positive_mask.any():
