@@ -34,6 +34,78 @@ CREPE_FRAME_TARGET_RMS = 1
 CREPE_IDEAL_PITCH = 600.0  # Hz
 
 
+def _sr_augment_factor(expected_pitch: Optional[float], *, warn: bool = True) -> float:
+    if expected_pitch is None:
+        return 1.0
+    if not np.isfinite(expected_pitch) or expected_pitch <= 0:
+        if warn:
+            print("[WARN] Invalid expected f0; defaulting augment factor to 1.0.")
+        return 1.0
+    return CREPE_IDEAL_PITCH / float(expected_pitch)
+
+
+def get_activations(
+    audio: np.ndarray,
+    sample_rate: int,
+    expected_pitch: Optional[float] = None,
+    *,
+    cfg: Optional[PitchCompareConfig] = None,
+) -> Optional[Tuple[np.ndarray, np.ndarray, np.ndarray]]:
+    """Return CREPE frequency axis, frame times, and activation map.
+
+    Parameters
+    ----------
+    audio:
+        Audio samples as a one-dimensional ``np.ndarray``.
+    sample_rate:
+        Sample rate associated with ``audio``.
+    expected_pitch:
+        Optional expected fundamental frequency used to derive the CREPE sample
+        rate augmentation factor.
+    cfg:
+        Optional :class:`PitchCompareConfig` providing CREPE configuration
+        details. If omitted, a default configuration is used with the provided
+        ``sample_rate`` and ``expected_pitch`` values.
+
+    Returns
+    -------
+    Optional[Tuple[np.ndarray, np.ndarray, np.ndarray]]
+        ``(frequencies, times, activation)`` where ``frequencies`` has shape
+        ``(F,)``, ``times`` has shape ``(T,)`` and ``activation`` has shape
+        ``(F, T)``. Returns ``None`` when CREPE activations are unavailable.
+    """
+
+    if audio.ndim != 1:
+        audio = np.asarray(audio, dtype=np.float32).reshape(-1)
+    else:
+        audio = np.asarray(audio, dtype=np.float32)
+
+    base_cfg = cfg if cfg is not None else PitchCompareConfig()
+    local_cfg = dataclasses.replace(
+        base_cfg,
+        sample_rate=int(sample_rate),
+        expected_f0=expected_pitch,
+    )
+
+    sr_factor = _sr_augment_factor(expected_pitch, warn=True)
+    crepe_result = compute_crepe_activation(
+        audio,
+        local_cfg,
+        sr_augment_factor=sr_factor,
+    )
+    if crepe_result is None:
+        return None
+
+    times, activation = crepe_result
+    freq_axis = crepe_frequency_axis(activation.shape[1])
+    activation_ft = activation.T
+    return (
+        np.asarray(freq_axis, dtype=np.float32),
+        np.asarray(times, dtype=np.float32),
+        np.asarray(activation_ft, dtype=np.float32),
+    )
+
+
 @dataclasses.dataclass
 class PitchCompareConfig:
     """Configuration loaded from JSON for pitch comparison runs."""
@@ -178,7 +250,9 @@ def plot_results(
     freqs: np.ndarray,
     times: np.ndarray,
     power: Optional[np.ndarray],
-    crepe_results: List[Tuple[str, Optional[Tuple[np.ndarray, np.ndarray]]]],
+    crepe_results: List[
+        Tuple[str, Optional[Tuple[np.ndarray, np.ndarray, np.ndarray]]]
+    ],
     cfg: PitchCompareConfig,
     output_dir: Path,
 ) -> None:
@@ -252,7 +326,9 @@ def _populate_crepe_axes(
     fig: Figure,
     grid: GridSpec,
     row: int,
-    crepe_results: List[Tuple[str, Optional[Tuple[np.ndarray, np.ndarray]]]],
+    crepe_results: List[
+        Tuple[str, Optional[Tuple[np.ndarray, np.ndarray, np.ndarray]]]
+    ],
     cfg: PitchCompareConfig,
 ) -> None:
     axes = [fig.add_subplot(grid[row, col]) for col in range(2)]
@@ -267,14 +343,13 @@ def _render_crepe_axis(
     fig: Figure,
     ax: Axes,
     label: str,
-    result: Optional[Tuple[np.ndarray, np.ndarray]],
+    result: Optional[Tuple[np.ndarray, np.ndarray, np.ndarray]],
     cfg: PitchCompareConfig,
 ) -> None:
     x_limits: Optional[Tuple[float, float]] = None
     y_limits: Optional[Tuple[float, float]] = None
     if result is not None:
-        crepe_times, crepe_act = result
-        freq_axis = crepe_frequency_axis(crepe_act.shape[1])
+        freq_axis, crepe_times, crepe_act = result
         mask = (freq_axis >= cfg.min_frequency) & (freq_axis <= cfg.max_frequency)
         if mask.any():
             coverage = getattr(cfg, "crepe_activation_coverage", 0.9)
@@ -284,13 +359,13 @@ def _render_crepe_axis(
             mesh = ax.pcolormesh(
                 crepe_times,
                 freq_axis[mask],
-                crepe_act[:, mask].T,
+                crepe_act[mask, :],
                 shading="nearest",
                 cmap="viridis",
             )
             fig.colorbar(mesh, ax=ax, label="Activation")
 
-            masked_activation = crepe_act[:, mask]
+            masked_activation = crepe_act.T[:, mask]
             freq_values = freq_axis[mask]
             limits = _compute_crepe_crop_limits(
                 crepe_times,
@@ -317,7 +392,7 @@ def _render_crepe_axis(
         if y_limits is None:
             y_limits = (cfg.min_frequency, cfg.max_frequency)
 
-        legend_label = _activation_summary_label(crepe_act)
+        legend_label = _activation_summary_label(crepe_act.T)
         ax.text(
             1.02,
             0.0,
@@ -549,20 +624,21 @@ def _run_comparison(cfg: PitchCompareConfig, output_dir: Path) -> None:
         audio_path = save_audio(timestamp, filtered_audio, cfg, output_dir)
         print(f"[INFO] Saved filtered audio to {audio_path}")
 
-    crepe_results: List[Tuple[str, Optional[Tuple[np.ndarray, np.ndarray]]]] = []
+    crepe_results: List[
+        Tuple[str, Optional[Tuple[np.ndarray, np.ndarray, np.ndarray]]]
+    ] = []
 
-    crepe_real = compute_crepe_activation(filtered_audio, cfg)
+    crepe_real = get_activations(
+        filtered_audio,
+        cfg.sample_rate,
+        expected_pitch=None,
+        cfg=cfg,
+    )
     real_label = f"CREPE Activation ({cfg.sample_rate} Hz Real)"
     crepe_results.append((real_label, crepe_real))
 
     expected_f0 = cfg.expected_f0
-    if expected_f0 is None:
-        sr_augment_factor = 1.0
-    elif not np.isfinite(expected_f0) or expected_f0 <= 0:
-        print("[WARN] Invalid expected f0; defaulting augment factor to 1.0.")
-        sr_augment_factor = 1.0
-    else:
-        sr_augment_factor = CREPE_IDEAL_PITCH / expected_f0
+    sr_augment_factor = _sr_augment_factor(expected_f0, warn=False)
     augmented_sr = (
         int(round(cfg.sample_rate * sr_augment_factor))
         if sr_augment_factor
@@ -571,8 +647,11 @@ def _run_comparison(cfg: PitchCompareConfig, output_dir: Path) -> None:
     sr_augmented_label = (
         f"CREPE Activation (augmented sr {augmented_sr} Hz; x{sr_augment_factor:g})"
     )
-    crepe_scaled = compute_crepe_activation(
-        filtered_audio, cfg, sr_augment_factor=sr_augment_factor
+    crepe_scaled = get_activations(
+        filtered_audio,
+        cfg.sample_rate,
+        expected_pitch=expected_f0,
+        cfg=cfg,
     )
     crepe_results.append((sr_augmented_label, crepe_scaled))
 
