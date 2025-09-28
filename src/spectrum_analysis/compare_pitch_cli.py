@@ -314,11 +314,11 @@ def _render_crepe_axis(
         legend_label = _activation_summary_label(crepe_act)
         ax.text(
             1.02,
-            1.0,
+            0.0,
             legend_label,
             transform=ax.transAxes,
             ha="left",
-            va="top",
+            va="bottom",
             bbox={
                 "boxstyle": "round,pad=0.4",
                 "facecolor": "white",
