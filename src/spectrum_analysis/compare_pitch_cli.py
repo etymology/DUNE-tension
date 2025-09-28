@@ -360,17 +360,16 @@ def _compute_crepe_crop_limits(
     coverage = float(np.clip(coverage, 0.0, 1.0))
     positive_activation = np.where(activation > 0.0, activation, 0.0)
     total_activation = float(positive_activation.sum())
-    if total_activation <= 0.0:
+    if total_activation <= 0.0 or coverage <= 0.0:
         return None
 
-    if coverage <= 0.0:
-        return None
+    min_time = float(times[0])
+    max_time = float(times[-1]) if times.size else min_time
+    min_freq = float(min_frequency)
+    max_freq = float(max_frequency)
+
     if coverage >= 1.0:
-        x_limits = (times[0], times[-1]) if times.size else None
-        y_limits = (min_frequency, max_frequency)
-        if x_limits is None:
-            return None
-        return x_limits, y_limits
+        return (min_time, max_time), (min_freq, max_freq)
 
     cumulative = np.cumsum(np.cumsum(positive_activation, axis=0), axis=1)
     target = coverage * total_activation
@@ -378,77 +377,34 @@ def _compute_crepe_crop_limits(
     if not coverage_mask.any():
         return None
 
-    time_bins = np.arange(1, activation.shape[0] + 1, dtype=np.int32)[:, None]
-    freq_bins = np.arange(1, activation.shape[1] + 1, dtype=np.int32)[None, :]
-    areas = np.where(coverage_mask, time_bins * freq_bins, np.inf)
-    flat_index = int(np.argmin(areas))
-    time_idx, freq_idx = np.unravel_index(flat_index, activation.shape)
+    candidate_indices = np.argwhere(coverage_mask)
+    areas = (candidate_indices[:, 0] + 1) * (candidate_indices[:, 1] + 1)
+    min_area = np.min(areas)
+    smallest = candidate_indices[areas == min_area]
+    order = np.lexsort((smallest[:, 1], smallest[:, 0]))
+    best_idx = smallest[order[0]]
+    time_idx = int(best_idx[0])
+    freq_idx = int(best_idx[1])
 
     if times.size == 1:
-        time_limit = times[0]
+        time_limit = float(times[0])
     else:
-        time_limit = times[min(time_idx + 1, times.size - 1)]
+        time_limit = float(times[min(time_idx + 1, times.size - 1)])
 
     if freqs.size == 1:
-        freq_limit = freqs[0]
+        freq_limit = float(freqs[0])
     else:
-        freq_limit = freqs[min(freq_idx + 1, freqs.size - 1)]
+        freq_limit = float(freqs[min(freq_idx + 1, freqs.size - 1)])
 
-    min_time = float(times[0])
-    max_time = float(times[-1]) if times.size else min_time
-    base_left = min_time
-    base_right = max(time_limit, base_left)
+    time_limit = float(np.clip(time_limit, min_time, max_time))
+    freq_limit = float(np.clip(freq_limit, min_freq, max_freq))
 
-    base_bottom = min_frequency
-    base_top = float(np.clip(freq_limit, min_frequency, max_frequency))
+    if time_limit <= min_time and times.size > 1:
+        time_limit = float(times[1])
+    if freq_limit <= min_freq and freqs.size > 1:
+        freq_limit = float(freqs[1])
 
-    x_limits = _expand_with_margin(base_left, base_right, min_time, max_time)
-    y_limits = _expand_with_margin(base_bottom, base_top, min_frequency, max_frequency)
-    return x_limits, y_limits
-
-
-def _expand_with_margin(
-    lower: float,
-    upper: float,
-    min_bound: float,
-    max_bound: float,
-    margin_fraction: float = 0.1,
-) -> Tuple[float, float]:
-    lower = float(lower)
-    upper = float(upper)
-    min_bound = float(min_bound)
-    max_bound = float(max_bound)
-
-    if upper < lower:
-        lower, upper = upper, lower
-
-    span = upper - lower
-    if not np.isfinite(span) or span <= 0.0:
-        span = 0.0
-
-    margin = span * float(margin_fraction)
-    expanded_lower = lower - margin
-    expanded_upper = upper + margin
-
-    if expanded_lower < min_bound:
-        deficit = min_bound - expanded_lower
-        expanded_lower = min_bound
-        expanded_upper = min(expanded_upper + deficit, max_bound)
-
-    if expanded_upper > max_bound:
-        deficit = expanded_upper - max_bound
-        expanded_upper = max_bound
-        expanded_lower = max(expanded_lower - deficit, min_bound)
-
-    expanded_lower = max(expanded_lower, min_bound)
-    expanded_upper = min(expanded_upper, max_bound)
-
-    if expanded_upper < expanded_lower:
-        mid = 0.5 * (expanded_lower + expanded_upper)
-        expanded_lower = expanded_upper = np.clip(mid, min_bound, max_bound)
-
-    return expanded_lower, expanded_upper
-
+    return (min_time, time_limit), (min_freq, freq_limit)
 
 
 def _activation_summary_label(activation: np.ndarray) -> str:
