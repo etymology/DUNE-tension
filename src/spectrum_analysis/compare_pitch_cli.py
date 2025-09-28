@@ -70,8 +70,8 @@ def get_activations(
     Returns
     -------
     Optional[Tuple[np.ndarray, np.ndarray, np.ndarray]]
-        ``(frequencies, times, activation)`` where ``frequencies`` has shape
-        ``(F,)``, ``times`` has shape ``(T,)`` and ``activation`` has shape
+        ``(times, frequencies, activation)`` where ``times`` has shape ``(T,)``,
+        ``frequencies`` has shape ``(F,)`` and ``activation`` has shape
         ``(F, T)``. Returns ``None`` when CREPE activations are unavailable.
     """
 
@@ -100,8 +100,8 @@ def get_activations(
     freq_axis = crepe_frequency_axis(activation.shape[1])
     activation_ft = activation.T
     return (
-        np.asarray(freq_axis, dtype=np.float32),
         np.asarray(times, dtype=np.float32),
+        np.asarray(freq_axis, dtype=np.float32),
         np.asarray(activation_ft, dtype=np.float32),
     )
 
@@ -349,7 +349,7 @@ def _render_crepe_axis(
     x_limits: Optional[Tuple[float, float]] = None
     y_limits: Optional[Tuple[float, float]] = None
     if result is not None:
-        freq_axis, crepe_times, crepe_act = result
+        crepe_times, freq_axis, crepe_act = result
         mask = (freq_axis >= cfg.min_frequency) & (freq_axis <= cfg.max_frequency)
         if mask.any():
             coverage = getattr(cfg, "crepe_activation_coverage", 0.9)
