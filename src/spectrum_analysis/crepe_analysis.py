@@ -96,6 +96,7 @@ def activations_to_pitch(
     activation: np.ndarray,
     times: np.ndarray,
     freq_axis: Optional[np.ndarray] = None,
+    time_weighted: bool = True,
 ) -> Tuple[float, float]:
     """Return fundamental frequency and time-weighted confidence for an activation map.
 
@@ -168,7 +169,11 @@ def activations_to_pitch(
         freq_value = float("nan")
 
     frame_confidences = activation[voiced_mask].max(axis=1)
-    conf_value = float(np.dot(frame_confidences, valid_durations))
+    if time_weighted:
+        conf_value = float(np.dot(frame_confidences, valid_durations))
+    else:
+        # otherwise use confidence from the frame with the maximum activation * frame_duration
+        conf_value = float(np.max(frame_confidences))
     return freq_value, conf_value
 
 
