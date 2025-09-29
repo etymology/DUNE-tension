@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional, Tuple, TYPE_CHECKING
+from typing import Optional, TYPE_CHECKING
 
 import numpy as np
 from scipy import signal
@@ -120,6 +120,27 @@ def determine_window_and_hop(
     return window_samples, hop_samples
 
 
+def _fit_stft_parameters(
+    window_length: int, hop_length: int, signal_length: int
+) -> tuple[int, int]:
+    """Clamp STFT parameters so they are valid for ``signal_length`` samples."""
+
+    signal_length = max(int(signal_length), 1)
+    window_length = max(int(window_length), 1)
+    hop_length = max(int(hop_length), 1)
+
+    if window_length > signal_length:
+        hop_fraction = hop_length / float(window_length)
+        window_length = signal_length
+        hop_length = max(int(round(window_length * hop_fraction)), 1)
+
+    hop_length = min(hop_length, window_length)
+    if window_length > 1 and hop_length >= window_length:
+        hop_length = window_length - 1
+
+    return window_length, hop_length
+
+
 def compute_noise_profile(noise: np.ndarray, cfg: "PitchCompareConfig") -> NoiseProfile:
     """Estimate the stationary noise spectrum for later subtraction."""
 
@@ -206,6 +227,7 @@ def compute_spectrogram(
     """Compute a magnitude spectrogram for ``audio``."""
 
     win_len, hop_len = determine_window_and_hop(cfg, len(audio))
+    win_len, hop_len = _fit_stft_parameters(win_len, hop_len, len(audio))
     freqs, times, stft = signal.stft(
         audio,
         fs=cfg.sample_rate,
@@ -223,8 +245,9 @@ def subtract_noise(
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """Perform spectral subtraction using a stationary noise spectrum."""
 
-    win_len = noise_profile.window_length
-    hop_len = noise_profile.hop_length
+    win_len, hop_len = _fit_stft_parameters(
+        noise_profile.window_length, noise_profile.hop_length, len(audio)
+    )
     freqs, times, stft = signal.stft(
         audio,
         fs=cfg.sample_rate,
@@ -234,11 +257,31 @@ def subtract_noise(
         padded=False,
     )
     if stft.shape[0] != noise_profile.spectrum.size:
-        raise ValueError(
-            "Noise profile frequency bins do not match the audio STFT dimensions."
-        )
+        if noise_profile.freqs.size == noise_profile.spectrum.size:
+            target_freqs = np.asarray(freqs, dtype=np.float32)
+            real_part = np.interp(
+                target_freqs,
+                noise_profile.freqs,
+                noise_profile.spectrum.real,
+                left=noise_profile.spectrum.real[0],
+                right=noise_profile.spectrum.real[-1],
+            )
+            imag_part = np.interp(
+                target_freqs,
+                noise_profile.freqs,
+                noise_profile.spectrum.imag,
+                left=noise_profile.spectrum.imag[0],
+                right=noise_profile.spectrum.imag[-1],
+            )
+            noise_spectrum = real_part + 1j * imag_part
+        else:
+            raise ValueError(
+                "Noise profile frequency bins do not match the audio STFT dimensions."
+            )
+    else:
+        noise_spectrum = noise_profile.spectrum
 
-    noise_spectrum = noise_profile.spectrum.reshape(-1, 1)
+    noise_spectrum = np.asarray(noise_spectrum, dtype=np.complex64).reshape(-1, 1)
     cleaned_stft = stft - noise_spectrum * complex(float(cfg.over_subtraction))
     _, reconstructed = signal.istft(
         cleaned_stft,
