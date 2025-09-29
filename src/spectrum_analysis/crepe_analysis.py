@@ -97,6 +97,7 @@ def activations_to_pitch(
     times: np.ndarray,
     freq_axis: Optional[np.ndarray] = None,
     time_weighted: bool = True,
+    expected_frequency: Optional[float] = None,
 ) -> Tuple[float, float]:
     """Return fundamental frequency and time-weighted confidence for an activation map.
 
@@ -112,17 +113,47 @@ def activations_to_pitch(
     freq_axis:
         Optional frequency bin centers with shape ``(F,)`` used to compute a weighted
         average when the CREPE dependency is unavailable.
+    expected_frequency:
+        Optional expected fundamental frequency in Hertz. When provided, the
+        activation map is masked to ignore frequency bins above twice this
+        value before estimating the pitch.
     """
 
     if activation.size == 0:
         return float("nan"), float("nan")
 
+    activation = np.asarray(activation, dtype=np.float64)
     times = np.asarray(times, dtype=np.float64)
     if times.ndim != 1 or times.size != activation.shape[0]:
         return float("nan"), float("nan")
 
     if times.size == 0:
         return float("nan"), float("nan")
+
+    freq_axis_array: Optional[np.ndarray] = None
+    if freq_axis is not None:
+        freq_axis_array = np.asarray(freq_axis, dtype=np.float64)
+
+    if expected_frequency is not None:
+        try:
+            max_allowed = float(expected_frequency) * 2.0
+        except (TypeError, ValueError):
+            max_allowed = float("nan")
+
+        if np.isfinite(max_allowed) and max_allowed > 0.0:
+            if freq_axis_array is None:
+                freq_axis_array = crepe_frequency_axis(activation.shape[1])
+            elif (
+                freq_axis_array.ndim != 1 or freq_axis_array.size != activation.shape[1]
+            ):
+                return float("nan"), float("nan")
+
+            mask = freq_axis_array <= max_allowed
+            if not np.any(mask):
+                return float("nan"), float("nan")
+
+            activation = np.array(activation, copy=True)
+            activation[:, ~mask] = 0.0
 
     durations = np.zeros_like(times, dtype=np.float64)
     if times.size > 1:
@@ -153,18 +184,16 @@ def activations_to_pitch(
         cents = crepe.core.to_local_average_cents(average_activations)
         frequency = 10 * 2 ** (cents / 1200.0)
         freq_value = float(np.squeeze(frequency))
-    elif freq_axis is not None:
-        freq_axis = np.asarray(freq_axis, dtype=np.float64)
-        if freq_axis.ndim != 1 or freq_axis.size != activation.shape[1]:
+    elif freq_axis_array is not None:
+        if freq_axis_array.ndim != 1 or freq_axis_array.size != activation.shape[1]:
+            return float("nan"), float("nan")
+        activation_sum = float(np.sum(average_activations))
+        if activation_sum <= 0.0:
             freq_value = float("nan")
         else:
-            activation_sum = float(np.sum(average_activations))
-            if activation_sum <= 0.0:
-                freq_value = float("nan")
-            else:
-                freq_value = float(
-                    np.dot(freq_axis, average_activations.ravel()) / activation_sum
-                )
+            freq_value = float(
+                np.dot(freq_axis_array, average_activations.ravel()) / activation_sum
+            )
     else:
         freq_value = float("nan")
 
@@ -175,6 +204,48 @@ def activations_to_pitch(
         # otherwise use confidence from the frame with the maximum activation * frame_duration
         conf_value = float(np.max(frame_confidences))
     return freq_value, conf_value
+
+
+def estimate_pitch_from_audio(
+    audio: np.ndarray,
+    sample_rate: int,
+    expected_frequency: Optional[float] = None,
+) -> Tuple[float, float]:
+    """Estimate pitch for ``audio`` using CREPE activations.
+
+    Parameters
+    ----------
+    audio:
+        Raw mono audio samples. Stereo inputs will be averaged before analysis.
+    sample_rate:
+        Sampling rate of ``audio`` in Hertz.
+    expected_frequency:
+        Optional expected fundamental frequency in Hertz used to limit the
+        activation map prior to pitch estimation.
+    """
+
+    if sample_rate <= 0:
+        raise ValueError("sample_rate must be positive.")
+
+    audio = np.asarray(audio, dtype=np.float32)
+
+    from .compare_pitch_cli import PitchCompareConfig
+
+    cfg = PitchCompareConfig(sample_rate=int(sample_rate))
+    cfg.expected_f0 = expected_frequency
+
+    result = compute_crepe_activation(audio, cfg)
+    if result is None:
+        return float("nan"), float("nan")
+
+    times, activation = result
+    freq_axis = crepe_frequency_axis(activation.shape[1])
+    return activations_to_pitch(
+        activation,
+        times,
+        freq_axis=freq_axis,
+        expected_frequency=expected_frequency,
+    )
 
 
 def activation_map_to_pitch_track(
@@ -244,6 +315,7 @@ def crepe_frequency_axis(num_bins: int) -> np.ndarray:
     frequency_bins = 10 * 2 ** (cents_bins / 1200.0)
 
     return frequency_bins
+
 
 def _get_activation_with_frame_gain(
     audio: np.ndarray,
