@@ -32,6 +32,7 @@ class NoiseProfile:
     magnitude: np.ndarray
     window_length: int
     hop_length: int
+    rms: float
 
 
 def load_audio(path: Path, target_sr: int) -> tuple[np.ndarray, int]:
@@ -132,11 +133,70 @@ def compute_noise_profile(noise: np.ndarray, cfg: "PitchCompareConfig") -> Noise
         padded=False,
     )
     magnitude = np.mean(np.abs(stft), axis=1)
+    rms = float(np.sqrt(np.mean(np.square(noise)) + 1e-12))
     return NoiseProfile(
         freqs=np.asarray(freqs, dtype=np.float32),
         magnitude=np.asarray(magnitude, dtype=np.float32),
         window_length=int(win_len),
         hop_length=int(hop_len),
+        rms=rms,
+    )
+
+
+def save_noise_profile(
+    profile: NoiseProfile, cache_path: Path, sample_rate: int
+) -> None:
+    """Persist a noise profile to disk for reuse across runs."""
+
+    cache_path.parent.mkdir(parents=True, exist_ok=True)
+    np.savez_compressed(
+        cache_path,
+        freqs=profile.freqs.astype(np.float32, copy=False),
+        magnitude=profile.magnitude.astype(np.float32, copy=False),
+        window_length=int(profile.window_length),
+        hop_length=int(profile.hop_length),
+        rms=float(profile.rms),
+        sample_rate=int(sample_rate),
+    )
+
+
+def load_noise_profile(
+    cache_path: Path,
+    cfg: "PitchCompareConfig",
+    *,
+    expected_window: Optional[int] = None,
+    expected_hop: Optional[int] = None,
+) -> Optional[NoiseProfile]:
+    """Load a cached noise profile if it matches the current configuration."""
+
+    if not cache_path.exists():
+        return None
+
+    try:
+        with np.load(cache_path, allow_pickle=False) as data:
+            sample_rate = int(data["sample_rate"])
+            if sample_rate != int(cfg.sample_rate):
+                return None
+
+            window_length = int(data["window_length"])
+            hop_length = int(data["hop_length"])
+
+            if expected_window is not None and window_length != expected_window:
+                return None
+            if expected_hop is not None and hop_length != expected_hop:
+                return None
+            freqs = np.asarray(data["freqs"], dtype=np.float32)
+            magnitude = np.asarray(data["magnitude"], dtype=np.float32)
+            rms = float(data["rms"])
+    except (OSError, KeyError, ValueError):
+        return None
+
+    return NoiseProfile(
+        freqs=freqs,
+        magnitude=magnitude,
+        window_length=window_length,
+        hop_length=hop_length,
+        rms=rms,
     )
 
 

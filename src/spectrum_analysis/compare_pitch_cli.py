@@ -32,6 +32,8 @@ from audio_processing import (
     compute_spectrogram,
     determine_window_and_hop,
     load_audio,
+    load_noise_profile,
+    save_noise_profile,
     subtract_noise,
 )
 from crepe_analysis import (
@@ -784,10 +786,27 @@ def _run_comparison(cfg: PitchCompareConfig, output_dir: Path) -> None:
         filtered_audio = audio
         freqs, times, power = compute_spectrogram(filtered_audio, cfg)
     else:
-        noise = record_noise_sample(cfg)
-        noise_rms = float(np.sqrt(np.mean(np.square(noise)) + 1e-12))
-        noise_profile = compute_noise_profile(noise, cfg)
-        audio = acquire_audio(cfg, noise_rms)
+        duration_samples = int(cfg.noise_duration * cfg.sample_rate)
+        win_len, hop_len = determine_window_and_hop(cfg, duration_samples)
+        cache_dir = Path(cfg.output_directory) / "noise_filters"
+        cache_name = (
+            f"stationary_noise_sr{cfg.sample_rate}_n{duration_samples}"
+            f"_win{win_len}_hop{hop_len}.npz"
+        )
+        cache_path = cache_dir / cache_name
+
+        noise_profile = load_noise_profile(
+            cache_path,
+            cfg,
+            expected_window=win_len,
+            expected_hop=hop_len,
+        )
+        if noise_profile is None:
+            noise = record_noise_sample(cfg)
+            noise_profile = compute_noise_profile(noise, cfg)
+            save_noise_profile(noise_profile, cache_path, cfg.sample_rate)
+
+        audio = acquire_audio(cfg, noise_profile.rms)
         filtered_audio, freqs, times, power = subtract_noise(audio, noise_profile, cfg)
 
         audio_path = save_audio(timestamp, filtered_audio, cfg, output_dir)
