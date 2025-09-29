@@ -21,9 +21,7 @@ def test_activation_to_frequency_confidence_time_weighting(monkeypatch):
     times = np.array([0.0, 0.1], dtype=np.float32)
     freq_axis = np.array([100.0, 200.0], dtype=np.float32)
 
-    freq, confidence = crepe_analysis.activation_to_frequency_confidence(
-        activation, times, freq_axis
-    )
+    freq, confidence = crepe_analysis.activations_to_pitch(activation, times, freq_axis)
 
     expected_confidence = (0.8 * 0.1) + (0.6 * 0.1)
     assert np.isfinite(freq)
@@ -48,9 +46,7 @@ def test_activation_to_frequency_confidence_last_duration(monkeypatch):
     times = np.array([0.0, 0.05, 0.15], dtype=np.float32)
     freq_axis = np.array([100.0, 200.0], dtype=np.float32)
 
-    _, confidence = crepe_analysis.activation_to_frequency_confidence(
-        activation, times, freq_axis
-    )
+    _, confidence = crepe_analysis.activations_to_pitch(activation, times, freq_axis)
 
     expected_confidence = (0.9 * 0.05) + (0.7 * 0.1)
     assert np.isclose(confidence, expected_confidence)

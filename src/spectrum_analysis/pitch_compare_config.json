@@ -9,7 +9,7 @@
   "idle_timeout": 1.0,
   "max_record_seconds": 20.0,
   "input_mode": "file",
-  "input_audio_path": "/home/ben/DUNE-tension/data/test_fixture/",
+  "input_audio_path": "/home/ben/DUNE-tension/data/simulated",
   "show_plots": true,
   "crepe_model_capacity": "tiny",
   "pesto_model_name": "mir-1k_g7",

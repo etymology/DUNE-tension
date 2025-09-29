@@ -275,31 +275,31 @@ def _parse_float_list(values: Sequence[str]) -> list[float]:
 def build_argument_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("output", type=Path, help="Directory to store generated files.")
-    parser.add_argument("--sample-rate", type=int, default=48000)
+    parser.add_argument("--sample-rate", type=int, default=44100)
     parser.add_argument("--duration", type=float, default=1.0)
     parser.add_argument(
         "--waveforms",
         nargs="+",
-        default=["sine"],
+        default=["triangle"],
         choices=sorted(SUPPORTED_WAVEFORMS),
     )
     parser.add_argument("--frequencies", nargs="+", type=float, required=True)
     parser.add_argument("--num-files", type=int, default=1)
-    parser.add_argument("--num-partials", type=int, default=8)
-    parser.add_argument("--gain-range", nargs=2, type=float, default=[0.5, 1.0])
-    parser.add_argument("--noise-range", nargs=2, type=float, default=[0.01, 0.05])
+    parser.add_argument("--num-partials", type=int, default=20)
+    parser.add_argument("--gain-range", nargs=2, type=float, default=[0.1, 1.0])
+    parser.add_argument("--noise-range", nargs=2, type=float, default=[0.001, 0.5])
     parser.add_argument(
         "--spectral-tilt-range",
         nargs=2,
         type=float,
-        default=[-3.0, 3.0],
+        default=[-20, 20],
         help="Tilt in dB/octave applied to the harmonic series.",
     )
     parser.add_argument(
         "--bias-range",
         nargs=2,
         type=float,
-        default=[-1.5, 1.5],
+        default=[-20, 20],
         help="Positive values favour faster decay for higher partials.",
     )
     parser.add_argument("--seed", type=int, default=None)

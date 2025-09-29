@@ -27,7 +27,7 @@ from audio_processing import (
 from crepe_analysis import (
     compute_crepe_activation,
     crepe_frequency_axis,
-    activation_to_frequency_and_confidence,
+    activations_to_pitch,
 )
 
 CREPE_FRAME_TARGET_RMS = 1
@@ -491,9 +491,7 @@ def _compute_crepe_crop_limits(
 def _activation_summary_label(
     times: np.ndarray, freq_axis: np.ndarray, activation: np.ndarray
 ) -> str:
-    freq_value, conf_value = activation_to_frequency_confidence(
-        activation, times, freq_axis
-    )
+    freq_value, conf_value = activations_to_pitch(activation, times, freq_axis)
     if not np.isfinite(freq_value) or not np.isfinite(conf_value):
         return "Fundamental: N/A\nConfidence: N/A"
     return f"Fundamental: {freq_value:.2f} Hz\nConfidence: {conf_value:.3f}"
@@ -657,31 +655,7 @@ def _run_comparison(cfg: PitchCompareConfig, output_dir: Path) -> None:
         cfg=cfg,
     )
     crepe_results.append((sr_augmented_label, crepe_scaled))
-    for result in crepe_results:
-        frequency, volume = (
-            find_activation_clusters(
-                *(
-                    result[1]
-                    if result[1] is not None
-                    else (np.array([]), np.array([]), np.array([]))
-                )
-            )[0]
-            if result[1] is not None
-            and find_activation_clusters(
-                *(
-                    result[1]
-                    if result[1] is not None
-                    else (np.array([]), np.array([]), np.array([]))
-                )
-            )
-            else (float("nan"), 0.0)
-        )
-        if np.isfinite(frequency):
-            print(
-                f"[INFO] {result[0]} - Top cluster: {frequency:.2f} Hz (Volume: {volume:.4f})"
-            )
-        else:
-            print(f"[INFO] {result[0]} - No significant activation clusters found.")
+
     plot_results(
         timestamp=timestamp,
         audio=filtered_audio,
