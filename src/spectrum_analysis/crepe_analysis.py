@@ -237,12 +237,13 @@ def to_local_average_cents(salience, center=None):
 
 
 def crepe_frequency_axis(num_bins: int) -> np.ndarray:
-    """Return the frequency axis (Hz) for CREPE activations."""
+    """Return the frequency axis (Hz) for CREPE activations. The
+    cents_mapping is from the CREPE source code."""
 
-    base_freq = 32.703195662574764  # C1 in Hz; matches CREPE/PESTO documentation
-    bins_per_octave = 60.0  # 20 cents per bin
-    return base_freq * (2.0 ** (np.arange(num_bins) / bins_per_octave))
+    cents_bins = np.linspace(0, 7180, num_bins) + 1997.3794084376191
+    frequency_bins = 10 * 2 ** (cents_bins / 1200.0)
 
+    return frequency_bins
 
 def _get_activation_with_frame_gain(
     audio: np.ndarray,

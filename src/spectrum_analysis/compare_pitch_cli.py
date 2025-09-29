@@ -839,19 +839,6 @@ def _run_comparison(cfg: PitchCompareConfig, output_dir: Path) -> None:
     else:
         activation_results.append((pesto_label, None, None))
 
-    for label, activation_data, _ in activation_results:
-        if activation_data is not None:
-            clusters = find_activation_clusters(*activation_data)
-        else:
-            clusters = []
-
-        frequency, volume = clusters[0] if clusters else (float("nan"), 0.0)
-        if np.isfinite(frequency):
-            print(
-                f"[INFO] {label} - Top cluster: {frequency:.2f} Hz (Volume: {volume:.4f})"
-            )
-        else:
-            print(f"[INFO] {label} - No significant activation clusters found.")
     plot_results(
         timestamp=timestamp,
         audio=filtered_audio,
