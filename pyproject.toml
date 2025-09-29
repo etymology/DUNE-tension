@@ -5,6 +5,7 @@ description = "Measure wire tension through GUI."
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "numpy>=1.26.4",
     "crepe>=0.0.16",
     "matplotlib>=3.10.3",
     "nnaudio>=0.3.3",
