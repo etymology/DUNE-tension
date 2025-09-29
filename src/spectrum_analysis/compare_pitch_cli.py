@@ -337,6 +337,7 @@ def acquire_audio(cfg: PitchCompareConfig, noise_rms: float) -> np.ndarray:
     snr_threshold = 10 ** (cfg.snr_threshold_db / 20.0)
     collected: list[np.ndarray] = []
     above = False
+    recording_started = False
     idle_samples = 0
     idle_limit = int(cfg.idle_timeout * cfg.sample_rate)
     max_samples = int(cfg.max_record_seconds * cfg.sample_rate)
@@ -352,6 +353,9 @@ def acquire_audio(cfg: PitchCompareConfig, noise_rms: float) -> np.ndarray:
             ratio = chunk_rms / (noise_rms + 1e-12)
 
             if ratio >= snr_threshold:
+                if not recording_started:
+                    print("[INFO] Recording started.")
+                    recording_started = True
                 above = True
                 idle_samples = 0
                 collected.append(chunk)
