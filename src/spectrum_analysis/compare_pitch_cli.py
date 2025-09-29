@@ -149,8 +149,10 @@ def get_pesto_activations(
         return None
 
     active_cfg = cfg if cfg is not None else PitchCompareConfig()
-    buffer = np.asarray(audio, dtype=np.float32).reshape(-1)
-    buffer_tensor = torch.from_numpy(buffer)
+    buffer = np.asarray(audio, dtype=np.float32, order="C").reshape(-1)
+    buffer_tensor = torch.from_numpy(buffer).to(dtype=torch.float32)
+    if buffer_tensor.ndim == 1:
+        buffer_tensor = buffer_tensor.unsqueeze(0)
 
     window_samples, hop_samples = determine_window_and_hop(active_cfg, buffer.size)
     if active_cfg.pesto_step_size_ms is not None:
@@ -163,41 +165,35 @@ def get_pesto_activations(
     max_step_ms = max((window_samples * max_step_fraction) / sample_rate * 1000.0, 1.0)
     step_ms = float(np.clip(step_ms, 1.0, max_step_ms))
 
-    base_kwargs = {
-        "step_size": float(step_ms),
-        "convert_to_freq": True,
-        "return_activations": True,
-        "verbose": True,
-    }
-
     model_name = getattr(active_cfg, "pesto_model_name", "mir-1k_g7")
 
-    def _call_predict(
-        use_model_key: str, overrides: Optional[Dict[str, Any]] = None
-    ) -> Optional[Tuple[np.ndarray, ...]]:
-        kwargs: Dict[str, Any] = dict(base_kwargs)
-        if overrides:
-            kwargs.update(overrides)
-        kwargs[use_model_key] = model_name
-        try:
-            return pesto.predict(buffer_tensor, sample_rate, **kwargs)
-        except TypeError:
-            return None
-
     used_convert_to_freq = True
-    result = _call_predict("model")
-    if result is None:
-        result = _call_predict("model_name")
-    if result is None:
-        # Fall back to convert_to_freq=False for older versions if needed.
-        overrides = {"convert_to_freq": False}
+    try:
+        result = pesto.predict(
+            buffer_tensor,
+            int(sample_rate),
+            step_size=float(step_ms),
+            model_name=model_name,
+            convert_to_freq=True,
+        )
+    except TypeError:
         used_convert_to_freq = False
-        result = _call_predict("model", overrides)
-        if result is None:
-            result = _call_predict("model_name", overrides)
-
-    if result is None:
-        print("[WARN] Unable to invoke pesto.predict with the provided arguments.")
+        try:
+            result = pesto.predict(
+                buffer_tensor,
+                int(sample_rate),
+                step_size=float(step_ms),
+                model_name=model_name,
+                convert_to_freq=False,
+            )
+        except Exception as exc:
+            print(
+                "[WARN] Unable to invoke pesto.predict with the provided arguments:",
+                exc,
+            )
+            return None
+    except Exception as exc:  # pragma: no cover - pesto failure is environment-specific
+        print("[WARN] pesto.predict failed:", exc)
         return None
 
     if len(result) < 4:
