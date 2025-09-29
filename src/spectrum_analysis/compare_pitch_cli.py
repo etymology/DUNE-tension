@@ -786,7 +786,7 @@ def _run_comparison(cfg: PitchCompareConfig, output_dir: Path) -> None:
     else:
         noise = record_noise_sample(cfg)
         noise_rms = float(np.sqrt(np.mean(np.square(noise)) + 1e-12))
-        _, _, noise_profile = compute_noise_profile(noise, cfg)
+        noise_profile = compute_noise_profile(noise, cfg)
         audio = acquire_audio(cfg, noise_rms)
         filtered_audio, freqs, times, power = subtract_noise(audio, noise_profile, cfg)
 
