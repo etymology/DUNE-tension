@@ -9,8 +9,8 @@ from typing import Optional
 import matplotlib.pyplot as plt
 import numpy as np
 
-from spectrum_analysis.audio_sources import AudioSource
-from spectrum_analysis.utils import dbfs, hann_window
+from audio_sources import AudioSource
+from utils import dbfs, hann_window
 
 
 @dataclass

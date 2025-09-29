@@ -8,3 +8,5 @@ images/*
 data/renamed_audio/*
 .venv/*
 data/tension_data/tension_data.db
+build
+src/dune_tension.egg-info/

@@ -672,8 +672,8 @@ def _compute_crepe_crop_limits(
         elif best_end + 1 < freqs.size:
             upper_freq = float(freqs[best_end + 1])
 
-    lower_freq = float(np.clip(lower_freq, min_freq, max_freq))
-    upper_freq = float(np.clip(upper_freq, min_freq, max_freq))
+    lower_freq = float(np.clip(lower_freq, min_freq, max_freq)) * 0.95
+    upper_freq = float(np.clip(upper_freq, min_freq, max_freq)) * 1.05
 
     if upper_freq <= lower_freq:
         return (min_time, max_time), (min_freq, max_freq)

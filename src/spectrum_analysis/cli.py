@@ -7,16 +7,16 @@ import json
 from importlib import resources
 from typing import Any
 
-from spectrum_analysis.audio_sources import DemoSource, MicSource, sd
-from spectrum_analysis.visualizer import ScrollingSpectrogram, SpectrogramConfig
+from audio_sources import DemoSource, MicSource, sd
+from visualizer import ScrollingSpectrogram, SpectrogramConfig
 
 _SCROLLER_CONFIG_NAME = "spectrogram_scroller_basic_config.json"
 
 
 def load_scroller_config() -> dict[str, Any]:
     """Load the default configuration for the spectrogram scroller."""
-
-    config_path = resources.files(__package__).joinpath(_SCROLLER_CONFIG_NAME)
+    # config_path = resources.files(__package__).joinpath(_SCROLLER_CONFIG_NAME)
+    config_path = "/home/ben/DUNE-tension/src/spectrum_analysis/spectrogram_scroller_basic_config.json"
     with config_path.open("r", encoding="utf-8") as handle:
         return json.load(handle)
 
