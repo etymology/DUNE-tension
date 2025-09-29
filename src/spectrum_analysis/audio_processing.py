@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional, Tuple, TYPE_CHECKING
 
@@ -21,6 +22,17 @@ except Exception:  # pragma: no cover - dependency may be absent
 
 if TYPE_CHECKING:  # pragma: no cover - only for type checking
     from .compare_pitch_cli import PitchCompareConfig
+
+
+@dataclass(frozen=True)
+class NoiseProfile:
+    """Stationary noise statistics cached for spectral subtraction."""
+
+    freqs: np.ndarray
+    spectrum: np.ndarray
+    window_length: int
+    hop_length: int
+    rms: float
 
 
 def load_audio(path: Path, target_sr: int) -> tuple[np.ndarray, int]:
@@ -108,13 +120,11 @@ def determine_window_and_hop(
     return window_samples, hop_samples
 
 
-def compute_noise_profile(
-    noise: np.ndarray, cfg: "PitchCompareConfig"
-) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Estimate the noise profile for spectral subtraction."""
+def compute_noise_profile(noise: np.ndarray, cfg: "PitchCompareConfig") -> NoiseProfile:
+    """Estimate the stationary noise spectrum for later subtraction."""
 
     win_len, hop_len = determine_window_and_hop(cfg, len(noise))
-    freqs, times, stft = signal.stft(
+    freqs, _, stft = signal.stft(
         noise,
         fs=cfg.sample_rate,
         window="hann",
@@ -122,8 +132,72 @@ def compute_noise_profile(
         noverlap=win_len - hop_len,
         padded=False,
     )
-    power = np.mean(np.abs(stft) ** 2, axis=1, keepdims=True)
-    return freqs, times, power
+    spectrum = np.mean(stft, axis=1)
+    rms = float(np.sqrt(np.mean(np.square(noise)) + 1e-12))
+    return NoiseProfile(
+        freqs=np.asarray(freqs, dtype=np.float32),
+        spectrum=np.asarray(spectrum, dtype=np.complex64),
+        window_length=int(win_len),
+        hop_length=int(hop_len),
+        rms=rms,
+    )
+
+
+def save_noise_profile(
+    profile: NoiseProfile, cache_path: Path, sample_rate: int
+) -> None:
+    """Persist a noise profile to disk for reuse across runs."""
+
+    cache_path.parent.mkdir(parents=True, exist_ok=True)
+    np.savez_compressed(
+        cache_path,
+        freqs=profile.freqs.astype(np.float32, copy=False),
+        spectrum=profile.spectrum.astype(np.complex64, copy=False),
+        window_length=int(profile.window_length),
+        hop_length=int(profile.hop_length),
+        rms=float(profile.rms),
+        sample_rate=int(sample_rate),
+    )
+
+
+def load_noise_profile(
+    cache_path: Path,
+    cfg: "PitchCompareConfig",
+    *,
+    expected_window: Optional[int] = None,
+    expected_hop: Optional[int] = None,
+) -> Optional[NoiseProfile]:
+    """Load a cached noise profile if it matches the current configuration."""
+
+    if not cache_path.exists():
+        return None
+
+    try:
+        with np.load(cache_path, allow_pickle=False) as data:
+            sample_rate = int(data["sample_rate"])
+            if sample_rate != int(cfg.sample_rate):
+                return None
+
+            window_length = int(data["window_length"])
+            hop_length = int(data["hop_length"])
+
+            if expected_window is not None and window_length != expected_window:
+                return None
+            if expected_hop is not None and hop_length != expected_hop:
+                return None
+            freqs = np.asarray(data["freqs"], dtype=np.float32)
+            spectrum = np.asarray(data["spectrum"], dtype=np.complex64)
+            rms = float(data["rms"])
+    except (OSError, KeyError, ValueError):
+        return None
+
+    return NoiseProfile(
+        freqs=freqs,
+        spectrum=spectrum,
+        window_length=window_length,
+        hop_length=hop_length,
+        rms=rms,
+    )
 
 
 def compute_spectrogram(
@@ -145,11 +219,12 @@ def compute_spectrogram(
 
 
 def subtract_noise(
-    audio: np.ndarray, noise_profile: np.ndarray, cfg: "PitchCompareConfig"
+    audio: np.ndarray, noise_profile: NoiseProfile, cfg: "PitchCompareConfig"
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    """Perform spectral subtraction to reduce noise in the signal."""
+    """Perform spectral subtraction using a stationary noise spectrum."""
 
-    win_len, hop_len = determine_window_and_hop(cfg, len(audio))
+    win_len = noise_profile.window_length
+    hop_len = noise_profile.hop_length
     freqs, times, stft = signal.stft(
         audio,
         fs=cfg.sample_rate,
@@ -158,11 +233,14 @@ def subtract_noise(
         noverlap=win_len - hop_len,
         padded=False,
     )
-    power = np.abs(stft) ** 2
-    adjusted_noise = noise_profile * cfg.over_subtraction
-    clean_power = np.maximum(power - adjusted_noise, 0.0)
-    magnitude = np.sqrt(clean_power)
-    cleaned_stft = magnitude * np.exp(1j * np.angle(stft))
+
+    if stft.shape[0] != noise_profile.spectrum.size:
+        raise ValueError(
+            "Noise profile frequency bins do not match the audio STFT dimensions."
+        )
+
+    noise_spectrum = noise_profile.spectrum.reshape(-1, 1)
+    cleaned_stft = stft - noise_spectrum * complex(float(cfg.over_subtraction))
     _, reconstructed = signal.istft(
         cleaned_stft,
         fs=cfg.sample_rate,
@@ -172,4 +250,5 @@ def subtract_noise(
         input_onesided=True,
     )
     reconstructed = np.asarray(reconstructed, dtype=np.float32)
+    clean_power = np.abs(cleaned_stft) ** 2
     return reconstructed, freqs, times, clean_power
