@@ -249,6 +249,7 @@ class PitchCompareConfig:
     noise_audio_path: Optional[str] = None
     output_directory: str = "data"
     show_plots: bool = True
+    show_pitch_overlay: bool = True
     crepe_model_capacity: str = "full"
     crepe_step_size_ms: Optional[float] = None
     over_subtraction: float = 1.0  # Noise reduction factor
@@ -705,7 +706,11 @@ def _run_comparison(cfg: PitchCompareConfig, output_dir: Path) -> None:
         cfg=cfg,
     )
     real_label = f"CREPE Activation ({cfg.sample_rate} Hz Real)"
-    real_overlay = _crepe_pitch_overlay(crepe_real) if crepe_real is not None else None
+    real_overlay = (
+        _crepe_pitch_overlay(crepe_real)
+        if cfg.show_pitch_overlay and crepe_real is not None
+        else None
+    )
     activation_results.append((real_label, crepe_real, real_overlay))
 
     expected_f0 = cfg.expected_f0
@@ -725,7 +730,9 @@ def _run_comparison(cfg: PitchCompareConfig, output_dir: Path) -> None:
         cfg=cfg,
     )
     scaled_overlay = (
-        _crepe_pitch_overlay(crepe_scaled) if crepe_scaled is not None else None
+        _crepe_pitch_overlay(crepe_scaled)
+        if cfg.show_pitch_overlay and crepe_scaled is not None
+        else None
     )
     activation_results.append((sr_augmented_label, crepe_scaled, scaled_overlay))
 
@@ -733,6 +740,8 @@ def _run_comparison(cfg: PitchCompareConfig, output_dir: Path) -> None:
     pesto_result = get_pesto_activations(filtered_audio, cfg.sample_rate, cfg=cfg)
     if pesto_result is not None:
         times_sec, freq_axis, activation_ft, overlay = pesto_result
+        if not cfg.show_pitch_overlay:
+            overlay = None
         activation_results.append(
             (pesto_label, (times_sec, freq_axis, activation_ft), overlay)
         )
@@ -758,9 +767,25 @@ def main(argv: Optional[Iterable[str]] = None) -> None:
         type=Path,
         default=Path(__file__).with_name("pitch_compare_config.json"),
     )
+    parser.add_argument(
+        "--pitch-overlay",
+        dest="pitch_overlay",
+        action="store_true",
+        default=None,
+        help="Force-enable pitch contour overlays regardless of configuration.",
+    )
+    parser.add_argument(
+        "--no-pitch-overlay",
+        dest="pitch_overlay",
+        action="store_false",
+        default=None,
+        help="Disable pitch contour overlays on activation plots.",
+    )
     args = parser.parse_args(list(argv) if argv is not None else None)
 
     cfg = load_config(args.config)
+    if args.pitch_overlay is not None:
+        cfg = dataclasses.replace(cfg, show_pitch_overlay=args.pitch_overlay)
     output_dir = Path(cfg.output_directory)
     ensure_output_dir(output_dir)
 
