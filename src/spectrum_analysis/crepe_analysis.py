@@ -92,7 +92,9 @@ def _reverse_sr_augment(activation: np.ndarray, sr_augment_factor: float) -> np.
     return activation
 
 
-def activation_to_frequency_confidence(activation: np.ndarray) -> Tuple[float, float]:
+def activation_to_frequency_and_confidence(
+    activation: np.ndarray,
+) -> Tuple[float, float]:
     """Return fundamental frequency and confidence summary for an activation map."""
 
     if crepe is None:
@@ -101,18 +103,43 @@ def activation_to_frequency_confidence(activation: np.ndarray) -> Tuple[float, f
     if activation.size == 0:
         return float("nan"), float("nan")
 
-    voiced_mask = activation.max(axis=1) > 0
+    voiced_mask = activation.max(axis=1) > 0.5
     if not np.any(voiced_mask):
         return float("nan"), float("nan")
 
     average_activations = activation[voiced_mask].mean(axis=0, keepdims=True)
-    cents = crepe.core.to_local_average_cents(average_activations)
+    cents = to_local_average_cents(average_activations)
     frequency = 10 * 2 ** (cents / 1200.0)
-    confidence = average_activations.max(axis=1)
+    # Confidence is the maximum average activation
+    confidence = float(np.max(average_activations))
 
     freq_value = float(np.squeeze(frequency))
     conf_value = float(np.squeeze(confidence))
     return freq_value, conf_value
+
+def to_local_average_cents(salience, center=None):
+    """
+    find the weighted average cents near the argmax bin
+    """
+
+    cents_mapping = np.linspace(0, 7180, 360) + 1997.3794084376191
+
+    half_window_size = 10
+    if salience.ndim == 1:
+        if center is None:
+            center = int(np.argmax(salience))
+        start = max(0, center - half_window_size)
+        end = min(len(salience), center + half_window_size + 1)
+        salience = salience[start:end]
+        product_sum = np.sum(salience * cents_mapping[start:end])
+        weight_sum = np.sum(salience)
+        return product_sum / weight_sum
+    if salience.ndim == 2:
+        return np.array(
+            [to_local_average_cents(salience[i, :]) for i in range(salience.shape[0])]
+        )
+
+    raise Exception("label should be either 1d or 2d ndarray")
 
 
 def crepe_frequency_axis(num_bins: int) -> np.ndarray:
