@@ -92,7 +92,7 @@ def _reverse_sr_augment(activation: np.ndarray, sr_augment_factor: float) -> np.
     return activation
 
 
-def activation_to_frequency_confidence(
+def activations_to_pitch(
     activation: np.ndarray,
     times: np.ndarray,
     freq_axis: Optional[np.ndarray] = None,
@@ -170,6 +170,40 @@ def activation_to_frequency_confidence(
     frame_confidences = activation[voiced_mask].max(axis=1)
     conf_value = float(np.dot(frame_confidences, valid_durations))
     return freq_value, conf_value
+
+
+def activation_map_to_pitch_track(
+    activation: np.ndarray, freq_axis: Optional[np.ndarray] = None
+) -> np.ndarray:
+    """Convert CREPE activations to a per-frame pitch contour in Hertz."""
+
+    activation = np.asarray(activation, dtype=np.float32)
+    if activation.ndim != 2:
+        raise ValueError("`activation` must be a two-dimensional array.")
+
+    num_frames, num_bins = activation.shape
+    if num_frames == 0:
+        return np.empty(0, dtype=np.float32)
+
+    if crepe is not None:
+        cents = crepe.core.to_local_average_cents(activation)
+        frequencies = 10.0 * np.power(2.0, np.asarray(cents, dtype=np.float64) / 1200.0)
+        return np.asarray(frequencies, dtype=np.float32)
+
+    if freq_axis is None:
+        freq_axis = crepe_frequency_axis(num_bins)
+
+    freq_axis = np.asarray(freq_axis, dtype=np.float64)
+    if freq_axis.ndim != 1 or freq_axis.size != num_bins:
+        raise ValueError("`freq_axis` must have shape (activation.shape[1],).")
+
+    weights = activation.astype(np.float64, copy=False)
+    sums = weights.sum(axis=1)
+    overlay = np.full(num_frames, np.nan, dtype=np.float64)
+    valid = sums > 0.0
+    if np.any(valid):
+        overlay[valid] = (weights[valid] @ freq_axis) / sums[valid]
+    return overlay.astype(np.float32)
 
 
 def to_local_average_cents(salience, center=None):

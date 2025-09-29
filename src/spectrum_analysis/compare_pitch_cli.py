@@ -15,6 +15,16 @@ from matplotlib.figure import Figure
 from matplotlib.gridspec import GridSpec
 import numpy as np
 
+try:  # Optional dependency: heavy torch/pesto models may be unavailable
+    import torch  # type: ignore
+except Exception:  # pragma: no cover - dependency may be absent
+    torch = None  # type: ignore
+
+try:  # Optional dependency - imported lazily when available
+    import pesto  # type: ignore
+except Exception:  # pragma: no cover - dependency may be absent
+    pesto = None  # type: ignore
+
 from audio_sources import MicSource, sd
 
 from audio_processing import (
@@ -27,7 +37,8 @@ from audio_processing import (
 from crepe_analysis import (
     compute_crepe_activation,
     crepe_frequency_axis,
-    activation_to_frequency_and_confidence,
+    activations_to_pitch,
+    activation_map_to_pitch_track,
 )
 
 CREPE_FRAME_TARGET_RMS = 1
@@ -106,6 +117,123 @@ def get_activations(
     )
 
 
+def get_pesto_activations(
+    audio: np.ndarray,
+    sample_rate: int,
+    *,
+    cfg: Optional[PitchCompareConfig] = None,
+) -> Optional[Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]]:
+    """Return PESTO frame times, frequency axis, activation map, and pitch track.
+
+    Parameters
+    ----------
+    audio:
+        One-dimensional audio samples.
+    sample_rate:
+        Sampling rate associated with ``audio``.
+    cfg:
+        Optional :class:`PitchCompareConfig` providing PESTO configuration.
+
+    Returns
+    -------
+    Optional[Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]]
+        Tuple containing frame times in seconds, the frequency axis derived
+        from MIDI bins, the activation map transposed to ``(F, T)``, and the
+        per-frame pitch estimates in Hertz suitable for overlaying on the
+        activation plot. ``None`` when pesto is unavailable or prediction
+        fails.
+    """
+
+    if pesto is None or torch is None:
+        print("[WARN] pesto or torch not available; skipping PESTO activation plot.")
+        return None
+
+    active_cfg = cfg if cfg is not None else PitchCompareConfig()
+    buffer = np.asarray(audio, dtype=np.float32).reshape(-1)
+
+    window_samples, hop_samples = determine_window_and_hop(active_cfg, buffer.size)
+    if active_cfg.pesto_step_size_ms is not None:
+        step_ms = float(active_cfg.pesto_step_size_ms)
+    else:
+        step_ms = hop_samples / float(sample_rate) * 1000.0
+
+    min_overlap = float(np.clip(active_cfg.min_window_overlap, 0.0, 0.999))
+    max_step_fraction = max(1.0 - min_overlap, 0.0)
+    max_step_ms = max((window_samples * max_step_fraction) / sample_rate * 1000.0, 1.0)
+    step_ms = float(np.clip(step_ms, 1.0, max_step_ms))
+
+    base_kwargs = {
+        "step_size": float(step_ms),
+        "convert_to_freq": True,
+        "return_activations": True,
+        "verbose": True,
+    }
+
+    model_name = getattr(active_cfg, "pesto_model_name", "mir-1k_g7")
+
+    def _call_predict(
+        use_model_key: str, overrides: Optional[Dict[str, Any]] = None
+    ) -> Optional[Tuple[np.ndarray, ...]]:
+        kwargs: Dict[str, Any] = dict(base_kwargs)
+        if overrides:
+            kwargs.update(overrides)
+        kwargs[use_model_key] = model_name
+        try:
+            return pesto.predict(buffer, sample_rate, **kwargs)
+        except TypeError:
+            return None
+
+    used_convert_to_freq = True
+    result = _call_predict("model")
+    if result is None:
+        result = _call_predict("model_name")
+    if result is None:
+        # Fall back to convert_to_freq=False for older versions if needed.
+        overrides = {"convert_to_freq": False}
+        used_convert_to_freq = False
+        result = _call_predict("model", overrides)
+        if result is None:
+            result = _call_predict("model_name", overrides)
+
+    if result is None:
+        print("[WARN] Unable to invoke pesto.predict with the provided arguments.")
+        return None
+
+    if len(result) < 4:
+        print("[WARN] pesto.predict did not return activation data; skipping plot.")
+        return None
+
+    times, predicted_freqs, _, activation = result[:4]
+    activation_np = _to_numpy(activation)
+    if activation_np.ndim == 3 and activation_np.shape[0] == 1:
+        activation_np = activation_np[0]
+    if activation_np.ndim != 2:
+        print("[WARN] Unexpected activation shape from pesto.predict; skipping plot.")
+        return None
+
+    num_bins = activation_np.shape[1]
+    midi_bins = np.arange(num_bins, dtype=np.float32)
+    freq_axis = 440.0 * np.power(2.0, (midi_bins - 69.0) / 12.0)
+
+    times_sec = _to_numpy(times).astype(np.float32, copy=False) * 1e-3
+    activation_ft = activation_np.T.astype(np.float32, copy=False)
+    overlay_freqs = _to_numpy(predicted_freqs).astype(np.float32, copy=False)
+    if overlay_freqs.size and not used_convert_to_freq:
+        overlay_freqs = 440.0 * np.power(2.0, (overlay_freqs - 69.0) / 12.0)
+    return (
+        times_sec,
+        freq_axis.astype(np.float32, copy=False),
+        activation_ft,
+        overlay_freqs,
+    )
+
+
+def _to_numpy(value: Any) -> np.ndarray:
+    if torch is not None and isinstance(value, torch.Tensor):  # type: ignore[union-attr]
+        return value.detach().cpu().numpy()
+    return np.asarray(value)
+
+
 @dataclasses.dataclass
 class PitchCompareConfig:
     """Configuration loaded from JSON for pitch comparison runs."""
@@ -131,6 +259,8 @@ class PitchCompareConfig:
         None  # Expected fundamental frequency for CREPE scaling
     )
     crepe_activation_coverage: float = 0.9
+    pesto_model_name: str = "mir-1k_g7"
+    pesto_step_size_ms: Optional[float] = None
 
     @staticmethod
     def from_dict(raw: Dict[str, Any]) -> "PitchCompareConfig":
@@ -244,24 +374,44 @@ def acquire_audio(cfg: PitchCompareConfig, noise_rms: float) -> np.ndarray:
     return np.concatenate(collected).astype(np.float32)
 
 
+ActivationResult = Tuple[np.ndarray, np.ndarray, np.ndarray]
+ActivationPlotEntry = Tuple[str, Optional[ActivationResult], Optional[np.ndarray]]
+
+
+def _crepe_pitch_overlay(result: ActivationResult) -> Optional[np.ndarray]:
+    """Convert CREPE activations into a per-frame pitch contour."""
+
+    _, freq_axis, activation = result
+    try:
+        overlay = activation_map_to_pitch_track(activation.T, freq_axis)
+    except ValueError as exc:
+        print(
+            "[WARN] Unable to convert CREPE activations to pitch contour:",
+            exc,
+        )
+        return None
+    return overlay.astype(np.float32, copy=False)
+
+
 def plot_results(
     timestamp: str,
     audio: np.ndarray,
     freqs: np.ndarray,
     times: np.ndarray,
     power: Optional[np.ndarray],
-    crepe_results: List[
-        Tuple[str, Optional[Tuple[np.ndarray, np.ndarray, np.ndarray]]]
-    ],
+    activation_results: List[ActivationPlotEntry],
     cfg: PitchCompareConfig,
     output_dir: Path,
 ) -> None:
-    fig = plt.figure(figsize=(14, 8))
-    grid = fig.add_gridspec(3, 2, height_ratios=[1.0, 1.0, 1.0])
+    num_activation_plots = max(1, len(activation_results))
+    num_columns = max(2, num_activation_plots)
+
+    fig = plt.figure(figsize=(16, 8))
+    grid = fig.add_gridspec(3, num_columns, height_ratios=[1.0, 1.0, 1.0])
 
     _add_waveform_plot(fig, grid[0, :], audio, cfg)
     _add_spectrogram_plot(fig, grid[1, :], freqs, times, power, cfg)
-    _populate_crepe_axes(fig, grid, 2, crepe_results, cfg)
+    _populate_activation_axes(fig, grid, 2, activation_results, cfg)
 
     fig.tight_layout(rect=(0, 0, 0.92, 1))
     fig_path = output_dir / f"{timestamp}_comparison.png"
@@ -322,34 +472,37 @@ def _add_spectrogram_plot(
     return ax
 
 
-def _populate_crepe_axes(
+def _populate_activation_axes(
     fig: Figure,
     grid: GridSpec,
     row: int,
-    crepe_results: List[
-        Tuple[str, Optional[Tuple[np.ndarray, np.ndarray, np.ndarray]]]
-    ],
+    activation_results: List[ActivationPlotEntry],
     cfg: PitchCompareConfig,
 ) -> None:
-    axes = [fig.add_subplot(grid[row, col]) for col in range(2)]
+    ncols = getattr(grid, "ncols", len(activation_results) or 1)
+    axes = [fig.add_subplot(grid[row, col]) for col in range(ncols)]
     for idx, ax in enumerate(axes):
-        label, result = ("", None)
-        if idx < len(crepe_results):
-            label, result = crepe_results[idx]
-        _render_crepe_axis(fig, ax, label, result, cfg)
+        label: str
+        result: Optional[ActivationResult]
+        overlay: Optional[np.ndarray]
+        label, result, overlay = ("", None, None)
+        if idx < len(activation_results):
+            label, result, overlay = activation_results[idx]
+        _render_activation_axis(fig, ax, label, result, overlay, cfg)
 
 
-def _render_crepe_axis(
+def _render_activation_axis(
     fig: Figure,
     ax: Axes,
     label: str,
-    result: Optional[Tuple[np.ndarray, np.ndarray, np.ndarray]],
+    result: Optional[ActivationResult],
+    overlay: Optional[np.ndarray],
     cfg: PitchCompareConfig,
 ) -> None:
     x_limits: Optional[Tuple[float, float]] = None
     y_limits: Optional[Tuple[float, float]] = None
     if result is not None:
-        crepe_times, freq_axis, crepe_act = result
+        frame_times, freq_axis, activation = result
         mask = (freq_axis >= cfg.min_frequency) & (freq_axis <= cfg.max_frequency)
         if mask.any():
             coverage = getattr(cfg, "crepe_activation_coverage", 0.9)
@@ -357,18 +510,18 @@ def _render_crepe_axis(
                 coverage = 1.0
             coverage = float(np.clip(coverage, 0.0, 1.0))
             mesh = ax.pcolormesh(
-                crepe_times,
+                frame_times,
                 freq_axis[mask],
-                crepe_act[mask, :],
+                activation[mask, :],
                 shading="nearest",
                 cmap="viridis",
             )
             fig.colorbar(mesh, ax=ax, label="Activation")
 
-            masked_activation = crepe_act.T[:, mask]
+            masked_activation = activation.T[:, mask]
             freq_values = freq_axis[mask]
             limits = _compute_crepe_crop_limits(
-                crepe_times,
+                frame_times,
                 freq_values,
                 masked_activation,
                 coverage,
@@ -387,12 +540,30 @@ def _render_crepe_axis(
                 transform=ax.transAxes,
             )
 
-        if x_limits is None and crepe_times.size:
-            x_limits = (crepe_times[0], crepe_times[-1])
+        if x_limits is None and frame_times.size:
+            x_limits = (frame_times[0], frame_times[-1])
         if y_limits is None:
             y_limits = (cfg.min_frequency, cfg.max_frequency)
 
-        legend_label = _activation_summary_label(crepe_times, freq_axis, crepe_act.T)
+        if overlay is not None and frame_times.size:
+            overlay_values = np.ravel(_to_numpy(overlay)).astype(np.float32, copy=False)
+            min_len = min(frame_times.size, overlay_values.size)
+            if min_len:
+                frame_subset = frame_times[:min_len]
+                overlay_subset = overlay_values[:min_len]
+                overlay_mask = np.isfinite(overlay_subset)
+                overlay_mask &= overlay_subset > 0
+                if overlay_mask.any():
+                    ax.plot(
+                        frame_subset[overlay_mask],
+                        overlay_subset[overlay_mask],
+                        color="magenta",
+                        linewidth=1.5,
+                        label="Pitch Track",
+                    )
+                    ax.legend(loc="upper right", frameon=False)
+
+        legend_label = _activation_summary_label(frame_times, freq_axis, activation.T)
         ax.text(
             1.02,
             0.0,
@@ -411,7 +582,7 @@ def _render_crepe_axis(
         ax.text(
             0.5,
             0.5,
-            "CREPE activation unavailable.",
+            "Activation unavailable.",
             ha="center",
             va="center",
             transform=ax.transAxes,
@@ -424,7 +595,7 @@ def _render_crepe_axis(
         ax.set_ylim(*y_limits)
     ax.set_ylabel("Frequency (Hz)")
     ax.set_xlabel("Time (s)")
-    ax.set_title(label or "CREPE Activation")
+    ax.set_title(label or "Activation Map")
 
 
 def _compute_crepe_crop_limits(
@@ -491,9 +662,7 @@ def _compute_crepe_crop_limits(
 def _activation_summary_label(
     times: np.ndarray, freq_axis: np.ndarray, activation: np.ndarray
 ) -> str:
-    freq_value, conf_value = activation_to_frequency_confidence(
-        activation, times, freq_axis
-    )
+    freq_value, conf_value = activations_to_pitch(activation, times, freq_axis)
     if not np.isfinite(freq_value) or not np.isfinite(conf_value):
         return "Fundamental: N/A\nConfidence: N/A"
     return f"Fundamental: {freq_value:.2f} Hz\nConfidence: {conf_value:.3f}"
@@ -627,9 +796,7 @@ def _run_comparison(cfg: PitchCompareConfig, output_dir: Path) -> None:
         audio_path = save_audio(timestamp, filtered_audio, cfg, output_dir)
         print(f"[INFO] Saved filtered audio to {audio_path}")
 
-    crepe_results: List[
-        Tuple[str, Optional[Tuple[np.ndarray, np.ndarray, np.ndarray]]]
-    ] = []
+    activation_results: List[ActivationPlotEntry] = []
 
     crepe_real = get_activations(
         filtered_audio,
@@ -638,7 +805,8 @@ def _run_comparison(cfg: PitchCompareConfig, output_dir: Path) -> None:
         cfg=cfg,
     )
     real_label = f"CREPE Activation ({cfg.sample_rate} Hz Real)"
-    crepe_results.append((real_label, crepe_real))
+    real_overlay = _crepe_pitch_overlay(crepe_real) if crepe_real is not None else None
+    activation_results.append((real_label, crepe_real, real_overlay))
 
     expected_f0 = cfg.expected_f0
     sr_augment_factor = _sr_augment_factor(expected_f0, warn=False)
@@ -656,39 +824,41 @@ def _run_comparison(cfg: PitchCompareConfig, output_dir: Path) -> None:
         expected_pitch=expected_f0,
         cfg=cfg,
     )
-    crepe_results.append((sr_augmented_label, crepe_scaled))
-    for result in crepe_results:
-        frequency, volume = (
-            find_activation_clusters(
-                *(
-                    result[1]
-                    if result[1] is not None
-                    else (np.array([]), np.array([]), np.array([]))
-                )
-            )[0]
-            if result[1] is not None
-            and find_activation_clusters(
-                *(
-                    result[1]
-                    if result[1] is not None
-                    else (np.array([]), np.array([]), np.array([]))
-                )
-            )
-            else (float("nan"), 0.0)
+    scaled_overlay = (
+        _crepe_pitch_overlay(crepe_scaled) if crepe_scaled is not None else None
+    )
+    activation_results.append((sr_augmented_label, crepe_scaled, scaled_overlay))
+
+    pesto_label = f"PESTO Activation ({cfg.pesto_model_name})"
+    pesto_result = get_pesto_activations(filtered_audio, cfg.sample_rate, cfg=cfg)
+    if pesto_result is not None:
+        times_sec, freq_axis, activation_ft, overlay = pesto_result
+        activation_results.append(
+            (pesto_label, (times_sec, freq_axis, activation_ft), overlay)
         )
+    else:
+        activation_results.append((pesto_label, None, None))
+
+    for label, activation_data, _ in activation_results:
+        if activation_data is not None:
+            clusters = find_activation_clusters(*activation_data)
+        else:
+            clusters = []
+
+        frequency, volume = clusters[0] if clusters else (float("nan"), 0.0)
         if np.isfinite(frequency):
             print(
-                f"[INFO] {result[0]} - Top cluster: {frequency:.2f} Hz (Volume: {volume:.4f})"
+                f"[INFO] {label} - Top cluster: {frequency:.2f} Hz (Volume: {volume:.4f})"
             )
         else:
-            print(f"[INFO] {result[0]} - No significant activation clusters found.")
+            print(f"[INFO] {label} - No significant activation clusters found.")
     plot_results(
         timestamp=timestamp,
         audio=filtered_audio,
         freqs=freqs,
         times=times,
         power=power,
-        crepe_results=crepe_results,
+        activation_results=activation_results,
         cfg=cfg,
         output_dir=output_dir,
     )
