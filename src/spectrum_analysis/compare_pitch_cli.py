@@ -251,6 +251,7 @@ class PitchCompareConfig:
     noise_audio_path: Optional[str] = None
     output_directory: str = "data"
     show_plots: bool = True
+    show_pitch_overlay: bool = True
     crepe_model_capacity: str = "full"
     crepe_step_size_ms: Optional[float] = None
     over_subtraction: float = 1.0  # Noise reduction factor
@@ -609,9 +610,12 @@ def _compute_crepe_crop_limits(
         return None
 
     coverage = float(np.clip(coverage, 0.0, 1.0))
+    if coverage <= 0.0:
+        return None
+
     positive_activation = np.where(activation > 0.0, activation, 0.0)
     total_activation = float(positive_activation.sum())
-    if total_activation <= 0.0 or coverage <= 0.0:
+    if total_activation <= 0.0:
         return None
 
     min_time = float(times[0])
@@ -622,40 +626,59 @@ def _compute_crepe_crop_limits(
     if coverage >= 1.0:
         return (min_time, max_time), (min_freq, max_freq)
 
-    cumulative = np.cumsum(np.cumsum(positive_activation, axis=0), axis=1)
-    target = coverage * total_activation
-    coverage_mask = cumulative >= target
-    if not coverage_mask.any():
+    freq_activation = positive_activation.sum(axis=0)
+    if freq_activation.size == 0:
         return None
 
-    candidate_indices = np.argwhere(coverage_mask)
-    areas = (candidate_indices[:, 0] + 1) * (candidate_indices[:, 1] + 1)
-    min_area = np.min(areas)
-    smallest = candidate_indices[areas == min_area]
-    order = np.lexsort((smallest[:, 1], smallest[:, 0]))
-    best_idx = smallest[order[0]]
-    time_idx = int(best_idx[0])
-    freq_idx = int(best_idx[1])
+    target = coverage * total_activation
+    best_start = 0
+    best_end = freq_activation.size - 1
+    best_width = float("inf")
+    best_sum = 0.0
+    current_sum = 0.0
+    start = 0
 
-    if times.size == 1:
-        time_limit = float(times[0])
-    else:
-        time_limit = float(times[min(time_idx + 1, times.size - 1)])
+    for end in range(freq_activation.size):
+        current_sum += float(freq_activation[end])
+        while start <= end and current_sum - float(freq_activation[start]) >= target:
+            current_sum -= float(freq_activation[start])
+            start += 1
 
-    if freqs.size == 1:
-        freq_limit = float(freqs[0])
-    else:
-        freq_limit = float(freqs[min(freq_idx + 1, freqs.size - 1)])
+        if current_sum >= target:
+            lower_freq = float(freqs[start])
+            upper_freq = float(freqs[end])
+            width = upper_freq - lower_freq
+            window_sum = current_sum
+            if width < best_width or (
+                np.isclose(width, best_width) and window_sum > best_sum
+            ):
+                best_width = width
+                best_start = start
+                best_end = end
+                best_sum = window_sum
 
-    time_limit = float(np.clip(time_limit, min_time, max_time))
-    freq_limit = float(np.clip(freq_limit, min_freq, max_freq))
+    if not np.isfinite(best_width):
+        return (min_time, max_time), (min_freq, max_freq)
 
-    if time_limit <= min_time and times.size > 1:
-        time_limit = float(times[1])
-    if freq_limit <= min_freq and freqs.size > 1:
-        freq_limit = float(freqs[1])
+    lower_freq = float(freqs[best_start])
+    upper_freq = float(freqs[best_end])
 
-    return (min_time, time_limit), (min_freq, freq_limit)
+    lower_freq = float(np.clip(lower_freq, min_freq, max_freq))
+    upper_freq = float(np.clip(upper_freq, min_freq, max_freq))
+
+    if lower_freq == upper_freq:
+        if best_start > 0:
+            lower_freq = float(freqs[best_start - 1])
+        elif best_end + 1 < freqs.size:
+            upper_freq = float(freqs[best_end + 1])
+
+    lower_freq = float(np.clip(lower_freq, min_freq, max_freq))
+    upper_freq = float(np.clip(upper_freq, min_freq, max_freq))
+
+    if upper_freq <= lower_freq:
+        return (min_time, max_time), (min_freq, max_freq)
+
+    return (min_time, max_time), (lower_freq, upper_freq)
 
 
 def _activation_summary_label(
@@ -665,103 +688,6 @@ def _activation_summary_label(
     if not np.isfinite(freq_value) or not np.isfinite(conf_value):
         return "Fundamental: N/A\nConfidence: N/A"
     return f"Fundamental: {freq_value:.2f} Hz\nConfidence: {conf_value:.3f}"
-
-
-def find_activation_clusters(
-    freqs: np.ndarray,
-    times: np.ndarray,
-    activation: np.ndarray,
-) -> list[tuple[float, float]]:
-    """Identify activation clusters and rank them by volume.
-
-    Parameters
-    ----------
-    freqs:
-        Frequency bin centers with shape ``(F,)``.
-    times:
-        Time bin centers with shape ``(T,)``.
-    activation:
-        Activation magnitudes with shape ``(F, T)``.
-
-    Returns
-    -------
-    list[tuple[float, float]]
-        A list of ``(average_frequency, volume)`` pairs sorted by descending
-        volume. The ``average_frequency`` is the activation-weighted time
-        average of the frequency for the cluster and ``volume`` is calculated as
-        the integral of the activation over time using the frame durations.
-    """
-
-    freqs = np.asarray(freqs, dtype=float)
-    times = np.asarray(times, dtype=float)
-    activation = np.asarray(activation, dtype=float)
-
-    if freqs.ndim != 1 or times.ndim != 1:
-        raise ValueError("`freqs` and `times` must be one-dimensional arrays.")
-
-    if activation.shape != (freqs.size, times.size):
-        raise ValueError(
-            "`activation` must have shape (freqs.size, times.size).",
-        )
-
-    if activation.size == 0:
-        return []
-
-    if times.size == 1:
-        frame_durations = np.array([1.0], dtype=float)
-    else:
-        frame_steps = np.diff(times)
-        if np.any(frame_steps <= 0.0):
-            raise ValueError("`times` must be strictly increasing.")
-        frame_durations = np.concatenate([frame_steps, frame_steps[-1:]])
-        frame_durations = frame_durations.astype(float, copy=False)
-
-    positive_mask = activation > 0.0
-    if not positive_mask.any():
-        return []
-
-    visited = np.zeros_like(positive_mask, dtype=bool)
-    clusters: list[tuple[float, float]] = []
-
-    freq_values = freqs.reshape(-1, 1)
-
-    for freq_idx in range(freqs.size):
-        for time_idx in range(times.size):
-            if not positive_mask[freq_idx, time_idx] or visited[freq_idx, time_idx]:
-                continue
-
-            stack = [(freq_idx, time_idx)]
-            visited[freq_idx, time_idx] = True
-
-            volume = 0.0
-            freq_weight = 0.0
-
-            while stack:
-                f_idx, t_idx = stack.pop()
-                weight = activation[f_idx, t_idx] * frame_durations[t_idx]
-                volume += weight
-                freq_weight += freq_values[f_idx, 0] * weight
-
-                for n_f, n_t in (
-                    (f_idx - 1, t_idx),
-                    (f_idx + 1, t_idx),
-                    (f_idx, t_idx - 1),
-                    (f_idx, t_idx + 1),
-                ):
-                    if (
-                        0 <= n_f < freqs.size
-                        and 0 <= n_t < times.size
-                        and positive_mask[n_f, n_t]
-                        and not visited[n_f, n_t]
-                    ):
-                        visited[n_f, n_t] = True
-                        stack.append((n_f, n_t))
-
-            if volume > 0.0:
-                clusters.append((freq_weight / volume, volume))
-
-    clusters.sort(key=lambda item: item[1], reverse=True)
-    return clusters
 
 
 def save_audio(
@@ -781,7 +707,7 @@ def _run_comparison(cfg: PitchCompareConfig, output_dir: Path) -> None:
 
     is_file_input = cfg.input_mode == "file"
 
-    if is_file_input:
+    if is_file_input or cfg.noise_duration <= 0.0:
         audio = acquire_audio(cfg, 0.0)
         filtered_audio = audio
         freqs, times, power = compute_spectrogram(filtered_audio, cfg)
@@ -821,7 +747,11 @@ def _run_comparison(cfg: PitchCompareConfig, output_dir: Path) -> None:
         cfg=cfg,
     )
     real_label = f"CREPE Activation ({cfg.sample_rate} Hz Real)"
-    real_overlay = _crepe_pitch_overlay(crepe_real) if crepe_real is not None else None
+    real_overlay = (
+        _crepe_pitch_overlay(crepe_real)
+        if cfg.show_pitch_overlay and crepe_real is not None
+        else None
+    )
     activation_results.append((real_label, crepe_real, real_overlay))
 
     expected_f0 = cfg.expected_f0
@@ -841,7 +771,9 @@ def _run_comparison(cfg: PitchCompareConfig, output_dir: Path) -> None:
         cfg=cfg,
     )
     scaled_overlay = (
-        _crepe_pitch_overlay(crepe_scaled) if crepe_scaled is not None else None
+        _crepe_pitch_overlay(crepe_scaled)
+        if cfg.show_pitch_overlay and crepe_scaled is not None
+        else None
     )
     activation_results.append((sr_augmented_label, crepe_scaled, scaled_overlay))
 
@@ -849,6 +781,8 @@ def _run_comparison(cfg: PitchCompareConfig, output_dir: Path) -> None:
     pesto_result = get_pesto_activations(filtered_audio, cfg.sample_rate, cfg=cfg)
     if pesto_result is not None:
         times_sec, freq_axis, activation_ft, overlay = pesto_result
+        if not cfg.show_pitch_overlay:
+            overlay = None
         activation_results.append(
             (pesto_label, (times_sec, freq_axis, activation_ft), overlay)
         )
@@ -874,9 +808,25 @@ def main(argv: Optional[Iterable[str]] = None) -> None:
         type=Path,
         default=Path(__file__).with_name("pitch_compare_config.json"),
     )
+    parser.add_argument(
+        "--pitch-overlay",
+        dest="pitch_overlay",
+        action="store_true",
+        default=None,
+        help="Force-enable pitch contour overlays regardless of configuration.",
+    )
+    parser.add_argument(
+        "--no-pitch-overlay",
+        dest="pitch_overlay",
+        action="store_false",
+        default=None,
+        help="Disable pitch contour overlays on activation plots.",
+    )
     args = parser.parse_args(list(argv) if argv is not None else None)
 
     cfg = load_config(args.config)
+    if args.pitch_overlay is not None:
+        cfg = dataclasses.replace(cfg, show_pitch_overlay=args.pitch_overlay)
     output_dir = Path(cfg.output_directory)
     ensure_output_dir(output_dir)
 

@@ -233,7 +233,6 @@ def subtract_noise(
         noverlap=win_len - hop_len,
         padded=False,
     )
-
     if stft.shape[0] != noise_profile.spectrum.size:
         raise ValueError(
             "Noise profile frequency bins do not match the audio STFT dimensions."
