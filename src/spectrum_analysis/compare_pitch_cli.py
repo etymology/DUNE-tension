@@ -150,6 +150,7 @@ def get_pesto_activations(
 
     active_cfg = cfg if cfg is not None else PitchCompareConfig()
     buffer = np.asarray(audio, dtype=np.float32).reshape(-1)
+    buffer_tensor = torch.from_numpy(buffer)
 
     window_samples, hop_samples = determine_window_and_hop(active_cfg, buffer.size)
     if active_cfg.pesto_step_size_ms is not None:
@@ -179,7 +180,7 @@ def get_pesto_activations(
             kwargs.update(overrides)
         kwargs[use_model_key] = model_name
         try:
-            return pesto.predict(buffer, sample_rate, **kwargs)
+            return pesto.predict(buffer_tensor, sample_rate, **kwargs)
         except TypeError:
             return None
 
