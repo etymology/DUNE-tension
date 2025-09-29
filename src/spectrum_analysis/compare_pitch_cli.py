@@ -392,7 +392,7 @@ def _render_crepe_axis(
         if y_limits is None:
             y_limits = (cfg.min_frequency, cfg.max_frequency)
 
-        legend_label = _activation_summary_label(crepe_act.T)
+        legend_label = _activation_summary_label(crepe_times, freq_axis, crepe_act.T)
         ax.text(
             1.02,
             0.0,
@@ -488,8 +488,12 @@ def _compute_crepe_crop_limits(
     return (min_time, time_limit), (min_freq, freq_limit)
 
 
-def _activation_summary_label(activation: np.ndarray) -> str:
-    freq_value, conf_value = activation_to_frequency_confidence(activation)
+def _activation_summary_label(
+    times: np.ndarray, freq_axis: np.ndarray, activation: np.ndarray
+) -> str:
+    freq_value, conf_value = activation_to_frequency_confidence(
+        activation, times, freq_axis
+    )
     if not np.isfinite(freq_value) or not np.isfinite(conf_value):
         return "Fundamental: N/A\nConfidence: N/A"
     return f"Fundamental: {freq_value:.2f} Hz\nConfidence: {conf_value:.3f}"
