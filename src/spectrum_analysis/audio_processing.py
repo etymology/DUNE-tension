@@ -29,7 +29,7 @@ class NoiseProfile:
     """Stationary noise statistics cached for spectral subtraction."""
 
     freqs: np.ndarray
-    magnitude: np.ndarray
+    spectrum: np.ndarray
     window_length: int
     hop_length: int
     rms: float
@@ -132,11 +132,11 @@ def compute_noise_profile(noise: np.ndarray, cfg: "PitchCompareConfig") -> Noise
         noverlap=win_len - hop_len,
         padded=False,
     )
-    magnitude = np.mean(np.abs(stft), axis=1)
+    spectrum = np.mean(stft, axis=1)
     rms = float(np.sqrt(np.mean(np.square(noise)) + 1e-12))
     return NoiseProfile(
         freqs=np.asarray(freqs, dtype=np.float32),
-        magnitude=np.asarray(magnitude, dtype=np.float32),
+        spectrum=np.asarray(spectrum, dtype=np.complex64),
         window_length=int(win_len),
         hop_length=int(hop_len),
         rms=rms,
@@ -152,7 +152,7 @@ def save_noise_profile(
     np.savez_compressed(
         cache_path,
         freqs=profile.freqs.astype(np.float32, copy=False),
-        magnitude=profile.magnitude.astype(np.float32, copy=False),
+        spectrum=profile.spectrum.astype(np.complex64, copy=False),
         window_length=int(profile.window_length),
         hop_length=int(profile.hop_length),
         rms=float(profile.rms),
@@ -186,14 +186,14 @@ def load_noise_profile(
             if expected_hop is not None and hop_length != expected_hop:
                 return None
             freqs = np.asarray(data["freqs"], dtype=np.float32)
-            magnitude = np.asarray(data["magnitude"], dtype=np.float32)
+            spectrum = np.asarray(data["spectrum"], dtype=np.complex64)
             rms = float(data["rms"])
     except (OSError, KeyError, ValueError):
         return None
 
     return NoiseProfile(
         freqs=freqs,
-        magnitude=magnitude,
+        spectrum=spectrum,
         window_length=window_length,
         hop_length=hop_length,
         rms=rms,
@@ -233,16 +233,13 @@ def subtract_noise(
         noverlap=win_len - hop_len,
         padded=False,
     )
-
-    if stft.shape[0] != noise_profile.magnitude.size:
+    if stft.shape[0] != noise_profile.spectrum.size:
         raise ValueError(
             "Noise profile frequency bins do not match the audio STFT dimensions."
         )
 
-    magnitude = np.abs(stft)
-    noise_mag = noise_profile.magnitude.reshape(-1, 1) * float(cfg.over_subtraction)
-    cleaned_magnitude = np.maximum(magnitude - noise_mag, 0.0)
-    cleaned_stft = cleaned_magnitude * np.exp(1j * np.angle(stft))
+    noise_spectrum = noise_profile.spectrum.reshape(-1, 1)
+    cleaned_stft = stft - noise_spectrum * complex(float(cfg.over_subtraction))
     _, reconstructed = signal.istft(
         cleaned_stft,
         fs=cfg.sample_rate,
@@ -252,5 +249,5 @@ def subtract_noise(
         input_onesided=True,
     )
     reconstructed = np.asarray(reconstructed, dtype=np.float32)
-    clean_power = cleaned_magnitude**2
+    clean_power = np.abs(cleaned_stft) ** 2
     return reconstructed, freqs, times, clean_power
