@@ -882,7 +882,18 @@ def main(argv: Optional[Iterable[str]] = None) -> None:
                 )
             return
 
-    _run_comparison(cfg, output_dir)
+    if cfg.input_mode == "mic":
+        print(
+            "[INFO] Microphone mode active. Close the plot window to capture a new "
+            "sample or press Ctrl+C to exit."
+        )
+        try:
+            while True:
+                _run_comparison(cfg, output_dir)
+        except KeyboardInterrupt:
+            print("\n[INFO] Exiting microphone capture loop.")
+    else:
+        _run_comparison(cfg, output_dir)
 
 
 if __name__ == "__main__":  # pragma: no cover - CLI entry point
