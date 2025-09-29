@@ -70,8 +70,8 @@ def get_activations(
     Returns
     -------
     Optional[Tuple[np.ndarray, np.ndarray, np.ndarray]]
-        ``(frequencies, times, activation)`` where ``frequencies`` has shape
-        ``(F,)``, ``times`` has shape ``(T,)`` and ``activation`` has shape
+        ``(times, frequencies, activation)`` where ``times`` has shape ``(T,)``,
+        ``frequencies`` has shape ``(F,)`` and ``activation`` has shape
         ``(F, T)``. Returns ``None`` when CREPE activations are unavailable.
     """
 
@@ -100,8 +100,8 @@ def get_activations(
     freq_axis = crepe_frequency_axis(activation.shape[1])
     activation_ft = activation.T
     return (
-        np.asarray(freq_axis, dtype=np.float32),
         np.asarray(times, dtype=np.float32),
+        np.asarray(freq_axis, dtype=np.float32),
         np.asarray(activation_ft, dtype=np.float32),
     )
 
@@ -349,7 +349,7 @@ def _render_crepe_axis(
     x_limits: Optional[Tuple[float, float]] = None
     y_limits: Optional[Tuple[float, float]] = None
     if result is not None:
-        freq_axis, crepe_times, crepe_act = result
+        crepe_times, freq_axis, crepe_act = result
         mask = (freq_axis >= cfg.min_frequency) & (freq_axis <= cfg.max_frequency)
         if mask.any():
             coverage = getattr(cfg, "crepe_activation_coverage", 0.9)
@@ -392,7 +392,7 @@ def _render_crepe_axis(
         if y_limits is None:
             y_limits = (cfg.min_frequency, cfg.max_frequency)
 
-        legend_label = _activation_summary_label(crepe_act.T)
+        legend_label = _activation_summary_label(crepe_times, freq_axis, crepe_act.T)
         ax.text(
             1.02,
             0.0,
@@ -488,8 +488,12 @@ def _compute_crepe_crop_limits(
     return (min_time, time_limit), (min_freq, freq_limit)
 
 
-def _activation_summary_label(activation: np.ndarray) -> str:
-    freq_value, conf_value = activation_to_frequency_and_confidence(activation)
+def _activation_summary_label(
+    times: np.ndarray, freq_axis: np.ndarray, activation: np.ndarray
+) -> str:
+    freq_value, conf_value = activation_to_frequency_confidence(
+        activation, times, freq_axis
+    )
     if not np.isfinite(freq_value) or not np.isfinite(conf_value):
         return "Fundamental: N/A\nConfidence: N/A"
     return f"Fundamental: {freq_value:.2f} Hz\nConfidence: {conf_value:.3f}"

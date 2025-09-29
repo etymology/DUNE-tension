@@ -92,30 +92,85 @@ def _reverse_sr_augment(activation: np.ndarray, sr_augment_factor: float) -> np.
     return activation
 
 
-def activation_to_frequency_and_confidence(
+def activation_to_frequency_confidence(
     activation: np.ndarray,
+    times: np.ndarray,
+    freq_axis: Optional[np.ndarray] = None,
 ) -> Tuple[float, float]:
-    """Return fundamental frequency and confidence summary for an activation map."""
+    """Return fundamental frequency and time-weighted confidence for an activation map.
 
-    if crepe is None:
-        return float("nan"), float("nan")
+    Parameters
+    ----------
+    activation:
+        A two-dimensional array of CREPE activations with shape ``(T, F)`` where ``T`` is
+        the number of frames and ``F`` is the number of frequency bins.
+    times:
+        A one-dimensional array of time centers for each activation frame with shape
+        ``(T,)``. Durations are computed from adjacent time differences with the final
+        frame assigned the same duration as the previous interval.
+    freq_axis:
+        Optional frequency bin centers with shape ``(F,)`` used to compute a weighted
+        average when the CREPE dependency is unavailable.
+    """
 
     if activation.size == 0:
         return float("nan"), float("nan")
 
-    voiced_mask = activation.max(axis=1) > 0.5
+    times = np.asarray(times, dtype=np.float64)
+    if times.ndim != 1 or times.size != activation.shape[0]:
+        return float("nan"), float("nan")
+
+    if times.size == 0:
+        return float("nan"), float("nan")
+
+    durations = np.zeros_like(times, dtype=np.float64)
+    if times.size > 1:
+        frame_intervals = np.diff(times)
+        # Use the previous interval for the final frame to approximate its duration.
+        durations[:-1] = frame_intervals
+        durations[-1] = frame_intervals[-1]
+    else:
+        durations[0] = 0.0
+
+    durations = np.clip(durations, 0.0, None)
+
+    voiced_mask = (activation.max(axis=1) > 0) & (durations > 0)
     if not np.any(voiced_mask):
         return float("nan"), float("nan")
 
-    average_activations = activation[voiced_mask].mean(axis=0, keepdims=True)
-    cents = to_local_average_cents(average_activations)
-    frequency = 10 * 2 ** (cents / 1200.0)
-    # Confidence is the maximum average activation
-    confidence = float(np.max(average_activations))
+    valid_durations = durations[voiced_mask]
+    weighted_activation = activation[voiced_mask] * valid_durations[:, np.newaxis]
+    total_duration = float(valid_durations.sum())
+    if total_duration <= 0.0:
+        return float("nan"), float("nan")
 
-    freq_value = float(np.squeeze(frequency))
-    conf_value = float(np.squeeze(confidence))
+    average_activations = (
+        np.sum(weighted_activation, axis=0, keepdims=True) / total_duration
+    )
+
+    if crepe is not None:
+        cents = crepe.core.to_local_average_cents(average_activations)
+        frequency = 10 * 2 ** (cents / 1200.0)
+        freq_value = float(np.squeeze(frequency))
+    elif freq_axis is not None:
+        freq_axis = np.asarray(freq_axis, dtype=np.float64)
+        if freq_axis.ndim != 1 or freq_axis.size != activation.shape[1]:
+            freq_value = float("nan")
+        else:
+            activation_sum = float(np.sum(average_activations))
+            if activation_sum <= 0.0:
+                freq_value = float("nan")
+            else:
+                freq_value = float(
+                    np.dot(freq_axis, average_activations.ravel()) / activation_sum
+                )
+    else:
+        freq_value = float("nan")
+
+    frame_confidences = activation[voiced_mask].max(axis=1)
+    conf_value = float(np.dot(frame_confidences, valid_durations))
     return freq_value, conf_value
+
 
 def to_local_average_cents(salience, center=None):
     """
