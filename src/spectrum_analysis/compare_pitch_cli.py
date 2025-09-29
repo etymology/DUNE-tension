@@ -610,9 +610,12 @@ def _compute_crepe_crop_limits(
         return None
 
     coverage = float(np.clip(coverage, 0.0, 1.0))
+    if coverage <= 0.0:
+        return None
+
     positive_activation = np.where(activation > 0.0, activation, 0.0)
     total_activation = float(positive_activation.sum())
-    if total_activation <= 0.0 or coverage <= 0.0:
+    if total_activation <= 0.0:
         return None
 
     min_time = float(times[0])
@@ -623,40 +626,59 @@ def _compute_crepe_crop_limits(
     if coverage >= 1.0:
         return (min_time, max_time), (min_freq, max_freq)
 
-    cumulative = np.cumsum(np.cumsum(positive_activation, axis=0), axis=1)
-    target = coverage * total_activation
-    coverage_mask = cumulative >= target
-    if not coverage_mask.any():
+    freq_activation = positive_activation.sum(axis=0)
+    if freq_activation.size == 0:
         return None
 
-    candidate_indices = np.argwhere(coverage_mask)
-    areas = (candidate_indices[:, 0] + 1) * (candidate_indices[:, 1] + 1)
-    min_area = np.min(areas)
-    smallest = candidate_indices[areas == min_area]
-    order = np.lexsort((smallest[:, 1], smallest[:, 0]))
-    best_idx = smallest[order[0]]
-    time_idx = int(best_idx[0])
-    freq_idx = int(best_idx[1])
+    target = coverage * total_activation
+    best_start = 0
+    best_end = freq_activation.size - 1
+    best_width = float("inf")
+    best_sum = 0.0
+    current_sum = 0.0
+    start = 0
 
-    if times.size == 1:
-        time_limit = float(times[0])
-    else:
-        time_limit = float(times[min(time_idx + 1, times.size - 1)])
+    for end in range(freq_activation.size):
+        current_sum += float(freq_activation[end])
+        while start <= end and current_sum - float(freq_activation[start]) >= target:
+            current_sum -= float(freq_activation[start])
+            start += 1
 
-    if freqs.size == 1:
-        freq_limit = float(freqs[0])
-    else:
-        freq_limit = float(freqs[min(freq_idx + 1, freqs.size - 1)])
+        if current_sum >= target:
+            lower_freq = float(freqs[start])
+            upper_freq = float(freqs[end])
+            width = upper_freq - lower_freq
+            window_sum = current_sum
+            if width < best_width or (
+                np.isclose(width, best_width) and window_sum > best_sum
+            ):
+                best_width = width
+                best_start = start
+                best_end = end
+                best_sum = window_sum
 
-    time_limit = float(np.clip(time_limit, min_time, max_time))
-    freq_limit = float(np.clip(freq_limit, min_freq, max_freq))
+    if not np.isfinite(best_width):
+        return (min_time, max_time), (min_freq, max_freq)
 
-    if time_limit <= min_time and times.size > 1:
-        time_limit = float(times[1])
-    if freq_limit <= min_freq and freqs.size > 1:
-        freq_limit = float(freqs[1])
+    lower_freq = float(freqs[best_start])
+    upper_freq = float(freqs[best_end])
 
-    return (min_time, time_limit), (min_freq, freq_limit)
+    lower_freq = float(np.clip(lower_freq, min_freq, max_freq))
+    upper_freq = float(np.clip(upper_freq, min_freq, max_freq))
+
+    if lower_freq == upper_freq:
+        if best_start > 0:
+            lower_freq = float(freqs[best_start - 1])
+        elif best_end + 1 < freqs.size:
+            upper_freq = float(freqs[best_end + 1])
+
+    lower_freq = float(np.clip(lower_freq, min_freq, max_freq))
+    upper_freq = float(np.clip(upper_freq, min_freq, max_freq))
+
+    if upper_freq <= lower_freq:
+        return (min_time, max_time), (min_freq, max_freq)
+
+    return (min_time, max_time), (lower_freq, upper_freq)
 
 
 def _activation_summary_label(
