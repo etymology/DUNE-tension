@@ -8,7 +8,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from spectrum_analysis import crepe_analysis
 
 
-def test_activation_to_frequency_confidence_time_weighting(monkeypatch):
+def test_activations_to_pitch_time_weighting(monkeypatch):
     monkeypatch.setattr(crepe_analysis, "crepe", None)
 
     activation = np.array(
@@ -32,7 +32,7 @@ def test_activation_to_frequency_confidence_time_weighting(monkeypatch):
     assert np.isclose(freq, expected_freq)
 
 
-def test_activation_to_frequency_confidence_last_duration(monkeypatch):
+def test_activations_to_pitch_last_duration(monkeypatch):
     monkeypatch.setattr(crepe_analysis, "crepe", None)
 
     activation = np.array(
