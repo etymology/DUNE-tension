@@ -25,14 +25,14 @@ try:  # Optional dependency - imported lazily when available
 except Exception:  # pragma: no cover - dependency may be absent
     pesto = None  # type: ignore
 
-from audio_sources import MicSource, sd
-
 from audio_processing import (
+    acquire_audio,
     compute_noise_profile,
     compute_spectrogram,
     determine_window_and_hop,
     load_audio,
     load_noise_profile,
+    record_noise_sample,
     save_noise_profile,
     subtract_noise,
 )
@@ -261,6 +261,12 @@ class PitchCompareConfig:
     crepe_activation_coverage: float = 0.9
     pesto_model_name: str = "mir-1k_g7"
     pesto_step_size_ms: Optional[float] = None
+    comb_trigger_on_rmax: float = 0.25
+    comb_trigger_off_rmax: float = 0.18
+    comb_trigger_sfm_max: float = 0.6
+    comb_trigger_on_frames: int = 3
+    comb_trigger_off_frames: int = 2
+    comb_trigger_min_harmonics: int = 4
 
     @staticmethod
     def from_dict(raw: Dict[str, Any]) -> "PitchCompareConfig":
@@ -286,96 +292,6 @@ def load_config(path: Path) -> PitchCompareConfig:
 
 def ensure_output_dir(path: Path) -> None:
     path.mkdir(parents=True, exist_ok=True)
-
-
-def record_noise_sample(cfg: PitchCompareConfig) -> np.ndarray:
-    duration_samples = int(cfg.noise_duration * cfg.sample_rate)
-
-    if cfg.input_mode == "file" and cfg.noise_audio_path:
-        noise, sr = load_audio(Path(cfg.noise_audio_path), cfg.sample_rate)
-        if len(noise) > duration_samples:
-            return noise[:duration_samples]
-        if len(noise) < duration_samples:
-            pad = duration_samples - len(noise)
-            return np.pad(noise, (0, pad), mode="edge")
-        return noise
-
-    if cfg.input_mode == "file":
-        if cfg.input_audio_path is None:
-            raise ValueError(
-                "input_audio_path must be provided when input_mode is 'file'"
-            )
-        audio, _ = load_audio(Path(cfg.input_audio_path), cfg.sample_rate)
-        return audio[:duration_samples]
-
-    if sd is None:
-        raise RuntimeError(
-            "sounddevice is required for microphone recording but is not available."
-        )
-
-    print(f"[INFO] Recording {cfg.noise_duration:.1f}s of background noise...")
-    noise = sd.rec(
-        duration_samples, samplerate=cfg.sample_rate, channels=1, dtype="float32"
-    )
-    sd.wait()
-    return np.squeeze(noise).astype(np.float32)
-
-
-def acquire_audio(cfg: PitchCompareConfig, noise_rms: float) -> np.ndarray:
-    if cfg.input_mode == "file":
-        if cfg.input_audio_path is None:
-            raise ValueError(
-                "input_audio_path must be provided when input_mode is 'file'"
-            )
-        audio, _ = load_audio(Path(cfg.input_audio_path), cfg.sample_rate)
-        return audio
-
-    _, hop = determine_window_and_hop(cfg)
-    source = MicSource(cfg.sample_rate, hop)
-    source.start()
-    print("[INFO] Listening for audio events...")
-    snr_threshold = 10 ** (cfg.snr_threshold_db / 20.0)
-    collected: list[np.ndarray] = []
-    above = False
-    recording_started = False
-    idle_samples = 0
-    idle_limit = int(cfg.idle_timeout * cfg.sample_rate)
-    max_samples = int(cfg.max_record_seconds * cfg.sample_rate)
-    collected_samples = 0
-
-    try:
-        while collected_samples < max_samples:
-            chunk = source.read()
-            if chunk.size == 0:
-                continue
-
-            chunk_rms = np.sqrt(np.mean(np.square(chunk)) + 1e-12)
-            ratio = chunk_rms / (noise_rms + 1e-12)
-
-            if ratio >= snr_threshold:
-                if not recording_started:
-                    print("[INFO] Recording started.")
-                    recording_started = True
-                above = True
-                idle_samples = 0
-                collected.append(chunk)
-                collected_samples += len(chunk)
-            elif above:
-                idle_samples += len(chunk)
-                collected.append(chunk)
-                collected_samples += len(chunk)
-                if idle_samples >= idle_limit:
-                    print("[INFO] Recording stopped (signal below threshold).")
-                    break
-        else:
-            print("[WARN] Max recording length reached.")
-    finally:
-        source.stop()
-
-    if not collected:
-        raise RuntimeError("No audio captured above the SNR threshold.")
-
-    return np.concatenate(collected).astype(np.float32)
 
 
 ActivationResult = Tuple[np.ndarray, np.ndarray, np.ndarray]
