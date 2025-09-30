@@ -22,7 +22,7 @@ class PitchCompareConfig:
     min_oscillations_per_window: float = 10.0
     min_window_overlap: float = 0.5
     idle_timeout: float = 0.2
-    max_record_seconds: float = 10.0
+    max_record_seconds: float = 2.0
     input_mode: str = "mic"
     input_audio_path: Optional[str] = None
     noise_audio_path: Optional[str] = None
@@ -36,12 +36,12 @@ class PitchCompareConfig:
     crepe_activation_coverage: float = 0.9
     pesto_model_name: str = "mir-1k_g7"
     pesto_step_size_ms: Optional[float] = None
-    comb_trigger_on_rmax: float = 0.25
-    comb_trigger_off_rmax: float = 0.18
+    comb_trigger_on_rmax: float = 0.05
+    comb_trigger_off_rmax: float = 0.04
     comb_trigger_sfm_max: float = 0.6
     comb_trigger_on_frames: int = 3
     comb_trigger_off_frames: int = 2
-    comb_trigger_min_harmonics: int = 4
+    comb_trigger_min_harmonics: int = 3
 
     @staticmethod
     def from_dict(raw: Dict[str, Any]) -> "PitchCompareConfig":

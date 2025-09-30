@@ -36,9 +36,9 @@ from .audio_processing import (
     subtract_noise,
 )
 from .crepe_analysis import (
-    activations_to_pitch,
+    crepe_activations_to_pitch,
     activation_map_to_pitch_track,
-    get_activations,
+    get_crepe_activations,
 )
 from .pitch_compare_config import PitchCompareConfig, ensure_output_dir, load_config
 
@@ -480,7 +480,7 @@ def _compute_crepe_crop_limits(
 def _activation_summary_label(
     times: np.ndarray, freq_axis: np.ndarray, activation: np.ndarray
 ) -> str:
-    freq_value, conf_value = activations_to_pitch(activation, times, freq_axis)
+    freq_value, conf_value = crepe_activations_to_pitch(activation, times, freq_axis)
     if not np.isfinite(freq_value) or not np.isfinite(conf_value):
         return "Fundamental: N/A\nConfidence: N/A"
     return f"Fundamental: {freq_value:.2f} Hz\nConfidence: {conf_value:.3f}"
@@ -536,7 +536,7 @@ def _run_comparison(cfg: PitchCompareConfig, output_dir: Path) -> None:
 
     activation_results: List[ActivationPlotEntry] = []
 
-    crepe_real = get_activations(
+    crepe_real = get_crepe_activations(
         filtered_audio,
         cfg.sample_rate,
         expected_pitch=None,
@@ -560,7 +560,7 @@ def _run_comparison(cfg: PitchCompareConfig, output_dir: Path) -> None:
     sr_augmented_label = (
         f"CREPE Activation (augmented sr {augmented_sr} Hz; x{sr_augment_factor:g})"
     )
-    crepe_scaled = get_activations(
+    crepe_scaled = get_crepe_activations(
         filtered_audio,
         cfg.sample_rate,
         expected_pitch=expected_f0,

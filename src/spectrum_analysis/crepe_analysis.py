@@ -93,7 +93,7 @@ def _sr_augment_factor(expected_pitch: Optional[float], *, warn: bool = True) ->
     return CREPE_IDEAL_PITCH / expected
 
 
-def get_activations(
+def get_crepe_activations(
     audio: np.ndarray,
     sample_rate: int,
     expected_pitch: Optional[float] = None,
@@ -158,7 +158,7 @@ def _reverse_sr_augment(activation: np.ndarray, sr_augment_factor: float) -> np.
     return activation
 
 
-def activations_to_pitch(
+def crepe_activations_to_pitch(
     activation: np.ndarray,
     times: np.ndarray,
     freq_axis: Optional[np.ndarray] = None,
@@ -299,7 +299,7 @@ def estimate_pitch_from_audio(
         sample_rate=int(sample_rate), expected_f0=expected_frequency
     )
 
-    result = get_activations(
+    result = get_crepe_activations(
         audio,
         sample_rate,
         expected_pitch=expected_frequency,
@@ -310,7 +310,7 @@ def estimate_pitch_from_audio(
         return float("nan"), float("nan")
 
     times, freq_axis, activation = result
-    return activations_to_pitch(
+    return crepe_activations_to_pitch(
         activation.T,
         times,
         freq_axis=freq_axis,

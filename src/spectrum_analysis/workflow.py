@@ -13,7 +13,7 @@ from .audio_processing import (
     record_noise_sample,
     subtract_noise,
 )
-from .crepe_analysis import activations_to_pitch, get_activations
+from .crepe_analysis import crepe_activations_to_pitch, get_crepe_activations
 from .pitch_compare_config import PitchCompareConfig
 
 
@@ -64,7 +64,7 @@ def listen_for_trigger_and_classify(
         audio = acquire_audio(working_cfg, 0.0)
         filtered_audio = audio
 
-    activation_result = get_activations(
+    activation_result = get_crepe_activations(
         filtered_audio,
         working_cfg.sample_rate,
         expected_pitch=working_cfg.expected_f0,
@@ -77,7 +77,7 @@ def listen_for_trigger_and_classify(
         return float("nan"), float("nan"), empty, empty, empty_matrix
 
     times, freq_axis, activation = activation_result
-    pitch, confidence = activations_to_pitch(
+    pitch, confidence = crepe_activations_to_pitch(
         activation.T,
         times,
         freq_axis=freq_axis,
