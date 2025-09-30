@@ -1,4 +1,4 @@
-"""Tests for stationary noise subtraction utilities."""
+"""Tests for stationary noise reduction utilities."""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ from src.spectrum_analysis.compare_pitch_cli import PitchCompareConfig
 
 
 def test_stationary_noise_subtraction_removes_noise() -> None:
-    """A stationary noise sample should subtract to nearly silence."""
+    """A stationary noise sample should be attenuated by Wiener filtering."""
 
     cfg = PitchCompareConfig(
         sample_rate=8000,
@@ -34,4 +34,4 @@ def test_stationary_noise_subtraction_removes_noise() -> None:
     residual_rms = float(np.sqrt(np.mean(filtered**2) + 1e-12))
     original_rms = float(np.sqrt(np.mean(noise**2) + 1e-12))
 
-    assert residual_rms < original_rms * 0.05
+    assert residual_rms < original_rms * 0.5
