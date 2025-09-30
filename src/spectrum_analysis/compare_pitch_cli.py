@@ -262,6 +262,12 @@ class PitchCompareConfig:
     crepe_activation_coverage: float = 0.9
     pesto_model_name: str = "mir-1k_g7"
     pesto_step_size_ms: Optional[float] = None
+    comb_trigger_on_rmax: float = 0.25
+    comb_trigger_off_rmax: float = 0.18
+    comb_trigger_sfm_max: float = 0.6
+    comb_trigger_on_frames: int = 3
+    comb_trigger_off_frames: int = 2
+    comb_trigger_min_harmonics: int = 4
 
     @staticmethod
     def from_dict(raw: Dict[str, Any]) -> "PitchCompareConfig":
@@ -488,7 +494,9 @@ def acquire_audio(cfg: PitchCompareConfig, noise_rms: float) -> np.ndarray:
 
     candidates = np.geomspace(f_min, f_max, num=36)
     weights = 1.0 / np.arange(1, 11, dtype=np.float64)
-    min_harmonics = 4
+    min_harmonics = max(1, int(cfg.comb_trigger_min_harmonics))
+    on_frames = max(1, int(cfg.comb_trigger_on_frames))
+    off_frames = max(1, int(cfg.comb_trigger_off_frames))
 
     source = MicSource(cfg.sample_rate, hop)
     source.start()
@@ -541,12 +549,16 @@ def acquire_audio(cfg: PitchCompareConfig, noise_rms: float) -> np.ndarray:
                 frame_buffer = frame_buffer[hop:]
 
                 if not triggered:
-                    if valid and r_value > 0.25 and sfm < 0.6:
+                    if (
+                        valid
+                        and r_value > cfg.comb_trigger_on_rmax
+                        and sfm < cfg.comb_trigger_sfm_max
+                    ):
                         on_counter += 1
                     else:
                         on_counter = 0
 
-                    if on_counter >= 3:
+                    if on_counter >= on_frames:
                         triggered = True
                         on_counter = 0
                         off_counter = 0
@@ -566,9 +578,9 @@ def acquire_audio(cfg: PitchCompareConfig, noise_rms: float) -> np.ndarray:
                             stop_recording = True
                             break
                 else:
-                    if r_value < 0.18:
+                    if r_value < cfg.comb_trigger_off_rmax:
                         off_counter += 1
-                        if off_counter >= 2:
+                        if off_counter >= off_frames:
                             triggered = False
                             stop_recording = True
                             print("[INFO] Recording stopped (comb trigger released).")
