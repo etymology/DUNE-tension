@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
-from importlib import resources
+from pathlib import Path
 from typing import Any
 
 from audio_sources import DemoSource, MicSource, sd
@@ -15,8 +15,7 @@ _SCROLLER_CONFIG_NAME = "spectrogram_scroller_basic_config.json"
 
 def load_scroller_config() -> dict[str, Any]:
     """Load the default configuration for the spectrogram scroller."""
-    # config_path = resources.files(__package__).joinpath(_SCROLLER_CONFIG_NAME)
-    config_path = "/home/ben/DUNE-tension/src/spectrum_analysis/spectrogram_scroller_basic_config.json"
+    config_path = Path(__file__).with_name(_SCROLLER_CONFIG_NAME)
     with config_path.open("r", encoding="utf-8") as handle:
         return json.load(handle)
 
