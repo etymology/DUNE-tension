@@ -5,9 +5,8 @@ from __future__ import annotations
 import argparse
 import dataclasses
 import datetime as _dt
-import json
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Tuple
+from typing import Iterable, List, Optional, Tuple
 
 import matplotlib.pyplot as plt
 from matplotlib.axes import Axes
@@ -25,7 +24,7 @@ try:  # Optional dependency - imported lazily when available
 except Exception:  # pragma: no cover - dependency may be absent
     pesto = None  # type: ignore
 
-from audio_processing import (
+from .audio_processing import (
     acquire_audio,
     compute_noise_profile,
     compute_spectrogram,
@@ -36,12 +35,12 @@ from audio_processing import (
     save_noise_profile,
     subtract_noise,
 )
-from crepe_analysis import (
-    compute_crepe_activation,
-    crepe_frequency_axis,
+from .crepe_analysis import (
     activations_to_pitch,
     activation_map_to_pitch_track,
+    get_activations,
 )
+from .pitch_compare_config import PitchCompareConfig, ensure_output_dir, load_config
 
 CREPE_FRAME_TARGET_RMS = 1
 CREPE_IDEAL_PITCH = 600.0  # Hz
@@ -55,68 +54,6 @@ def _sr_augment_factor(expected_pitch: Optional[float], *, warn: bool = True) ->
             print("[WARN] Invalid expected f0; defaulting augment factor to 1.0.")
         return 1.0
     return CREPE_IDEAL_PITCH / float(expected_pitch)
-
-
-def get_activations(
-    audio: np.ndarray,
-    sample_rate: int,
-    expected_pitch: Optional[float] = None,
-    *,
-    cfg: Optional[PitchCompareConfig] = None,
-) -> Optional[Tuple[np.ndarray, np.ndarray, np.ndarray]]:
-    """Return CREPE frequency axis, frame times, and activation map.
-
-    Parameters
-    ----------
-    audio:
-        Audio samples as a one-dimensional ``np.ndarray``.
-    sample_rate:
-        Sample rate associated with ``audio``.
-    expected_pitch:
-        Optional expected fundamental frequency used to derive the CREPE sample
-        rate augmentation factor.
-    cfg:
-        Optional :class:`PitchCompareConfig` providing CREPE configuration
-        details. If omitted, a default configuration is used with the provided
-        ``sample_rate`` and ``expected_pitch`` values.
-
-    Returns
-    -------
-    Optional[Tuple[np.ndarray, np.ndarray, np.ndarray]]
-        ``(times, frequencies, activation)`` where ``times`` has shape ``(T,)``,
-        ``frequencies`` has shape ``(F,)`` and ``activation`` has shape
-        ``(F, T)``. Returns ``None`` when CREPE activations are unavailable.
-    """
-
-    if audio.ndim != 1:
-        audio = np.asarray(audio, dtype=np.float32).reshape(-1)
-    else:
-        audio = np.asarray(audio, dtype=np.float32)
-
-    base_cfg = cfg if cfg is not None else PitchCompareConfig()
-    local_cfg = dataclasses.replace(
-        base_cfg,
-        sample_rate=int(sample_rate),
-        expected_f0=expected_pitch,
-    )
-
-    sr_factor = _sr_augment_factor(expected_pitch, warn=True)
-    crepe_result = compute_crepe_activation(
-        audio,
-        local_cfg,
-        sr_augment_factor=sr_factor,
-    )
-    if crepe_result is None:
-        return None
-
-    times, activation = crepe_result
-    freq_axis = crepe_frequency_axis(activation.shape[1])
-    activation_ft = activation.T
-    return (
-        np.asarray(times, dtype=np.float32),
-        np.asarray(freq_axis, dtype=np.float32),
-        np.asarray(activation_ft, dtype=np.float32),
-    )
 
 
 def get_pesto_activations(
@@ -231,67 +168,6 @@ def _to_numpy(value: Any) -> np.ndarray:
     if torch is not None and isinstance(value, torch.Tensor):  # type: ignore[union-attr]
         return value.detach().cpu().numpy()
     return np.asarray(value)
-
-
-@dataclasses.dataclass
-class PitchCompareConfig:
-    """Configuration loaded from JSON for pitch comparison runs."""
-
-    sample_rate: int = 44100
-    noise_duration: float = 2.0
-    snr_threshold_db: float = 2.0
-    min_frequency: float = 30.0
-    max_frequency: float = 2000.0
-    min_oscillations_per_window: float = 10.0
-    min_window_overlap: float = 0.5
-    idle_timeout: float = 0.2
-    max_record_seconds: float = 10.0
-    input_mode: str = "mic"
-    input_audio_path: Optional[str] = None
-    noise_audio_path: Optional[str] = None
-    output_directory: str = "data"
-    show_plots: bool = True
-    show_pitch_overlay: bool = False
-    crepe_model_capacity: str = "tiny"
-    crepe_step_size_ms: Optional[float] = None
-    over_subtraction: float = 1.0  # Noise reduction factor
-    expected_f0: Optional[float] = (
-        None  # Expected fundamental frequency for CREPE scaling
-    )
-    crepe_activation_coverage: float = 0.9
-    pesto_model_name: str = "mir-1k_g7"
-    pesto_step_size_ms: Optional[float] = None
-    comb_trigger_on_rmax: float = 0.25
-    comb_trigger_off_rmax: float = 0.18
-    comb_trigger_sfm_max: float = 0.6
-    comb_trigger_on_frames: int = 3
-    comb_trigger_off_frames: int = 2
-    comb_trigger_min_harmonics: int = 4
-
-    @staticmethod
-    def from_dict(raw: Dict[str, Any]) -> "PitchCompareConfig":
-        normalized = dict(raw)
-
-        if "expected_f0" not in normalized and "sr_augment_factor" in normalized:
-            try:
-                sr_factor = float(normalized["sr_augment_factor"])
-            except (TypeError, ValueError):
-                sr_factor = float("nan")
-            if np.isfinite(sr_factor) and sr_factor > 0:
-                normalized["expected_f0"] = 1000.0 / sr_factor
-
-        known = {f.name for f in dataclasses.fields(PitchCompareConfig)}
-        filtered = {k: v for k, v in normalized.items() if k in known}
-        return PitchCompareConfig(**filtered)
-
-
-def load_config(path: Path) -> PitchCompareConfig:
-    data = json.loads(path.read_text())
-    return PitchCompareConfig.from_dict(data)
-
-
-def ensure_output_dir(path: Path) -> None:
-    path.mkdir(parents=True, exist_ok=True)
 
 
 ActivationResult = Tuple[np.ndarray, np.ndarray, np.ndarray]
