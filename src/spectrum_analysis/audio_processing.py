@@ -21,10 +21,10 @@ try:  # Optional dependency - full audio analysis toolkit
 except Exception:  # pragma: no cover - dependency may be absent
     librosa = None  # type: ignore
 
-from audio_sources import MicSource, sd
+from .audio_sources import MicSource, sd
 
 if TYPE_CHECKING:  # pragma: no cover - only for type checking
-    from .compare_pitch_cli import PitchCompareConfig
+    from .pitch_compare_config import PitchCompareConfig
 
 
 @dataclass(frozen=True)

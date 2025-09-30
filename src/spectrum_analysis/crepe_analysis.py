@@ -2,14 +2,17 @@
 
 from __future__ import annotations
 
+import dataclasses
 from typing import Optional, Tuple, TYPE_CHECKING
 
 import numpy as np
 from numpy.lib.stride_tricks import as_strided
 
-from audio_processing import determine_window_and_hop
+from .audio_processing import determine_window_and_hop
+from .pitch_compare_config import PitchCompareConfig
 
 CREPE_FRAME_TARGET_RMS = 0.5
+CREPE_IDEAL_PITCH = 600.0
 
 try:  # Optional dependency - heavy ML models
     import crepe  # type: ignore
@@ -17,7 +20,7 @@ except Exception:  # pragma: no cover - dependency may be absent
     crepe = None  # type: ignore
 
 if TYPE_CHECKING:  # pragma: no cover - only for type checking
-    from compare_pitch_cli import PitchCompareConfig
+    from .pitch_compare_config import PitchCompareConfig
 
 
 def compute_crepe_activation(
@@ -73,6 +76,69 @@ def compute_crepe_activation(
     )
 
 
+def _sr_augment_factor(expected_pitch: Optional[float], *, warn: bool = True) -> float:
+    if expected_pitch is None:
+        return 1.0
+
+    try:
+        expected = float(expected_pitch)
+    except (TypeError, ValueError):
+        expected = float("nan")
+
+    if not np.isfinite(expected) or expected <= 0:
+        if warn:
+            print("[WARN] Invalid expected f0; defaulting augment factor to 1.0.")
+        return 1.0
+
+    return CREPE_IDEAL_PITCH / expected
+
+
+def get_crepe_activations(
+    audio: np.ndarray,
+    sample_rate: int,
+    expected_pitch: Optional[float] = None,
+    *,
+    cfg: Optional[PitchCompareConfig] = None,
+    warn: bool = True,
+) -> Optional[Tuple[np.ndarray, np.ndarray, np.ndarray]]:
+    """Return CREPE activation maps for ``audio``.
+
+    The resulting tuple contains frame times in seconds, the CREPE frequency
+    axis in Hertz, and the activation map with shape ``(F, T)`` suitable for
+    plotting.
+    """
+
+    if audio.ndim != 1:
+        audio = np.asarray(audio, dtype=np.float32).reshape(-1)
+    else:
+        audio = np.asarray(audio, dtype=np.float32)
+
+    base_cfg = cfg if cfg is not None else PitchCompareConfig()
+    local_cfg = dataclasses.replace(
+        base_cfg,
+        sample_rate=int(sample_rate),
+        expected_f0=expected_pitch,
+    )
+
+    sr_factor = _sr_augment_factor(expected_pitch, warn=warn)
+    crepe_result = compute_crepe_activation(
+        audio,
+        local_cfg,
+        sr_augment_factor=sr_factor,
+    )
+    if crepe_result is None:
+        return None
+
+    times, activation = crepe_result
+    freq_axis = crepe_frequency_axis(activation.shape[1])
+    activation_ft = activation.T
+    return (
+        np.asarray(times, dtype=np.float32),
+        np.asarray(freq_axis, dtype=np.float32),
+        np.asarray(activation_ft, dtype=np.float32),
+    )
+
+
 def _reverse_sr_augment(activation: np.ndarray, sr_augment_factor: float) -> np.ndarray:
     """Shift CREPE activation bins to account for scaled sample rate."""
 
@@ -92,7 +158,7 @@ def _reverse_sr_augment(activation: np.ndarray, sr_augment_factor: float) -> np.
     return activation
 
 
-def activations_to_pitch(
+def crepe_activations_to_pitch(
     activation: np.ndarray,
     times: np.ndarray,
     freq_axis: Optional[np.ndarray] = None,
@@ -229,19 +295,23 @@ def estimate_pitch_from_audio(
 
     audio = np.asarray(audio, dtype=np.float32)
 
-    from .compare_pitch_cli import PitchCompareConfig
+    cfg = PitchCompareConfig(
+        sample_rate=int(sample_rate), expected_f0=expected_frequency
+    )
 
-    cfg = PitchCompareConfig(sample_rate=int(sample_rate))
-    cfg.expected_f0 = expected_frequency
-
-    result = compute_crepe_activation(audio, cfg)
+    result = get_crepe_activations(
+        audio,
+        sample_rate,
+        expected_pitch=expected_frequency,
+        cfg=cfg,
+        warn=False,
+    )
     if result is None:
         return float("nan"), float("nan")
 
-    times, activation = result
-    freq_axis = crepe_frequency_axis(activation.shape[1])
-    return activations_to_pitch(
-        activation,
+    times, freq_axis, activation = result
+    return crepe_activations_to_pitch(
+        activation.T,
         times,
         freq_axis=freq_axis,
         expected_frequency=expected_frequency,
