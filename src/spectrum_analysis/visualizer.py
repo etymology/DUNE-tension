@@ -12,6 +12,9 @@ import numpy as np
 from audio_sources import AudioSource
 from utils import dbfs, hann_window
 
+from .audio_processing import NoiseProfile, compute_noise_profile, subtract_noise
+from .pitch_compare_config import PitchCompareConfig
+
 
 @dataclass
 class SpectrogramConfig:
@@ -52,7 +55,7 @@ class ScrollingSpectrogram:
         self.noise_filter_enabled = bool(config.enable_noise_filter)
         self.noise_sec = float(config.noise_sec)
         self.over_sub = float(config.over_sub)
-        self.noise_mag: Optional[np.ndarray] = None
+        self.noise_profile: Optional[NoiseProfile] = None
 
         self.win = hann_window(self.fft_size)
         self.freqs = np.fft.rfftfreq(self.fft_size, d=1.0 / self.sr)
@@ -70,6 +73,8 @@ class ScrollingSpectrogram:
         self.min_freq = max(1e-6, float(config.min_freq))
         self.acf_max_lag_s = 1.0 / self.min_freq
         self.acf_max_lag_samps = max(1, int(round(self.acf_max_lag_s * self.sr)))
+
+        self.noise_cfg = self._build_noise_cfg()
 
         self.snr_trigger = float(getattr(config, "snr_trigger", 3.0))
         self.snr_release = float(getattr(config, "snr_release", self.snr_trigger))
@@ -143,7 +148,7 @@ class ScrollingSpectrogram:
     def _set_titles(self) -> None:
         nf = (
             "ON"
-            if (self.noise_filter_enabled and self.noise_mag is not None)
+            if (self.noise_filter_enabled and self.noise_profile is not None)
             else ("ON (profiling...)" if self.noise_filter_enabled else "OFF")
         )
         self.ax_spec.set_title(f"Spectrogram (X=freq, Y=time ↑)  |  Noise filter: {nf}")
@@ -204,6 +209,21 @@ class ScrollingSpectrogram:
         self._frame_count = 0
         self._use_full_analysis = False
 
+    def _build_noise_cfg(self) -> PitchCompareConfig:
+        cfg = PitchCompareConfig()
+        cfg.sample_rate = self.sr
+        cfg.min_frequency = max(float(self.config.min_freq), 1e-6)
+        cfg.max_frequency = float(self.max_freq)
+        window_sec = self.fft_size / float(self.sr)
+        cfg.min_oscillations_per_window = max(
+            cfg.min_frequency * window_sec,
+            1e-6,
+        )
+        overlap = float(np.clip(1.0 - (self.hop / float(self.fft_size)), 0.0, 0.999))
+        cfg.min_window_overlap = overlap
+        cfg.over_subtraction = float(self.over_sub)
+        return cfg
+
     def _update_pre_buffer(self, samples: np.ndarray) -> None:
         if self.pre_record_samples <= 0 or samples.size == 0:
             return
@@ -252,7 +272,7 @@ class ScrollingSpectrogram:
             frame = self.recorded_samples[: self.fft_size]
             if frame.size < self.fft_size:
                 frame = np.pad(frame, (0, self.fft_size - frame.size))
-            avg_mag = self._apply_noise_filter(self._spec_mag(frame)).astype(np.float32)
+            avg_mag = self._compute_magnitude(frame).astype(np.float32)
         avg_mag = np.maximum(avg_mag, 0.0)
         if avg_mag.size != self.max_bin:
             if avg_mag.size > self.max_bin:
@@ -336,6 +356,7 @@ class ScrollingSpectrogram:
 
         self._rebuild_facf_axis()
         self.fig.canvas.draw_idle()
+        self.noise_cfg.max_frequency = float(self.max_freq)
 
     def _update_time_axis(self) -> None:
         new_rows = max(10, int(round(self.window_sec * self.sr / self.hop)))
@@ -364,6 +385,44 @@ class ScrollingSpectrogram:
         mag = np.abs(spec)
         return mag[: self.max_bin]
 
+    def _sync_freq_axis(self, freqs: np.ndarray) -> None:
+        if freqs.size == 0:
+            return
+        if freqs.shape != self.freqs.shape or not np.allclose(freqs, self.freqs):
+            self.freqs = freqs.astype(np.float32, copy=False)
+            self._update_freq_axis()
+
+    def _compute_magnitude(self, frame: np.ndarray) -> np.ndarray:
+        base_mag = self._spec_mag(frame)
+        if not self.noise_filter_enabled or self.noise_profile is None:
+            return base_mag
+
+        cfg = self.noise_cfg
+        cfg.over_subtraction = float(self.over_sub)
+        try:
+            _, freqs, _, clean_power = subtract_noise(
+                frame.astype(np.float32, copy=False), self.noise_profile, cfg
+            )
+        except ValueError:
+            return base_mag
+
+        self._sync_freq_axis(freqs)
+
+        power = np.asarray(clean_power, dtype=np.float32)
+        if power.ndim == 2:
+            power_slice = power[:, -1]
+        else:
+            power_slice = power.reshape(-1)
+        cleaned_mag = np.sqrt(np.maximum(power_slice, 0.0))
+        if cleaned_mag.size < self.max_bin:
+            cleaned_mag = np.pad(
+                cleaned_mag,
+                (0, self.max_bin - cleaned_mag.size),
+                mode="constant",
+                constant_values=0.0,
+            )
+        return cleaned_mag[: self.max_bin]
+
     def profile_noise(self, seconds: float, show_status: bool = False) -> None:
         if show_status:
             self.ax_spec.set_title("Profiling noise... Please keep the room quiet.")
@@ -371,8 +430,6 @@ class ScrollingSpectrogram:
             self.fig.canvas.flush_events()
 
         target_samples = int(self.sr * max(0.2, seconds))
-        buf = np.zeros(0, dtype=np.float32)
-        mags = []
         noise_chunks: list[np.ndarray] = []
         t0 = time.time()
         timeout = max(3.0, seconds * 3.0)
@@ -381,33 +438,30 @@ class ScrollingSpectrogram:
             chunk = self.source.read()
             if chunk.size == 0:
                 continue
-            buf = np.concatenate([buf, chunk])
             noise_chunks.append(chunk.astype(np.float32, copy=False))
             collected += chunk.size
-            while buf.size >= self.fft_size:
-                frame = buf[: self.fft_size]
-                buf = buf[self.hop :]
-                mags.append(self._spec_mag(frame))
-                if len(mags) > 2000:
-                    break
 
-        self.noise_mag = (
-            None
-            if len(mags) == 0
-            else np.median(np.vstack(mags), axis=0).astype(np.float32)
-        )
         if noise_chunks:
             noise_td = np.concatenate(noise_chunks)
-            self.noise_rms = float(np.sqrt(np.mean(noise_td.astype(np.float64) ** 2)))
+            try:
+                profile = compute_noise_profile(noise_td, self.noise_cfg)
+                self.noise_profile = profile
+                self.noise_rms = float(profile.rms)
+                if profile.window_length != self.fft_size:
+                    self.fft_size = int(profile.window_length)
+                    self.win = hann_window(self.fft_size)
+                if profile.hop_length != self.hop:
+                    self.hop = int(profile.hop_length)
+                self.noise_cfg = self._build_noise_cfg()
+                self._sync_freq_axis(profile.freqs)
+            except ValueError:
+                self.noise_profile = None
+                self.noise_rms = 1e-6
         else:
+            self.noise_profile = None
             self.noise_rms = 1e-6
         self._set_titles()
         self.fig.canvas.draw_idle()
-
-    def _apply_noise_filter(self, mag: np.ndarray) -> np.ndarray:
-        if not self.noise_filter_enabled or self.noise_mag is None:
-            return mag
-        return np.maximum(mag - self.over_sub * self.noise_mag, 0.0)
 
     def _find_local_peaks(self, y: np.ndarray) -> np.ndarray:
         if y.size < 3:
@@ -680,8 +734,7 @@ class ScrollingSpectrogram:
             frame = self.sample_buf[: self.fft_size]
             self.sample_buf = self.sample_buf[self.hop :]
 
-            mag = self._spec_mag(frame)
-            mag = self._apply_noise_filter(mag)
+            mag = self._compute_magnitude(frame)
             S_db = dbfs(mag)
 
             if self.recording_active:
