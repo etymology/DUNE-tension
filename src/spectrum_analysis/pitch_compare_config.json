@@ -1,20 +1,8 @@
 {
-  "sample_rate": 44100,
-  "noise_duration": 5,
-  "snr_threshold_db": 2,
-  "min_frequency": 30.0,
-  "max_frequency": 1000.0,
-  "min_oscillations_per_window": 8.0,
-  "min_window_overlap": 0.5,
-  "idle_timeout": 0.1,
-  "max_record_seconds": 10,
+  "snr_threshold_db": 1,
+  "max_record_seconds": 2,
   "input_mode": "mic",
   "input_audio_path": "/home/ben/DUNE-tension/data/test_fixture",
-  "show_plots": true,
-  "crepe_model_capacity": "tiny",
-  "pesto_model_name": "mir-1k_g7",
-  "over_subtraction": 2,
-  "expected_f0": 70.0,
-  "pitch_overlay": false,
-  "crepe_activation_coverage": 0.9
+  "over_subtraction": 1,
+  "expected_f0": 70.0
 }
