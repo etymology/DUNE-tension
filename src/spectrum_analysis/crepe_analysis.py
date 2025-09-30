@@ -8,8 +8,8 @@ from typing import Optional, Tuple, TYPE_CHECKING
 import numpy as np
 from numpy.lib.stride_tricks import as_strided
 
-from .audio_processing import determine_window_and_hop
-from .pitch_compare_config import PitchCompareConfig
+from audio_processing import determine_window_and_hop
+from pitch_compare_config import PitchCompareConfig
 
 CREPE_FRAME_TARGET_RMS = 0.5
 CREPE_IDEAL_PITCH = 600.0
@@ -20,7 +20,7 @@ except Exception:  # pragma: no cover - dependency may be absent
     crepe = None  # type: ignore
 
 if TYPE_CHECKING:  # pragma: no cover - only for type checking
-    from .pitch_compare_config import PitchCompareConfig
+    from pitch_compare_config import PitchCompareConfig
 
 
 def compute_crepe_activation(

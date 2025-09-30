@@ -36,12 +36,12 @@ class PitchCompareConfig:
     crepe_activation_coverage: float = 0.9
     pesto_model_name: str = "mir-1k_g7"
     pesto_step_size_ms: Optional[float] = None
-    comb_trigger_on_rmax: float = 0.05
-    comb_trigger_off_rmax: float = 0.04
+    comb_trigger_on_rmax: float = 0.001
+    comb_trigger_off_rmax: float = 0.0005
     comb_trigger_sfm_max: float = 0.6
     comb_trigger_on_frames: int = 3
-    comb_trigger_off_frames: int = 2
-    comb_trigger_min_harmonics: int = 3
+    comb_trigger_off_frames: int = 3
+    comb_trigger_min_harmonics: int = 4
 
     @staticmethod
     def from_dict(raw: Dict[str, Any]) -> "PitchCompareConfig":

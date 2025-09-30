@@ -24,7 +24,7 @@ try:  # Optional dependency - imported lazily when available
 except Exception:  # pragma: no cover - dependency may be absent
     pesto = None  # type: ignore
 
-from .audio_processing import (
+from audio_processing import (
     acquire_audio,
     compute_noise_profile,
     compute_spectrogram,
@@ -35,12 +35,12 @@ from .audio_processing import (
     save_noise_profile,
     subtract_noise,
 )
-from .crepe_analysis import (
+from crepe_analysis import (
     crepe_activations_to_pitch,
     activation_map_to_pitch_track,
     get_crepe_activations,
 )
-from .pitch_compare_config import PitchCompareConfig, ensure_output_dir, load_config
+from pitch_compare_config import PitchCompareConfig, ensure_output_dir, load_config
 
 CREPE_FRAME_TARGET_RMS = 1
 CREPE_IDEAL_PITCH = 600.0  # Hz
