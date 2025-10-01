@@ -657,7 +657,16 @@ class App:
         if self.mode == "spec":
             self.view.set_noise_filter(self._apply_wiener_filter)
 
-    def _profile_noise(self):
+    def _profile_noise(self, notify: bool = False) -> bool:
+        if notify:
+            print("[INFO] Recording new noise profile...")
+        if not SHARED_NOISE_TOOLS_AVAILABLE:
+            if notify:
+                print(
+                    "[WARN] Noise-reduction utilities are unavailable; install project "
+                    "dependencies to enable profiling."
+                )
+            return False
         target_samples = int(self.sr * max(0.2, self.noise_sec))
         collected = 0
         buf = np.zeros(0, dtype=np.float32)
@@ -680,6 +689,7 @@ class App:
                 noise_frames.append(frame.astype(np.float32))
                 if len(noise_frames) > 2000:
                     break
+        success = False
         if noise_frames and SHARED_NOISE_TOOLS_AVAILABLE:
             noise_samples = np.concatenate(noise_frames)
             if self.noise_cfg is not None and shared_compute_noise_profile is not None:
@@ -691,12 +701,20 @@ class App:
                 )
                 if self.noise_profile is not None:
                     self._persist_noise_profile(self.noise_profile)
+                    success = True
             else:
                 self.noise_profile = None
         else:
             self.noise_profile = None
         self.ax.set_title(title0)
         self.fig.canvas.draw_idle()
+        if notify:
+            if success:
+                self.noise_filter_enabled = True
+                print("[INFO] Noise profile captured; enabling filter.")
+            else:
+                print("[WARN] Unable to capture a noise profile.")
+        return success
 
     def _persist_noise_profile(self, profile: SharedNoiseProfile) -> None:
         if not SHARED_NOISE_TOOLS_AVAILABLE or shared_save_noise_profile is None:
@@ -736,7 +754,7 @@ class App:
             if event.key == "n":
                 self.noise_filter_enabled = not self.noise_filter_enabled
             elif event.key == "r":
-                self._profile_noise()
+                self._profile_noise(notify=True)
 
     # -------- Autocorr pitch (time-domain) --------
     def _autocorr_pitch(
