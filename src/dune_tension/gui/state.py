@@ -7,7 +7,7 @@ import json
 import tkinter as tk
 from typing import Any
 
-from .context import GUIContext
+from dune_tension.gui.context import GUIContext
 
 
 @dataclass(slots=True)

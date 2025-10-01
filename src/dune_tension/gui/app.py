@@ -6,7 +6,7 @@ from functools import partial
 from typing import Any
 import tkinter as tk
 
-from .actions import (
+from dune_tension.gui.actions import (
     calibrate_background_noise,
     clear_outliers,
     clear_range,
@@ -22,8 +22,8 @@ from .actions import (
     set_manual_tension,
     update_focus_command_indicator,
 )
-from .context import GUIContext, GUIWidgets, create_context
-from .state import load_state
+from dune_tension.gui.context import GUIContext, GUIWidgets, create_context
+from dune_tension.gui.state import load_state
 
 
 def run_app(state_file: str = "gui_state.json", root: tk.Misc | None = None) -> None:
@@ -62,9 +62,7 @@ def _initialise_servo(ctx: GUIContext) -> None:
         value = int(ctx.widgets.focus_slider.get())
     except Exception:
         value = 4000
-    ctx.servo_controller.on_focus_command = partial(
-        update_focus_command_indicator, ctx
-    )
+    ctx.servo_controller.on_focus_command = partial(update_focus_command_indicator, ctx)
     ctx.servo_controller.focus_position = value
     try:
         ctx.servo_controller.focus_target(value)
@@ -77,7 +75,11 @@ def _initialise_servo(ctx: GUIContext) -> None:
 def _create_widgets(
     root: tk.Misc, focus_command_var: tk.StringVar
 ) -> tuple[
-    GUIWidgets, tk.Canvas | None, Any | None, dict[str, tk.Button], list[tuple[tk.Button, int, int]]
+    GUIWidgets,
+    tk.Canvas | None,
+    Any | None,
+    dict[str, tk.Button],
+    list[tuple[tk.Button, int, int]],
 ]:
     """Build and layout the GUI widgets."""
 
@@ -117,7 +119,9 @@ def _create_widgets(
         row=3, column=1, sticky="w"
     )
 
-    tk.Label(measure_frame, text="Samples per Wire (≥1):").grid(row=0, column=0, sticky="e")
+    tk.Label(measure_frame, text="Samples per Wire (≥1):").grid(
+        row=0, column=0, sticky="e"
+    )
     entry_samples = tk.Entry(measure_frame)
     entry_samples.grid(row=0, column=1)
 
@@ -127,7 +131,9 @@ def _create_widgets(
     entry_confidence = tk.Entry(measure_frame)
     entry_confidence.grid(row=1, column=1)
 
-    tk.Label(measure_frame, text="Record Duration (s):").grid(row=9, column=0, sticky="e")
+    tk.Label(measure_frame, text="Record Duration (s):").grid(
+        row=9, column=0, sticky="e"
+    )
     entry_record_duration = tk.Entry(measure_frame)
     entry_record_duration.grid(row=9, column=1)
 
@@ -195,7 +201,9 @@ def _create_widgets(
     accel_slider.set(1)
     accel_slider.grid(row=1, column=1, sticky="ew")
 
-    tk.Label(servo_frame, text="Dwell Time (0.00–2.00s):").grid(row=2, column=0, sticky="e")
+    tk.Label(servo_frame, text="Dwell Time (0.00–2.00s):").grid(
+        row=2, column=0, sticky="e"
+    )
     dwell_slider = tk.Scale(servo_frame, from_=0, to=200, orient=tk.HORIZONTAL)
     dwell_slider.set(100)
     dwell_slider.grid(row=2, column=1, sticky="ew")
@@ -305,8 +313,12 @@ def _configure_commands(
         button.configure(command=partial(manual_increment, ctx, dx, dy))
 
     widgets = ctx.widgets
-    widgets.speed_slider.configure(command=lambda val: ctx.servo_controller.set_speed(int(float(val))))
-    widgets.accel_slider.configure(command=lambda val: ctx.servo_controller.set_accel(int(float(val))))
+    widgets.speed_slider.configure(
+        command=lambda val: ctx.servo_controller.set_speed(int(float(val)))
+    )
+    widgets.accel_slider.configure(
+        command=lambda val: ctx.servo_controller.set_accel(int(float(val)))
+    )
     widgets.dwell_slider.configure(
         command=lambda val: ctx.servo_controller.set_dwell_time(float(val) / 100)
     )

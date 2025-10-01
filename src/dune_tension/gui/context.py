@@ -8,10 +8,10 @@ from typing import Any, Callable
 import os
 import tkinter as tk
 
-from ..maestro import Controller, DummyController, ServoController
+from dune_tension.maestro import Controller, DummyController, ServoController
 
 try:  # pragma: no cover - optional dependency
-    from ..plc_io import (  # type: ignore
+    from dune_tension.plc_io import (  # type: ignore
         get_xy as plc_get_xy,
         goto_xy as plc_goto_xy,
         spoof_get_xy,

@@ -7,14 +7,17 @@ from typing import Optional, Tuple
 
 import numpy as np
 
-from .audio_processing import (
+from spectrum_analysis.audio_processing import (
     acquire_audio,
     compute_noise_profile,
     record_noise_sample,
     subtract_noise,
 )
-from .crepe_analysis import crepe_activations_to_pitch, get_crepe_activations
-from .pitch_compare_config import PitchCompareConfig
+from spectrum_analysis.crepe_analysis import (
+    crepe_activations_to_pitch,
+    get_crepe_activations,
+)
+from spectrum_analysis.pitch_compare_config import PitchCompareConfig
 
 
 PitchEstimationResult = Tuple[
