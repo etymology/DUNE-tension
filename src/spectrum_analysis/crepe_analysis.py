@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import dataclasses
-from typing import Optional, Tuple, TYPE_CHECKING
+import os
+from typing import TYPE_CHECKING, Optional, Tuple
 
 import numpy as np
 from numpy.lib.stride_tricks import as_strided
@@ -14,10 +15,45 @@ from pitch_compare_config import PitchCompareConfig
 CREPE_FRAME_TARGET_RMS = 0.5
 CREPE_IDEAL_PITCH = 600.0
 
+os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "2")
+
+
+def _configure_tensorflow_logging() -> None:
+    """Suppress verbose TensorFlow logging used by CREPE."""
+
+    try:
+        import tensorflow as tf  # type: ignore
+    except Exception:  # pragma: no cover - tensorflow may be absent
+        return
+
+    try:
+        tf.get_logger().setLevel("ERROR")
+    except Exception:  # pragma: no cover - logger API may differ
+        pass
+
+    try:
+        tf.compat.v1.logging.set_verbosity(tf.compat.v1.logging.ERROR)
+    except Exception:  # pragma: no cover - TF1 compat may be unavailable
+        pass
+
+    try:
+        import absl.logging as absl_logging  # type: ignore
+    except Exception:  # pragma: no cover - absl may be absent
+        return
+
+    try:
+        absl_logging.set_verbosity(absl_logging.ERROR)
+        absl_logging.set_stderrthreshold("error")
+    except Exception:  # pragma: no cover - verbosity API may differ
+        pass
+
+
 try:  # Optional dependency - heavy ML models
     import crepe  # type: ignore
 except Exception:  # pragma: no cover - dependency may be absent
     crepe = None  # type: ignore
+else:
+    _configure_tensorflow_logging()
 
 if TYPE_CHECKING:  # pragma: no cover - only for type checking
     from pitch_compare_config import PitchCompareConfig
