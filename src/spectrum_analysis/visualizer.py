@@ -37,6 +37,7 @@ class SpectrogramConfig:
     snr_trigger: float = 3.0
     snr_release: float = 3.0
     pre_record_sec: float = 0.1
+    post_record_sec: float = 0.0
     expected_f0: Optional[float] = None
     comb_trigger_on_rmax: float = 0.001
     comb_trigger_off_rmax: float = 0.0005
@@ -92,9 +93,13 @@ class ScrollingSpectrogram:
         self.snr_release = float(getattr(config, "snr_release", self.snr_trigger))
         self.pre_record_sec = float(getattr(config, "pre_record_sec", 0.1))
         self.pre_record_samples = max(0, int(round(self.pre_record_sec * self.sr)))
+        self.post_record_sec = max(0.0, float(getattr(config, "post_record_sec", 0.0)))
+        self.post_record_samples = max(0, int(round(self.post_record_sec * self.sr)))
         self.pre_buffer = np.zeros(0, dtype=np.float32)
         self.recording_active = False
         self.recorded_samples = np.zeros(0, dtype=np.float32)
+        self._post_samples_remaining = 0
+        self._post_roll_active = False
         self._use_full_analysis = False
         self._mag_accum = np.zeros(self.max_bin, dtype=np.float64)
         self._frame_count = 0
@@ -141,6 +146,11 @@ class ScrollingSpectrogram:
             self.pre_record_samples = max(0, int(round(self.pre_record_sec * self.sr)))
             if self.pre_buffer.size > self.pre_record_samples:
                 self.pre_buffer = self.pre_buffer[-self.pre_record_samples :]
+        if self._comb_enabled and self.post_record_sec < 0.5:
+            self.post_record_sec = 0.5
+            self.post_record_samples = max(
+                0, int(round(self.post_record_sec * self.sr))
+            )
 
         self.fig = plt.figure(figsize=(14, 12))
         gs = self.fig.add_gridspec(
@@ -340,6 +350,8 @@ class ScrollingSpectrogram:
         self._use_full_analysis = False
         if self._comb_enabled:
             self._comb_off_counter = 0
+        self._post_samples_remaining = 0
+        self._post_roll_active = False
 
     def _append_recording(self, samples: np.ndarray) -> bool:
         if samples.size == 0:
@@ -383,6 +395,8 @@ class ScrollingSpectrogram:
         if self._comb_enabled:
             self._comb_on_counter = 0
             self._comb_off_counter = 0
+        self._post_samples_remaining = 0
+        self._post_roll_active = False
         return True
 
     def _update_comb_trigger(self, chunk: np.ndarray) -> tuple[bool, bool]:
@@ -447,7 +461,19 @@ class ScrollingSpectrogram:
             should_start, should_stop = self._update_comb_trigger(chunk)
             if self.recording_active:
                 changed = self._append_recording(chunk)
-                if should_stop:
+                if should_stop and self.post_record_samples > 0:
+                    self._post_samples_remaining = max(
+                        self._post_samples_remaining,
+                        self.post_record_samples,
+                    )
+                    self._post_roll_active = True
+                if self._post_roll_active and self._post_samples_remaining > 0:
+                    self._post_samples_remaining = max(
+                        0, self._post_samples_remaining - chunk.size
+                    )
+                    if self._post_samples_remaining == 0:
+                        changed = self._stop_recording() or changed
+                elif should_stop:
                     changed = self._stop_recording() or changed
             else:
                 if should_start:
@@ -460,7 +486,19 @@ class ScrollingSpectrogram:
             snr = self._compute_snr(chunk)
             if self.recording_active:
                 changed = self._append_recording(chunk)
-                if snr < self.snr_release:
+                if snr < self.snr_release and self.post_record_samples > 0:
+                    self._post_samples_remaining = max(
+                        self._post_samples_remaining,
+                        self.post_record_samples,
+                    )
+                    self._post_roll_active = True
+                if self._post_roll_active and self._post_samples_remaining > 0:
+                    self._post_samples_remaining = max(
+                        0, self._post_samples_remaining - chunk.size
+                    )
+                    if self._post_samples_remaining == 0:
+                        changed = self._stop_recording() or changed
+                elif snr < self.snr_release:
                     changed = self._stop_recording() or changed
             else:
                 if snr >= self.snr_trigger:
