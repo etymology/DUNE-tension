@@ -9,20 +9,19 @@ from threading import Thread
 from typing import Any
 
 import sounddevice as sd  # type: ignore
-import tkinter as tk
 from tkinter import messagebox
 
-from ..data_cache import (
+from dune_tension.data_cache import (
     clear_outliers as cache_clear_outliers,
     clear_wire_range,
     get_dataframe,
     update_dataframe,
 )
-from ..results import EXPECTED_COLUMNS
-from ..tensiometer import Tensiometer
-from ..tensiometer_functions import make_config
-from .context import GUIContext
-from .state import save_state
+from dune_tension.results import EXPECTED_COLUMNS
+from dune_tension.tensiometer import Tensiometer
+from dune_tension.tensiometer_functions import make_config
+from dune_tension.gui.context import GUIContext
+from dune_tension.gui.state import save_state
 
 
 def create_tensiometer(ctx: GUIContext) -> Tensiometer:
@@ -165,7 +164,10 @@ def calibrate_background_noise(ctx: GUIContext) -> None:
     """Record background noise for filtering future recordings."""
 
     try:
-        from ..audioProcessing import calibrate_background_noise, get_samplerate
+        from dune_tension.audioProcessing import (
+            calibrate_background_noise,
+            get_samplerate,
+        )
 
         samplerate = get_samplerate()
         if samplerate is None:
@@ -182,7 +184,7 @@ def measure_condition(ctx: GUIContext) -> None:
     """Measure wires whose tension satisfies the configured expression."""
 
     def _get_wires(config, expr: str) -> list[int]:
-        from ..data_cache import get_dataframe  # local import for testing
+        from dune_tension.data_cache import get_dataframe  # local import for testing
         import pandas as pd
 
         df = get_dataframe(config.data_path)
@@ -195,11 +197,13 @@ def measure_condition(ctx: GUIContext) -> None:
         subset["wire_number"] = pd.to_numeric(subset["wire_number"], errors="coerce")
         subset["tension"] = pd.to_numeric(subset["tension"], errors="coerce")
         subset = subset.dropna(subset=["wire_number", "tension"])
-        subset = subset.sort_values("time").drop_duplicates(subset="wire_number", keep="last")
+        subset = subset.sort_values("time").drop_duplicates(
+            subset="wire_number", keep="last"
+        )
         wires: list[int] = []
         for _, row in subset.iterrows():
             try:
-                if eval(expr, {"t": float(row["tension"]) }):
+                if eval(expr, {"t": float(row["tension"])}):
                     wires.append(int(row["wire_number"]))
             except Exception as exc:
                 print(f"Invalid expression '{expr}': {exc}")
@@ -346,7 +350,7 @@ def monitor_tension_logs(ctx: GUIContext) -> None:
 
         def run() -> None:
             try:
-                from ..analyze import update_tension_logs
+                from dune_tension.analyze import update_tension_logs
 
                 update_tension_logs(cfg)
                 print(f"Updated tension logs for {cfg.apa_name} layer {cfg.layer}")
@@ -443,14 +447,16 @@ def _make_config_from_widgets(ctx: GUIContext):
     )
 
 
-def _cleanup_after_measurement(ctx: GUIContext, tensiometer: Tensiometer | None) -> None:
+def _cleanup_after_measurement(
+    ctx: GUIContext, tensiometer: Tensiometer | None
+) -> None:
     if tensiometer is not None:
         try:
             tensiometer.close()
         except Exception:
             pass
     try:
-        from ..plc_io import reset_plc
+        from dune_tension.plc_io import reset_plc
 
         reset_plc()
     except Exception:
