@@ -9,6 +9,8 @@ from typing import Any, Dict, Optional
 
 import numpy as np
 
+from .comb_trigger import HarmonicCombConfig
+
 
 @dataclasses.dataclass
 class PitchCompareConfig:
@@ -36,16 +38,35 @@ class PitchCompareConfig:
     crepe_activation_coverage: float = 0.9
     pesto_model_name: str = "mir-1k_g7"
     pesto_step_size_ms: Optional[float] = None
-    comb_trigger_on_rmax: float = 0.001
-    comb_trigger_off_rmax: float = 0.0005
-    comb_trigger_sfm_max: float = 0.6
-    comb_trigger_on_frames: int = 3
-    comb_trigger_off_frames: int = 3
-    comb_trigger_min_harmonics: int = 4
+    comb_trigger: HarmonicCombConfig = dataclasses.field(
+        default_factory=HarmonicCombConfig
+    )
 
     @staticmethod
     def from_dict(raw: Dict[str, Any]) -> "PitchCompareConfig":
         normalized = dict(raw)
+
+        comb_config_data: Dict[str, Any] = {}
+        comb_raw = normalized.pop("comb_trigger", None)
+        if isinstance(comb_raw, dict):
+            comb_config_data.update(comb_raw)
+
+        comb_aliases = {
+            "comb_trigger_on_rmax": "on_rmax",
+            "comb_trigger_off_rmax": "off_rmax",
+            "comb_trigger_sfm_max": "sfm_max",
+            "comb_trigger_on_frames": "on_frames",
+            "comb_trigger_off_frames": "off_frames",
+            "comb_trigger_min_harmonics": "min_harmonics",
+            "comb_trigger_frame_size": "frame_size",
+            "comb_trigger_hop_size": "hop_size",
+            "comb_trigger_candidate_count": "candidate_count",
+            "comb_trigger_harmonic_weight_count": "harmonic_weight_count",
+        }
+
+        for legacy_key, new_key in comb_aliases.items():
+            if legacy_key in normalized:
+                comb_config_data[new_key] = normalized.pop(legacy_key)
 
         if "expected_f0" not in normalized and "sr_augment_factor" in normalized:
             try:
@@ -57,6 +78,7 @@ class PitchCompareConfig:
 
         known = {f.name for f in dataclasses.fields(PitchCompareConfig)}
         filtered = {k: v for k, v in normalized.items() if k in known}
+        filtered["comb_trigger"] = HarmonicCombConfig(**comb_config_data)
         return PitchCompareConfig(**filtered)
 
 
