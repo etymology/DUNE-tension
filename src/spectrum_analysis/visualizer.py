@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import json
 import time
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Optional
 
 import matplotlib.pyplot as plt
@@ -18,6 +20,7 @@ from audio_processing import (
     compute_noise_profile,
 )
 from pitch_compare_config import PitchCompareConfig
+
 
 @dataclass
 class SpectrogramConfig:
@@ -419,6 +422,62 @@ class ScrollingSpectrogram:
             )
         return cleaned_mag[: self.max_bin]
 
+    def _save_noise_profile(
+        self,
+        profile: NoiseProfile,
+        *,
+        requested_seconds: float,
+        collected_samples: int,
+    ) -> None:
+        """Persist the latest noise profile to ``data/noise_filters``."""
+
+        try:
+            project_root = Path(__file__).resolve().parents[2]
+        except IndexError:
+            return
+
+        save_dir = project_root / "data" / "noise_filters"
+        try:
+            save_dir.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            return
+
+        timestamp = time.strftime("%Y%m%dT%H%M%S")
+        actual_duration = (
+            collected_samples / float(self.sr)
+            if self.sr > 0 and collected_samples > 0
+            else 0.0
+        )
+        over_tag = f"{self.over_sub:.2f}".replace(".", "p")
+        dur_tag = f"{actual_duration:.2f}".replace(".", "p")
+        filename = (
+            f"noise_profile_{timestamp}_sr{self.sr}_dur{dur_tag}s_over{over_tag}.npz"
+        )
+        metadata = {
+            "timestamp": timestamp,
+            "samplerate": int(self.sr),
+            "requested_seconds": float(requested_seconds),
+            "collected_samples": int(collected_samples),
+            "recorded_duration_seconds": float(actual_duration),
+            "over_subtraction": float(self.over_sub),
+            "window_length": int(profile.window_length),
+            "hop_length": int(profile.hop_length),
+            "min_freq": float(self.config.min_freq),
+            "max_freq": float(self.max_freq),
+        }
+
+        path = save_dir / filename
+        np.savez_compressed(
+            path,
+            freqs=profile.freqs,
+            spectrum=profile.spectrum,
+            window_length=np.array(profile.window_length, dtype=np.int32),
+            hop_length=np.array(profile.hop_length, dtype=np.int32),
+            rms=np.array(profile.rms, dtype=np.float32),
+            variance=np.array(profile.variance, dtype=np.float32),
+            metadata=json.dumps(metadata),
+        )
+
     def profile_noise(self, seconds: float, show_status: bool = False) -> None:
         if show_status:
             self.ax_spec.set_title("Profiling noise... Please keep the room quiet.")
@@ -450,6 +509,11 @@ class ScrollingSpectrogram:
                     self.hop = int(profile.hop_length)
                 self.noise_cfg = self._build_noise_cfg()
                 self._sync_freq_axis(profile.freqs)
+                self._save_noise_profile(
+                    profile,
+                    requested_seconds=seconds,
+                    collected_samples=collected,
+                )
             except ValueError:
                 self.noise_profile = None
                 self.noise_rms = 1e-6
@@ -458,6 +522,7 @@ class ScrollingSpectrogram:
             self.noise_rms = 1e-6
         self._set_titles()
         self.fig.canvas.draw_idle()
+        self.fig.canvas.flush_events()
 
     def _find_local_peaks(self, y: np.ndarray) -> np.ndarray:
         if y.size < 3:
