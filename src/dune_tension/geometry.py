@@ -1,15 +1,17 @@
 # functions related to the geometry of the APA
 # geometry constants
-X_MIN = 1058
-X_MAX = 7011
-Y_MIN = 181
-Y_MAX = 2460
+from __future__ import annotations
+
+X_MIN: int = 1058
+X_MAX: int = 7011
+Y_MIN: int = 181
+Y_MAX: int = 2460
 
 
-G_LENGTH = 1.285
-X_LENGTH = 1.273
+G_LENGTH: float = 1.285
+X_LENGTH: float = 1.273
 
-comb_positions = [
+comb_positions: list[int] = [
     X_MIN,
     2230,
     3420,
@@ -17,10 +19,10 @@ comb_positions = [
     5770,
     X_MAX,
 ]
-COMB_SPACING = (X_MIN - X_MAX) / 5
+COMB_SPACING: float = (X_MIN - X_MAX) / 5
 
 
-def zone_lookup(x) -> int:
+def zone_lookup(x: float) -> int:
     """
     Determine the zone based on the x-coordinate.
     """
@@ -44,18 +46,18 @@ def refine_position(
     returned unchanged.
     """
 
-    def is_in_bounds(x: float, y: float) -> bool:
-        return X_MIN <= x <= X_MAX and Y_MIN <= y <= Y_MAX
+    def is_in_bounds(x_val: float, y_val: float) -> bool:
+        return X_MIN <= x_val <= X_MAX and Y_MIN <= y_val <= Y_MAX
 
     def score(pos: tuple[float, float]) -> float:
         """Return the minimal distance of ``pos`` to any limiting line."""
         px, py = pos
-        distances = [abs(px - c) for c in comb_positions]
+        distances: list[float] = [abs(px - c) for c in comb_positions]
         distances.append(abs(py - Y_MAX))
         distances.append(abs(py - Y_MIN))
         return min(distances)
 
-    candidates = []
+    candidates: list[tuple[float, float]] = []
 
     for n in range(300):
         # Generate forward and reverse candidates
@@ -69,7 +71,7 @@ def refine_position(
     if not candidates:
         return (x, y)
 
-    low_candidates = [
+    low_candidates: list[tuple[float, float]] = [
         c
         for c in candidates
         if c[1] < Y_MAX / 2 and score(c) > COMB_SPACING / 2 * 5.75 / 8
@@ -79,7 +81,9 @@ def refine_position(
     return max(candidates, key=score)
 
 
-def length_lookup(layer: str, wire_number: int, zone: int, taped=False):
+def length_lookup(
+    layer: str, wire_number: int, zone: int, taped: bool = False
+) -> float:
     import pandas as pd
 
     file_path = f"wire_lengths/{layer}_LUT.csv"
@@ -103,7 +107,7 @@ def length_lookup(layer: str, wire_number: int, zone: int, taped=False):
         raise ValueError("Zone must be between 1 and 5")
 
     try:
-        value = spreadsheet.at[wire_number, str(zone)]
+        value: float = float(spreadsheet.at[wire_number, str(zone)])
         if taped:
             return (value - 16) / 1000
         return value / 1000
