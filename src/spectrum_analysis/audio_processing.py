@@ -232,7 +232,46 @@ def apply_noise_filter(
         profile,
         over_subtraction=over_subtraction,
         window=_default_wiener_window(profile),
+
     )
+
+
+def _default_wiener_window(profile: NoiseProfile) -> int:
+    """Heuristic Wiener window size derived from the profiled STFT settings."""
+
+    hop = max(int(profile.hop_length), 1)
+    base = max(int(round(profile.window_length / hop)), 1)
+    if base % 2 == 0:
+        base += 1
+    return max(base, 3)
+
+
+def wiener_filter_signal(
+    signal_in: np.ndarray,
+    profile: NoiseProfile,
+    *,
+    over_subtraction: float = 1.0,
+    window: Optional[int] = None,
+) -> np.ndarray:
+    """Apply a Wiener filter using statistics from ``profile``."""
+
+    if signal_in.size == 0:
+        return np.asarray(signal_in, dtype=np.float32)
+
+    if window is None or window < 3:
+        window = _default_wiener_window(profile)
+
+    noise_var = float(profile.variance)
+    if not np.isfinite(noise_var) or noise_var <= 0:
+        noise_var = float(profile.rms**2)
+
+    scale = max(float(over_subtraction), 0.0)
+    noise_estimate = noise_var * (scale**2)
+    if not np.isfinite(noise_estimate) or noise_estimate <= 0:
+        noise_estimate = None
+
+    filtered = wiener(signal_in, mysize=window, noise=noise_estimate)
+    return np.asarray(filtered, dtype=np.float32)
 
 
 def save_noise_profile(

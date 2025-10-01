@@ -12,13 +12,12 @@ import numpy as np
 from audio_sources import AudioSource
 from utils import dbfs, hann_window
 
-from .audio_processing import (
+from audio_processing import (
     NoiseProfile,
     apply_noise_filter,
     compute_noise_profile,
 )
-from .pitch_compare_config import PitchCompareConfig
-
+from pitch_compare_config import PitchCompareConfig
 
 @dataclass
 class SpectrogramConfig:
