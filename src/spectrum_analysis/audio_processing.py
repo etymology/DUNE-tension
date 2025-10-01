@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Optional
 import numpy as np
 from scipy import signal
 from scipy.io import wavfile
+from scipy.signal import wiener
 
 try:  # Optional dependency - may not be available in CI
     import soundfile as sf  # type: ignore
@@ -29,13 +30,14 @@ if TYPE_CHECKING:  # pragma: no cover - only for type checking
 
 @dataclass(frozen=True)
 class NoiseProfile:
-    """Stationary noise statistics cached for spectral subtraction."""
+    """Stationary noise statistics cached for Wiener filtering."""
 
     freqs: np.ndarray
     spectrum: np.ndarray
     window_length: int
     hop_length: int
     rms: float
+    variance: float
 
 
 def load_audio(path: Path, target_sr: int) -> tuple[np.ndarray, int]:
@@ -145,7 +147,7 @@ def _fit_stft_parameters(
 
 
 def compute_noise_profile(noise: np.ndarray, cfg: "PitchCompareConfig") -> NoiseProfile:
-    """Estimate the stationary noise spectrum for later subtraction."""
+    """Estimate stationary noise statistics for Wiener filtering."""
 
     win_len, hop_len = determine_window_and_hop(cfg, len(noise))
     freqs, _, stft = signal.stft(
@@ -158,13 +160,53 @@ def compute_noise_profile(noise: np.ndarray, cfg: "PitchCompareConfig") -> Noise
     )
     spectrum = np.mean(stft, axis=1)
     rms = float(np.sqrt(np.mean(np.square(noise)) + 1e-12))
+    variance = float(np.var(noise, dtype=np.float64) + 1e-12)
     return NoiseProfile(
         freqs=np.asarray(freqs, dtype=np.float32),
         spectrum=np.asarray(spectrum, dtype=np.complex64),
         window_length=int(win_len),
         hop_length=int(hop_len),
         rms=rms,
+        variance=variance,
     )
+
+
+def _default_wiener_window(profile: NoiseProfile) -> int:
+    """Heuristic Wiener window size derived from the profiled STFT settings."""
+
+    hop = max(int(profile.hop_length), 1)
+    base = max(int(round(profile.window_length / hop)), 1)
+    if base % 2 == 0:
+        base += 1
+    return max(base, 3)
+
+
+def wiener_filter_signal(
+    signal_in: np.ndarray,
+    profile: NoiseProfile,
+    *,
+    over_subtraction: float = 1.0,
+    window: Optional[int] = None,
+) -> np.ndarray:
+    """Apply a Wiener filter using statistics from ``profile``."""
+
+    if signal_in.size == 0:
+        return np.asarray(signal_in, dtype=np.float32)
+
+    if window is None or window < 3:
+        window = _default_wiener_window(profile)
+
+    noise_var = float(profile.variance)
+    if not np.isfinite(noise_var) or noise_var <= 0:
+        noise_var = float(profile.rms**2)
+
+    scale = max(float(over_subtraction), 0.0)
+    noise_estimate = noise_var * (scale**2)
+    if not np.isfinite(noise_estimate) or noise_estimate <= 0:
+        noise_estimate = None
+
+    filtered = wiener(signal_in, mysize=window, noise=noise_estimate)
+    return np.asarray(filtered, dtype=np.float32)
 
 
 def save_noise_profile(
@@ -180,6 +222,7 @@ def save_noise_profile(
         window_length=int(profile.window_length),
         hop_length=int(profile.hop_length),
         rms=float(profile.rms),
+        variance=float(profile.variance),
         sample_rate=int(sample_rate),
     )
 
@@ -212,6 +255,7 @@ def load_noise_profile(
             freqs = np.asarray(data["freqs"], dtype=np.float32)
             spectrum = np.asarray(data["spectrum"], dtype=np.complex64)
             rms = float(data["rms"])
+            variance = float(data["variance"]) if "variance" in data else rms**2
     except (OSError, KeyError, ValueError):
         return None
 
@@ -221,6 +265,7 @@ def load_noise_profile(
         window_length=window_length,
         hop_length=hop_length,
         rms=rms,
+        variance=variance,
     )
 
 
@@ -246,57 +291,29 @@ def compute_spectrogram(
 def subtract_noise(
     audio: np.ndarray, noise_profile: NoiseProfile, cfg: "PitchCompareConfig"
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    """Perform spectral subtraction using a stationary noise spectrum."""
+    """Reduce stationary noise using a Wiener filter."""
 
     win_len, hop_len = _fit_stft_parameters(
         noise_profile.window_length, noise_profile.hop_length, len(audio)
     )
-    freqs, times, stft = signal.stft(
+
+    filtered = wiener_filter_signal(
         audio,
+        noise_profile,
+        over_subtraction=float(cfg.over_subtraction),
+        window=_default_wiener_window(noise_profile),
+    )
+
+    freqs, times, stft = signal.stft(
+        filtered,
         fs=cfg.sample_rate,
         window="hann",
         nperseg=win_len,
         noverlap=win_len - hop_len,
         padded=False,
     )
-    if stft.shape[0] != noise_profile.spectrum.size:
-        if noise_profile.freqs.size == noise_profile.spectrum.size:
-            target_freqs = np.asarray(freqs, dtype=np.float32)
-            real_part = np.interp(
-                target_freqs,
-                noise_profile.freqs,
-                noise_profile.spectrum.real,
-                left=noise_profile.spectrum.real[0],
-                right=noise_profile.spectrum.real[-1],
-            )
-            imag_part = np.interp(
-                target_freqs,
-                noise_profile.freqs,
-                noise_profile.spectrum.imag,
-                left=noise_profile.spectrum.imag[0],
-                right=noise_profile.spectrum.imag[-1],
-            )
-            noise_spectrum = real_part + 1j * imag_part
-        else:
-            raise ValueError(
-                "Noise profile frequency bins do not match the audio STFT dimensions."
-            )
-    else:
-        noise_spectrum = noise_profile.spectrum
-
-    noise_spectrum = np.asarray(noise_spectrum, dtype=np.complex64).reshape(-1, 1)
-    cleaned_stft = stft - noise_spectrum * complex(float(cfg.over_subtraction))
-    _, reconstructed = signal.istft(
-        cleaned_stft,
-        fs=cfg.sample_rate,
-        window="hann",
-        nperseg=win_len,
-        noverlap=win_len - hop_len,
-        input_onesided=True,
-    )
-    reconstructed = np.asarray(reconstructed, dtype=np.float32)
-    clean_power = np.abs(cleaned_stft) ** 2
-    return reconstructed, freqs, times, clean_power
+    clean_power = np.abs(stft) ** 2
+    return filtered, freqs, times, clean_power
 
 
 def record_noise_sample(cfg: "PitchCompareConfig") -> np.ndarray:
