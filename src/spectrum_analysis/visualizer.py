@@ -12,8 +12,8 @@ import numpy as np
 from audio_sources import AudioSource
 from utils import dbfs, hann_window
 
-from .audio_processing import NoiseProfile, compute_noise_profile, subtract_noise
-from .pitch_compare_config import PitchCompareConfig
+from audio_processing import NoiseProfile, compute_noise_profile, subtract_noise
+from pitch_compare_config import PitchCompareConfig
 
 
 @dataclass
