@@ -16,8 +16,10 @@ from audio_processing import (
     NoiseProfile,
     apply_noise_filter,
     compute_noise_profile,
+    _harmonic_comb_response,
 )
 from pitch_compare_config import PitchCompareConfig
+
 
 @dataclass
 class SpectrogramConfig:
@@ -35,6 +37,13 @@ class SpectrogramConfig:
     snr_trigger: float = 3.0
     snr_release: float = 3.0
     pre_record_sec: float = 0.1
+    expected_f0: Optional[float] = None
+    comb_trigger_on_rmax: float = 0.001
+    comb_trigger_off_rmax: float = 0.0005
+    comb_trigger_sfm_max: float = 0.6
+    comb_trigger_on_frames: int = 3
+    comb_trigger_off_frames: int = 3
+    comb_trigger_min_harmonics: int = 4
 
 
 class ScrollingSpectrogram:
@@ -90,6 +99,43 @@ class ScrollingSpectrogram:
         self._mag_accum = np.zeros(self.max_bin, dtype=np.float64)
         self._frame_count = 0
         self.noise_rms = 1e-6
+        self.expected_f0 = (
+            float(config.expected_f0)
+            if getattr(config, "expected_f0", None) is not None
+            else None
+        )
+        self._comb_enabled = False
+
+        def _safe_int(value: Optional[float], default: int) -> int:
+            try:
+                if value is None:
+                    return int(default)
+                return int(value)
+            except (TypeError, ValueError):
+                return int(default)
+
+        self._comb_frame_size = 0
+        self._comb_hop = 0
+        self._comb_window = np.zeros(0, dtype=np.float32)
+        self._comb_freq_bins = np.zeros(0, dtype=np.float64)
+        self._comb_candidates = np.zeros(0, dtype=np.float64)
+        self._comb_weights = np.zeros(0, dtype=np.float64)
+        self._comb_min_harmonics = _safe_int(
+            getattr(config, "comb_trigger_min_harmonics", 4), 4
+        )
+        self._comb_on_frames = _safe_int(
+            getattr(config, "comb_trigger_on_frames", 3), 3
+        )
+        self._comb_off_frames = _safe_int(
+            getattr(config, "comb_trigger_off_frames", 3), 3
+        )
+        self._comb_on_rmax = float(getattr(config, "comb_trigger_on_rmax", 0.001))
+        self._comb_off_rmax = float(getattr(config, "comb_trigger_off_rmax", 0.0005))
+        self._comb_sfm_max = float(getattr(config, "comb_trigger_sfm_max", 0.6))
+        self._comb_on_counter = 0
+        self._comb_off_counter = 0
+        self._comb_buffer = np.zeros(0, dtype=np.float32)
+        self._configure_comb_trigger()
 
         self.fig = plt.figure(figsize=(14, 12))
         gs = self.fig.add_gridspec(
@@ -227,6 +273,40 @@ class ScrollingSpectrogram:
         cfg.over_subtraction = float(self.over_sub)
         return cfg
 
+    def _configure_comb_trigger(self) -> None:
+        self._comb_enabled = False
+        self._comb_buffer = np.zeros(0, dtype=np.float32)
+        self._comb_on_counter = 0
+        self._comb_off_counter = 0
+
+        expected = self.expected_f0
+        if expected is None or not np.isfinite(expected) or expected <= 0.0:
+            return
+
+        frame_size = 2048
+        hop = 1024
+        freq_bins = np.fft.rfftfreq(frame_size, d=1.0 / self.sr)
+        if freq_bins.size < 2:
+            return
+
+        f_min = max(expected / 2.0, freq_bins[1])
+        f_max = min(expected * 2.0, self.sr / 2.0)
+        if not np.isfinite(f_min) or not np.isfinite(f_max) or f_max <= f_min:
+            return
+
+        self._comb_frame_size = int(frame_size)
+        self._comb_hop = int(hop)
+        self._comb_window = np.hanning(self._comb_frame_size).astype(np.float32)
+        self._comb_freq_bins = freq_bins.astype(np.float64, copy=False)
+        self._comb_candidates = np.geomspace(f_min, f_max, num=36).astype(
+            np.float64, copy=False
+        )
+        self._comb_weights = 1.0 / np.arange(1, 11, dtype=np.float64)
+        self._comb_min_harmonics = max(1, int(self._comb_min_harmonics))
+        self._comb_on_frames = max(1, int(self._comb_on_frames))
+        self._comb_off_frames = max(1, int(self._comb_off_frames))
+        self._comb_enabled = True
+
     def _update_pre_buffer(self, samples: np.ndarray) -> None:
         if self.pre_record_samples <= 0 or samples.size == 0:
             return
@@ -253,6 +333,8 @@ class ScrollingSpectrogram:
         self._reset_processing_state()
         self.recorded_samples = np.zeros(0, dtype=np.float32)
         self._use_full_analysis = False
+        if self._comb_enabled:
+            self._comb_off_counter = 0
 
     def _append_recording(self, samples: np.ndarray) -> bool:
         if samples.size == 0:
@@ -293,7 +375,61 @@ class ScrollingSpectrogram:
             return False
         self.recording_active = False
         self._finalize_recording()
+        if self._comb_enabled:
+            self._comb_on_counter = 0
+            self._comb_off_counter = 0
         return True
+
+    def _update_comb_trigger(self, chunk: np.ndarray) -> tuple[bool, bool]:
+        if not self._comb_enabled or chunk.size == 0:
+            return False, False
+
+        buffer = np.concatenate([self._comb_buffer, chunk])
+        start = False
+        stop = False
+        active_local = self.recording_active
+
+        while buffer.size >= self._comb_frame_size:
+            frame = buffer[: self._comb_frame_size]
+            buffer = buffer[self._comb_hop :]
+            r_value, sfm, valid = _harmonic_comb_response(
+                frame,
+                self.sr,
+                self._comb_window,
+                self._comb_freq_bins,
+                self._comb_candidates,
+                self._comb_weights,
+                self._comb_min_harmonics,
+            )
+
+            if not active_local:
+                if valid and r_value > self._comb_on_rmax and sfm < self._comb_sfm_max:
+                    self._comb_on_counter += 1
+                else:
+                    self._comb_on_counter = 0
+
+                if self._comb_on_counter >= self._comb_on_frames:
+                    start = True
+                    active_local = True
+                    self._comb_on_counter = 0
+                    self._comb_off_counter = 0
+            else:
+                if r_value < self._comb_off_rmax:
+                    self._comb_off_counter += 1
+                else:
+                    self._comb_off_counter = 0
+
+                if self._comb_off_counter >= self._comb_off_frames:
+                    stop = True
+                    active_local = False
+                    self._comb_on_counter = 0
+                    self._comb_off_counter = 0
+
+            if start and stop:
+                break
+
+        self._comb_buffer = buffer
+        return start, stop
 
     def _handle_chunk(self, chunk: np.ndarray) -> bool:
         if chunk.size == 0:
@@ -301,19 +437,33 @@ class ScrollingSpectrogram:
         chunk = chunk.astype(np.float32, copy=False)
         pre_snapshot = self.pre_buffer.copy()
         self._update_pre_buffer(chunk)
-        snr = self._compute_snr(chunk)
         changed = False
-        if self.recording_active:
-            changed = self._append_recording(chunk)
-            if snr < self.snr_release:
-                changed = self._stop_recording() or changed
+        if self._comb_enabled:
+            should_start, should_stop = self._update_comb_trigger(chunk)
+            if self.recording_active:
+                changed = self._append_recording(chunk)
+                if should_stop:
+                    changed = self._stop_recording() or changed
+            else:
+                if should_start:
+                    self._start_recording()
+                    changed = True
+                    if pre_snapshot.size:
+                        changed = self._append_recording(pre_snapshot) or changed
+                    changed = self._append_recording(chunk) or changed
         else:
-            if snr >= self.snr_trigger:
-                self._start_recording()
-                changed = True
-                if pre_snapshot.size:
-                    changed = self._append_recording(pre_snapshot) or changed
-                changed = self._append_recording(chunk) or changed
+            snr = self._compute_snr(chunk)
+            if self.recording_active:
+                changed = self._append_recording(chunk)
+                if snr < self.snr_release:
+                    changed = self._stop_recording() or changed
+            else:
+                if snr >= self.snr_trigger:
+                    self._start_recording()
+                    changed = True
+                    if pre_snapshot.size:
+                        changed = self._append_recording(pre_snapshot) or changed
+                    changed = self._append_recording(chunk) or changed
         return changed
 
     def _update_freq_axis(self) -> None:
