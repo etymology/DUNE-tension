@@ -12,9 +12,12 @@ import numpy as np
 from audio_sources import AudioSource
 from utils import dbfs, hann_window
 
-from audio_processing import NoiseProfile, compute_noise_profile, subtract_noise
+from audio_processing import (
+    NoiseProfile,
+    apply_noise_filter,
+    compute_noise_profile,
+)
 from pitch_compare_config import PitchCompareConfig
-
 
 @dataclass
 class SpectrogramConfig:
@@ -397,23 +400,16 @@ class ScrollingSpectrogram:
         if not self.noise_filter_enabled or self.noise_profile is None:
             return base_mag
 
-        cfg = self.noise_cfg
-        cfg.over_subtraction = float(self.over_sub)
         try:
-            _, freqs, _, clean_power = subtract_noise(
-                frame.astype(np.float32, copy=False), self.noise_profile, cfg
+            filtered = apply_noise_filter(
+                frame.astype(np.float32, copy=False),
+                self.noise_profile,
+                over_subtraction=float(self.over_sub),
             )
         except ValueError:
             return base_mag
 
-        self._sync_freq_axis(freqs)
-
-        power = np.asarray(clean_power, dtype=np.float32)
-        if power.ndim == 2:
-            power_slice = power[:, -1]
-        else:
-            power_slice = power.reshape(-1)
-        cleaned_mag = np.sqrt(np.maximum(power_slice, 0.0))
+        cleaned_mag = self._spec_mag(filtered)
         if cleaned_mag.size < self.max_bin:
             cleaned_mag = np.pad(
                 cleaned_mag,
