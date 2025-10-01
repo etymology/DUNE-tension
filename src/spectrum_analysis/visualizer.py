@@ -89,8 +89,6 @@ class ScrollingSpectrogram:
 
         self.noise_cfg = self._build_noise_cfg()
 
-        self.snr_trigger = float(getattr(config, "snr_trigger", 3.0))
-        self.snr_release = float(getattr(config, "snr_release", self.snr_trigger))
         self.pre_record_sec = float(getattr(config, "pre_record_sec", 0.1))
         self.pre_record_samples = max(0, int(round(self.pre_record_sec * self.sr)))
         self.post_record_sec = max(0.0, float(getattr(config, "post_record_sec", 0.0)))
@@ -150,6 +148,10 @@ class ScrollingSpectrogram:
             self.post_record_sec = 0.5
             self.post_record_samples = max(
                 0, int(round(self.post_record_sec * self.sr))
+            )
+        if not self._comb_enabled:
+            raise ValueError(
+                "The harmonic comb trigger requires an expected_f0 configuration value."
             )
 
         self.fig = plt.figure(figsize=(14, 12))
@@ -336,13 +338,6 @@ class ScrollingSpectrogram:
             joined = joined[-self.pre_record_samples :]
         self.pre_buffer = joined
 
-    def _compute_snr(self, samples: np.ndarray) -> float:
-        if samples.size == 0:
-            return 0.0
-        rms = float(np.sqrt(np.mean(samples.astype(np.float64) ** 2)))
-        noise = float(self.noise_rms) if self.noise_rms and self.noise_rms > 0 else 1e-6
-        return rms / noise if noise > 0 else float("inf")
-
     def _start_recording(self) -> None:
         self.recording_active = True
         self._reset_processing_state()
@@ -457,56 +452,29 @@ class ScrollingSpectrogram:
         pre_snapshot = self.pre_buffer.copy()
         self._update_pre_buffer(chunk)
         changed = False
-        if self._comb_enabled:
-            should_start, should_stop = self._update_comb_trigger(chunk)
-            if self.recording_active:
-                changed = self._append_recording(chunk)
-                if should_stop and self.post_record_samples > 0:
-                    self._post_samples_remaining = max(
-                        self._post_samples_remaining,
-                        self.post_record_samples,
-                    )
-                    self._post_roll_active = True
-                if self._post_roll_active and self._post_samples_remaining > 0:
-                    self._post_samples_remaining = max(
-                        0, self._post_samples_remaining - chunk.size
-                    )
-                    if self._post_samples_remaining == 0:
-                        changed = self._stop_recording() or changed
-                elif should_stop:
+        should_start, should_stop = self._update_comb_trigger(chunk)
+        if self.recording_active:
+            changed = self._append_recording(chunk)
+            if should_stop and self.post_record_samples > 0:
+                self._post_samples_remaining = max(
+                    self._post_samples_remaining,
+                    self.post_record_samples,
+                )
+                self._post_roll_active = True
+            if self._post_roll_active and self._post_samples_remaining > 0:
+                self._post_samples_remaining = max(
+                    0, self._post_samples_remaining - chunk.size
+                )
+                if self._post_samples_remaining == 0:
                     changed = self._stop_recording() or changed
-            else:
-                if should_start:
-                    self._start_recording()
-                    changed = True
-                    if pre_snapshot.size:
-                        changed = self._append_recording(pre_snapshot) or changed
-                    changed = self._append_recording(chunk) or changed
-        else:
-            snr = self._compute_snr(chunk)
-            if self.recording_active:
-                changed = self._append_recording(chunk)
-                if snr < self.snr_release and self.post_record_samples > 0:
-                    self._post_samples_remaining = max(
-                        self._post_samples_remaining,
-                        self.post_record_samples,
-                    )
-                    self._post_roll_active = True
-                if self._post_roll_active and self._post_samples_remaining > 0:
-                    self._post_samples_remaining = max(
-                        0, self._post_samples_remaining - chunk.size
-                    )
-                    if self._post_samples_remaining == 0:
-                        changed = self._stop_recording() or changed
-                elif snr < self.snr_release:
-                    changed = self._stop_recording() or changed
-            else:
-                if snr >= self.snr_trigger:
-                    self._start_recording()
-                    changed = True
-                    if pre_snapshot.size:
-                        changed = self._append_recording(pre_snapshot) or changed
-                    changed = self._append_recording(chunk) or changed
+            elif should_stop:
+                changed = self._stop_recording() or changed
+        elif should_start:
+            self._start_recording()
+            changed = True
+            if pre_snapshot.size:
+                changed = self._append_recording(pre_snapshot) or changed
+            changed = self._append_recording(chunk) or changed
         return changed
 
     def _update_freq_axis(self) -> None:

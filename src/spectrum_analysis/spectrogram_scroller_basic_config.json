@@ -10,8 +10,6 @@
   "over_sub": 1.0,
   "min_freq": 10.0,
   "ac_win_sec": 0.5,
-  "snr_trigger": 0,
-  "snr_release": 0,
   "pre_record_sec": 0.5,
   "post_record_sec": 0.5,
   "expected_f0": 70.0
