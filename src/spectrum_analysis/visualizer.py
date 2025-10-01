@@ -19,6 +19,7 @@ from audio_processing import (
 )
 from pitch_compare_config import PitchCompareConfig
 
+
 @dataclass
 class SpectrogramConfig:
     samplerate: int = 44100

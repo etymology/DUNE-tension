@@ -185,7 +185,7 @@ def EditComponent(
         component = json.loads(connection.getresponse().read().decode("utf-8"))
 
         # If the provided UUID doesn't correspond to an existing component record, print an error and exit the function immediately
-        if component == None:
+        if component is None:
             sys.exit(
                 f" EditComponent() - ERROR: there is no component record with component UUID = {componentUUID} \n"
             )
@@ -251,7 +251,7 @@ def GetComponent(componentUUID, connection, headers, version=0):
         component = json.loads(connection.getresponse().read().decode("utf-8"))
 
         # If the provided UUID doesn't correspond to an existing component record, print an error and exit the function immediately
-        if component == None:
+        if component is None:
             sys.exit(
                 f" GetComponent() - ERROR: there is no component record with component UUID = {componentUUID} \n"
             )
@@ -386,7 +386,7 @@ def EditAction(actionID, actionData_fields, actionData_values, connection, heade
         action = json.loads(connection.getresponse().read().decode("utf-8"))
 
         # If the provided ID doesn't correspond to an existing action record, print an error and exit the function immediately
-        if action == None:
+        if action is None:
             sys.exit(
                 f" EditAction() - ERROR: there is no action record with action ID = {actionID} \n"
             )
@@ -446,7 +446,7 @@ def GetAction(actionID, connection, headers, version=0):
         action = json.loads(connection.getresponse().read().decode("utf-8"))
 
         # If the provided ID doesn't correspond to an existing action record, print an error and exit the function immediately
-        if action == None:
+        if action is None:
             sys.exit(
                 f" GetAction() - ERROR: there is no action record with action ID = {actionID} \n"
             )
@@ -501,7 +501,7 @@ def GetWorkflow(workflowID, connection, headers):
         workflow = json.loads(connection.getresponse().read().decode("utf-8"))
 
         # If the provided ID doesn't correspond to an existing workflow record, print an error and exit the function immediately
-        if workflow == None:
+        if workflow is None:
             sys.exit(
                 f" GetWorkflow() - ERROR: there is no workflow record with workflow ID = {workflowID} \n"
             )

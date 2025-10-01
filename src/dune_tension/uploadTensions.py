@@ -16,7 +16,7 @@ def load_tension_summary(apa_name: str, layer: str) -> tuple[list, list]:
     return a_list, b_list
 
 
-def uploadTensions(apa_name: str, layer: str, create_layer_action_id :str) -> None:
+def uploadTensions(apa_name: str, layer: str, create_layer_action_id: str) -> None:
     connection, headers = ConnectToAPI()
 
     # actionTypeFormID = "x_tension_testing"  # This name is misleading: the action type form is the same for ALL LAYERS
@@ -63,4 +63,4 @@ def uploadTensions(apa_name: str, layer: str, create_layer_action_id :str) -> No
 
 
 if __name__ == "__main__":
-    uploadTensions("USAPA9*", "G",r"68bf085507c9af803121a611")
+    uploadTensions("USAPA9*", "G", r"68bf085507c9af803121a611")
