@@ -9,15 +9,15 @@ from typing import Optional
 import matplotlib.pyplot as plt
 import numpy as np
 
-from audio_sources import AudioSource
-from utils import dbfs, hann_window
+from spectrum_analysis.audio_sources import AudioSource
+from spectrum_analysis.utils import dbfs, hann_window
 
-from audio_processing import (
+from spectrum_analysis.audio_processing import (
     NoiseProfile,
     apply_noise_filter,
     compute_noise_profile,
 )
-from pitch_compare_config import PitchCompareConfig
+from spectrum_analysis.pitch_compare_config import PitchCompareConfig
 
 
 @dataclass
@@ -508,7 +508,6 @@ class ScrollingSpectrogram:
         if power <= 1e-12:
             self.acf_vals[:] = 0.0
             peak_freq = float("nan")
-            p2p = float("nan")
         else:
             acf_full = np.correlate(x, x, mode="full")
             acf_pos = acf_full[len(x) - 1 :]
@@ -531,20 +530,11 @@ class ScrollingSpectrogram:
             if peaks.size == 0:
                 gi = int(np.argmax(self.acf_vals[:L]))
                 peak_freq = float(self.acf_freq_axis_hz[gi])
-                p2p = float("nan")
             else:
                 prominences = self._compute_prominence(self.acf_vals[:L], peaks)
                 order = np.argsort(prominences)[::-1]
                 gi = int(peaks[order[0]])
                 peak_freq = float(self.acf_freq_axis_hz[gi])
-                if peaks.size >= 2:
-                    p1 = int(peaks[order[0]])
-                    p2 = int(peaks[order[1]])
-                    p2p = abs(
-                        float(self.acf_freq_axis_hz[p1] - self.acf_freq_axis_hz[p2])
-                    )
-                else:
-                    p2p = float("nan")
 
         if self.acf_freq_axis_hz.size > 0 and np.any(np.isfinite(self.acf_vals)):
             mask_finite = np.isfinite(self.acf_vals)
