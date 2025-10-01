@@ -1,7 +1,11 @@
-import pandas as pd
+from __future__ import annotations
+
 import sqlite3
 from pathlib import Path
-from results import EXPECTED_COLUMNS, RAW_SAMPLE_COLUMNS
+
+import pandas as pd
+
+from dune_tension.results import EXPECTED_COLUMNS, RAW_SAMPLE_COLUMNS
 
 # Global cache
 _dataframe_cache: dict[str, pd.DataFrame] = {}
@@ -127,7 +131,9 @@ def clear_outliers(
     subset = subset.sort_values("wire_number")
 
     # 8-wire centered moving average (require full window -> edges will be NaN)
-    rolling_mean = subset["tension"].rolling(window=8, center=True, min_periods=8).mean()
+    rolling_mean = (
+        subset["tension"].rolling(window=8, center=True, min_periods=8).mean()
+    )
 
     # Residuals from the rolling mean
     residuals = subset["tension"] - rolling_mean

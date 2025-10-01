@@ -7,10 +7,10 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 
-from data_cache import get_samples_dataframe
-from results import TensionResult
-from tensiometer_functions import TensiometerConfig
-from tension_calculation import calculate_kde_max, has_cluster
+from dune_tension.data_cache import get_samples_dataframe
+from dune_tension.results import TensionResult
+from dune_tension.tensiometer_functions import TensiometerConfig
+from dune_tension.tension_calculation import calculate_kde_max, has_cluster
 
 
 def get_expected_range(layer: str) -> range:

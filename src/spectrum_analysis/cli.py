@@ -7,10 +7,10 @@ import json
 from pathlib import Path
 from typing import Any
 
-from audio_sources import DemoSource, MicSource, sd
-from visualizer import ScrollingSpectrogram, SpectrogramConfig
+from spectrum_analysis.audio_sources import AudioSource, DemoSource, MicSource, sd
+from spectrum_analysis.visualizer import ScrollingSpectrogram, SpectrogramConfig
 
-_SCROLLER_CONFIG_NAME = "spectrogram_scroller_basic_config.json"
+_SCROLLER_CONFIG_NAME: str = "spectrogram_scroller_basic_config.json"
 
 
 def load_scroller_config() -> dict[str, Any]:
@@ -78,7 +78,7 @@ def build_config(args: argparse.Namespace) -> SpectrogramConfig:
     return SpectrogramConfig(**config_kwargs)
 
 
-def create_source(args: argparse.Namespace):
+def create_source(args: argparse.Namespace) -> AudioSource:
     if args.demo or sd is None:
         return DemoSource(args.samplerate, args.hop)
     try:
