@@ -136,6 +136,11 @@ class ScrollingSpectrogram:
         self._comb_off_counter = 0
         self._comb_buffer = np.zeros(0, dtype=np.float32)
         self._configure_comb_trigger()
+        if self._comb_enabled and self.pre_record_sec < 0.5:
+            self.pre_record_sec = 0.5
+            self.pre_record_samples = max(0, int(round(self.pre_record_sec * self.sr)))
+            if self.pre_buffer.size > self.pre_record_samples:
+                self.pre_buffer = self.pre_buffer[-self.pre_record_samples :]
 
         self.fig = plt.figure(figsize=(14, 12))
         gs = self.fig.add_gridspec(
