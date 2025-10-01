@@ -73,6 +73,7 @@ EPS = 1e-12
 
 HERE = Path(__file__).resolve().parent
 SRC_ROOT = HERE / "src"
+NOISE_FILTER_DIR = HERE / "data" / "noise_filters"
 SPECTRUM_SRC = SRC_ROOT / "spectrum_analysis"
 for path in (SRC_ROOT, SPECTRUM_SRC):
     if path.exists():
@@ -85,6 +86,7 @@ try:
     from spectrum_analysis.audio_processing import (
         NoiseProfile as SharedNoiseProfile,
         compute_noise_profile as shared_compute_noise_profile,
+        save_noise_profile as shared_save_noise_profile,
         wiener_filter_signal as shared_wiener_filter,
     )
     from spectrum_analysis.pitch_compare_config import PitchCompareConfig
@@ -93,6 +95,7 @@ except ImportError:
     SharedNoiseProfile = None  # type: ignore[assignment]
     PitchCompareConfig = None  # type: ignore[assignment]
     shared_compute_noise_profile = None  # type: ignore[assignment]
+    shared_save_noise_profile = None  # type: ignore[assignment]
     shared_wiener_filter = None  # type: ignore[assignment]
 
 
@@ -649,6 +652,8 @@ class App:
         self.ax = self.view.ax
         self.fig.canvas.mpl_connect("key_press_event", self.on_key)
 
+        self.last_noise_profile_path: Optional[Path] = None
+
         if self.mode == "spec":
             self.view.set_noise_filter(self._apply_wiener_filter)
 
@@ -684,12 +689,39 @@ class App:
                 self.noise_profile = shared_compute_noise_profile(
                     noise_samples.astype(np.float32, copy=False), self.noise_cfg
                 )
+                if self.noise_profile is not None:
+                    self._persist_noise_profile(self.noise_profile)
             else:
                 self.noise_profile = None
         else:
             self.noise_profile = None
         self.ax.set_title(title0)
         self.fig.canvas.draw_idle()
+
+    def _persist_noise_profile(self, profile: SharedNoiseProfile) -> None:
+        if not SHARED_NOISE_TOOLS_AVAILABLE or shared_save_noise_profile is None:
+            return
+
+        timestamp = time.strftime("%Y%m%d-%H%M%S")
+        duration_ms = int(round(self.noise_sec * 1000.0))
+        file_name = (
+            f"noise_sr{int(self.sr)}Hz_"
+            f"win{int(profile.window_length)}_"
+            f"hop{int(profile.hop_length)}_"
+            f"dur{duration_ms}ms_"
+            f"{timestamp}.npz"
+        )
+
+        cache_dir = NOISE_FILTER_DIR
+        try:
+            cache_dir.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            return
+
+        cache_path = cache_dir / file_name
+        shared_save_noise_profile(profile, cache_path, int(self.sr))
+        self.last_noise_profile_path = cache_path
+        print(f"[INFO] Saved noise profile to {cache_path}")
 
     def on_key(self, event):
         if event.key in ("q", "escape"):
