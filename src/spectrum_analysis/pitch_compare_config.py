@@ -9,7 +9,7 @@ from typing import Any, Dict, Optional
 
 import numpy as np
 
-from .comb_trigger import HarmonicCombConfig
+from comb_trigger import HarmonicCombConfig
 
 
 @dataclasses.dataclass

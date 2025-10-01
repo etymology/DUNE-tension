@@ -23,7 +23,7 @@ except Exception:  # pragma: no cover - dependency may be absent
 
 from audio_sources import MicSource, sd
 
-from .comb_trigger import record_with_harmonic_comb
+from comb_trigger import record_with_harmonic_comb
 
 if TYPE_CHECKING:  # pragma: no cover - only for type checking
     from .pitch_compare_config import PitchCompareConfig
