@@ -21,9 +21,13 @@ try:  # Optional dependency - full audio analysis toolkit
 except Exception:  # pragma: no cover - dependency may be absent
     librosa = None  # type: ignore
 
-from spectrum_analysis.audio_sources import MicSource, sd
+from spectrum_analysis.audio_sources import sd
 
-from spectrum_analysis.comb_trigger import record_with_harmonic_comb
+from spectrum_analysis.comb_trigger import (
+    SnrTriggerConfig,
+    record_with_harmonic_comb,
+    record_with_snr_trigger,
+)
 
 if TYPE_CHECKING:  # pragma: no cover - only for type checking
     from spectrum_analysis.pitch_compare_config import PitchCompareConfig
@@ -373,52 +377,22 @@ def record_noise_sample(cfg: "PitchCompareConfig") -> np.ndarray:
 
 
 def _acquire_audio_snr(cfg: "PitchCompareConfig", noise_rms: float) -> np.ndarray:
-    _, hop = determine_window_and_hop(cfg)
-    source = MicSource(cfg.sample_rate, hop)
-    source.start()
-    print("[INFO] Listening for audio events (RMS trigger)...")
-    snr_threshold = 10 ** (cfg.snr_threshold_db / 20.0)
-    collected: list[np.ndarray] = []
-    above = False
-    recording_started = False
-    idle_samples = 0
-    idle_limit = int(cfg.idle_timeout * cfg.sample_rate)
-    max_samples = int(cfg.max_record_seconds * cfg.sample_rate)
-    collected_samples = 0
+    hop = determine_window_and_hop(cfg)[1]
+    snr_cfg = SnrTriggerConfig(
+        hop_size=int(hop),
+        snr_threshold_db=float(cfg.snr_threshold_db),
+        idle_timeout=float(cfg.idle_timeout),
+    )
 
     try:
-        while collected_samples < max_samples:
-            chunk = source.read()
-            if chunk.size == 0:
-                continue
-
-            chunk_rms = np.sqrt(np.mean(np.square(chunk)) + 1e-12)
-            ratio = chunk_rms / (noise_rms + 1e-12)
-
-            if ratio >= snr_threshold:
-                if not recording_started:
-                    print("[INFO] Recording started.")
-                    recording_started = True
-                above = True
-                idle_samples = 0
-                collected.append(chunk)
-                collected_samples += len(chunk)
-            elif above:
-                idle_samples += len(chunk)
-                collected.append(chunk)
-                collected_samples += len(chunk)
-                if idle_samples >= idle_limit:
-                    print("[INFO] Recording stopped (signal below threshold).")
-                    break
-        else:
-            print("[WARN] Max recording length reached.")
-    finally:
-        source.stop()
-
-    if not collected:
-        raise RuntimeError("No audio captured above the SNR threshold.")
-
-    return np.concatenate(collected).astype(np.float32)
+        return record_with_snr_trigger(
+            sample_rate=cfg.sample_rate,
+            max_record_seconds=cfg.max_record_seconds,
+            noise_rms=float(noise_rms),
+            snr_cfg=snr_cfg,
+        )
+    except RuntimeError:
+        raise RuntimeError("No audio captured above the SNR threshold.") from None
 
 
 def acquire_audio(cfg: "PitchCompareConfig", noise_rms: float) -> np.ndarray:

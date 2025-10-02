@@ -14,6 +14,48 @@ use thiserror::Error;
 use tokio::sync::mpsc;
 
 #[derive(Debug, Clone)]
+struct SnrTriggerConfig {
+    hop_size: usize,
+    snr_threshold_db: f64,
+    idle_timeout: f64,
+}
+
+impl Default for SnrTriggerConfig {
+    fn default() -> Self {
+        Self {
+            hop_size: 1024,
+            snr_threshold_db: 2.0,
+            idle_timeout: 0.2,
+        }
+    }
+}
+
+impl SnrTriggerConfig {
+    fn update_from_dict(&mut self, dict: &PyDict) -> PyResult<()> {
+        macro_rules! set_if_present {
+            ($key:literal, $field:ident, $convert:expr) => {
+                if let Some(value) = dict.get_item($key) {
+                    self.$field = $convert(value)?;
+                }
+            };
+        }
+
+        set_if_present!("hop_size", hop_size, |v: &PyAny| v.extract::<usize>());
+        set_if_present!("snr_threshold_db", snr_threshold_db, |v: &PyAny| {
+            v.extract::<f64>()
+        });
+        set_if_present!("idle_timeout", idle_timeout, |v: &PyAny| {
+            v.extract::<f64>()
+        });
+        Ok(())
+    }
+
+    fn snr_threshold_ratio(&self) -> f64 {
+        10f64.powf(self.snr_threshold_db / 20.0)
+    }
+}
+
+#[derive(Debug, Clone)]
 struct HarmonicCombConfig {
     frame_size: usize,
     hop_size: usize,
@@ -541,6 +583,100 @@ async fn run_comb_trigger(
     Ok(collected)
 }
 
+async fn run_snr_trigger(
+    sample_rate: u32,
+    max_record_seconds: f64,
+    mut config: SnrTriggerConfig,
+    noise_rms: f64,
+) -> Result<Vec<f32>, CombError> {
+    config.hop_size = config.hop_size.max(1);
+
+    let max_samples = (max_record_seconds * sample_rate as f64) as usize;
+    if max_samples == 0 {
+        return Err(CombError::NoAudioCaptured);
+    }
+
+    let baseline = if noise_rms.is_finite() && noise_rms > 0.0 {
+        noise_rms
+    } else {
+        1e-6
+    };
+    let threshold = config.snr_threshold_ratio();
+    let idle_limit = if config.idle_timeout.is_finite() && config.idle_timeout > 0.0 {
+        (config.idle_timeout * sample_rate as f64) as usize
+    } else {
+        0
+    };
+
+    let (stream, mut rx) = build_audio_stream(sample_rate, config.hop_size)?;
+    println!("[INFO] Listening for audio events (SNR trigger)...");
+
+    let mut collected: Vec<f32> = Vec::new();
+    let mut collected_samples = 0usize;
+    let mut idle_samples = 0usize;
+    let mut recording_started = false;
+
+    while collected_samples < max_samples {
+        let chunk = match rx.recv().await {
+            Some(c) => c,
+            None => break,
+        };
+        if chunk.is_empty() {
+            continue;
+        }
+
+        let chunk_rms = chunk
+            .iter()
+            .map(|sample| (*sample as f64) * (*sample as f64))
+            .sum::<f64>()
+            / chunk.len() as f64;
+        let chunk_rms = chunk_rms.sqrt();
+        if !chunk_rms.is_finite() {
+            continue;
+        }
+
+        let ratio = chunk_rms / baseline.max(1e-12);
+        let remaining = max_samples - collected_samples;
+        if remaining == 0 {
+            break;
+        }
+        let take = chunk.len().min(remaining);
+
+        if ratio >= threshold {
+            if !recording_started {
+                println!("[INFO] Recording started (SNR trigger).");
+                recording_started = true;
+            }
+            idle_samples = 0;
+            collected.extend_from_slice(&chunk[..take]);
+            collected_samples += take;
+        } else if recording_started {
+            if take > 0 {
+                collected.extend_from_slice(&chunk[..take]);
+                collected_samples += take;
+            }
+            idle_samples = idle_samples.saturating_add(take);
+            if idle_limit > 0 && idle_samples >= idle_limit {
+                println!("[INFO] Recording stopped (SNR trigger released).");
+                break;
+            }
+        }
+
+        if collected_samples >= max_samples {
+            println!("[WARN] Max recording length reached.");
+            break;
+        }
+    }
+
+    drop(stream);
+
+    if collected.is_empty() {
+        Err(CombError::NoAudioCaptured)
+    } else {
+        Ok(collected)
+    }
+}
+
 #[pyfunction]
 fn record_with_harmonic_comb<'py>(
     py: Python<'py>,
@@ -565,8 +701,39 @@ fn record_with_harmonic_comb<'py>(
     })
 }
 
+#[pyfunction]
+fn record_with_snr_trigger<'py>(
+    py: Python<'py>,
+    sample_rate: u32,
+    max_record_seconds: f64,
+    noise_rms: f64,
+    snr_cfg: Option<&PyDict>,
+) -> PyResult<&'py PyAny> {
+    if !noise_rms.is_finite() {
+        return Err(PyErr::new::<PyValueError, _>(
+            "noise_rms must be a finite floating point value",
+        ));
+    }
+
+    let mut config = SnrTriggerConfig::default();
+    if let Some(dict) = snr_cfg {
+        config.update_from_dict(dict)?;
+    }
+
+    future_into_py(py, async move {
+        let audio = run_snr_trigger(sample_rate, max_record_seconds, config, noise_rms)
+            .await
+            .map_err::<PyErr, _>(Into::into)?;
+        Python::with_gil(|py| {
+            let array = PyArray1::from_vec(py, audio);
+            Ok(array.to_owned())
+        })
+    })
+}
+
 #[pymodule]
 fn harmonic_comb(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(record_with_harmonic_comb, m)?)?;
+    m.add_function(wrap_pyfunction!(record_with_snr_trigger, m)?)?;
     Ok(())
 }
