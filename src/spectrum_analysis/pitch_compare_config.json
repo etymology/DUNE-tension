@@ -1,5 +1,6 @@
 {
   "snr_threshold_db": 1,
+  "trigger_mode": "snr",
   "max_record_seconds": 2,
   "input_mode": "mic",
   "input_audio_path": "/home/ben/DUNE-tension/data/test_fixture",

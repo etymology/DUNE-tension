@@ -422,7 +422,7 @@ def _acquire_audio_snr(cfg: "PitchCompareConfig", noise_rms: float) -> np.ndarra
 
 
 def acquire_audio(cfg: "PitchCompareConfig", noise_rms: float) -> np.ndarray:
-    """Record audio using harmonic-comb triggering or load from file."""
+    """Record audio using the configured trigger or load from file."""
 
     if cfg.input_mode == "file":
         if cfg.input_audio_path is None:
@@ -431,6 +431,11 @@ def acquire_audio(cfg: "PitchCompareConfig", noise_rms: float) -> np.ndarray:
             )
         audio, _ = load_audio(Path(cfg.input_audio_path), cfg.sample_rate)
         return audio
+
+    trigger_mode = getattr(cfg, "trigger_mode", "snr")
+
+    if trigger_mode != "harmonic_comb":
+        return _acquire_audio_snr(cfg, noise_rms)
 
     expected_f0 = cfg.expected_f0
     if expected_f0 is None or not np.isfinite(expected_f0) or expected_f0 <= 0.0:
