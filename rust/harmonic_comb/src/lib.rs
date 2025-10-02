@@ -1,13 +1,14 @@
 use std::collections::VecDeque;
 use std::f64::consts::PI;
 
+use cpal::Sample;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use num_complex::Complex;
 use numpy::PyArray1;
 use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
-use pyo3_asyncio::tokio::future_into_py;
+use pyo3_asyncio::tokio::local_future_into_py;
 use realfft::RealFftPlanner;
 use realfft::num_traits::Zero;
 use thiserror::Error;
@@ -34,7 +35,7 @@ impl SnrTriggerConfig {
     fn update_from_dict(&mut self, dict: &PyDict) -> PyResult<()> {
         macro_rules! set_if_present {
             ($key:literal, $field:ident, $convert:expr) => {
-                if let Some(value) = dict.get_item($key) {
+                if let Ok(Some(value)) = dict.get_item($key) {
                     self.$field = $convert(value)?;
                 }
             };
@@ -95,7 +96,7 @@ impl HarmonicCombConfig {
     fn update_from_dict(&mut self, dict: &PyDict) -> PyResult<()> {
         macro_rules! set_if_present {
             ($key:literal, $field:ident, $convert:expr) => {
-                if let Some(value) = dict.get_item($key) {
+                if let Ok(Some(value)) = dict.get_item($key) {
                     self.$field = $convert(value)?;
                 }
             };
@@ -401,7 +402,7 @@ fn build_stream<T>(
     sender: mpsc::Sender<Vec<f32>>,
 ) -> Result<cpal::Stream, CombError>
 where
-    T: cpal::Sample + Send + 'static,
+    T: cpal::Sample + cpal::SizedSample + Send + 'static,
 {
     let mut sender = sender;
     let err_fn = |err: cpal::StreamError| {
@@ -690,7 +691,7 @@ fn record_with_harmonic_comb<'py>(
         config.update_from_dict(dict)?;
     }
 
-    future_into_py(py, async move {
+    local_future_into_py(py, async move {
         let audio = run_comb_trigger(expected_f0, sample_rate, max_record_seconds, config)
             .await
             .map_err::<PyErr, _>(Into::into)?;
@@ -720,7 +721,7 @@ fn record_with_snr_trigger<'py>(
         config.update_from_dict(dict)?;
     }
 
-    future_into_py(py, async move {
+    local_future_into_py(py, async move {
         let audio = run_snr_trigger(sample_rate, max_record_seconds, config, noise_rms)
             .await
             .map_err::<PyErr, _>(Into::into)?;
