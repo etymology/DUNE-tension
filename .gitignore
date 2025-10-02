@@ -10,3 +10,5 @@ data/renamed_audio/*
 data/tension_data/tension_data.db
 build
 src/dune_tension.egg-info/
+data/2025*
+rust/harmonic_comb/target/*
