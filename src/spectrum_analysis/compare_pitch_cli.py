@@ -34,6 +34,7 @@ from spectrum_analysis.audio_processing import (
     save_noise_profile,
     subtract_noise,
 )
+from spectrum_analysis.comb_trigger import backend_available
 from spectrum_analysis.crepe_analysis import (
     crepe_activations_to_pitch,
     activation_map_to_pitch_track,
@@ -651,6 +652,11 @@ def main(argv: Optional[Iterable[str]] = None) -> None:
             return
 
     if cfg.input_mode == "mic":
+        if not backend_available():
+            raise RuntimeError(
+                "Microphone mode requires the harmonic_comb Rust extension. "
+                "Run `maturin develop` (or install the built wheel) before recording."
+            )
         print(
             "[INFO] Microphone mode active. Close the plot window to capture a new "
             "sample or press Ctrl+C to exit."

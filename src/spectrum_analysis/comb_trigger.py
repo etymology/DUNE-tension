@@ -14,11 +14,29 @@ try:
         record_with_harmonic_comb as _rust_record_with_harmonic_comb,
         record_with_snr_trigger as _rust_record_with_snr_trigger,
     )
-except ModuleNotFoundError as exc:  # pragma: no cover - extension must be built
-    raise ImportError(
-        "The harmonic_comb extension module is not available. "
-        "Build the Rust extension (e.g., via `maturin develop`) before using the comb trigger."
-    ) from exc
+
+    _BACKEND_AVAILABLE = True
+except ModuleNotFoundError:  # pragma: no cover - extension must be built
+    _rust_record_with_harmonic_comb = None
+    _rust_record_with_snr_trigger = None
+    _BACKEND_AVAILABLE = False
+
+
+_BACKEND_ERROR_MESSAGE = (
+    "The harmonic_comb extension module is not available. "
+    "Build the Rust extension (e.g., via `maturin develop`) before using microphone capture."
+)
+
+
+def backend_available() -> bool:
+    """Return ``True`` when the Rust audio backend can be imported."""
+
+    return _BACKEND_AVAILABLE
+
+
+def _require_backend() -> None:
+    if not backend_available():
+        raise RuntimeError(_BACKEND_ERROR_MESSAGE)
 
 
 @dataclass(slots=True)
@@ -71,7 +89,9 @@ async def record_with_harmonic_comb_async(
 ) -> NDArray[np.float32]:
     """Record audio using the harmonic comb trigger asynchronously."""
 
+    _require_backend()
     cfg_mapping = comb_cfg.to_mapping()
+    assert _rust_record_with_harmonic_comb is not None
     result = await _rust_record_with_harmonic_comb(
         expected_f0,
         int(sample_rate),
@@ -90,7 +110,9 @@ async def record_with_snr_trigger_async(
 ) -> NDArray[np.float32]:
     """Record audio using an RMS-based SNR trigger asynchronously."""
 
+    _require_backend()
     cfg_mapping = snr_cfg.to_mapping()
+    assert _rust_record_with_snr_trigger is not None
     result = await _rust_record_with_snr_trigger(
         int(sample_rate),
         float(max_record_seconds),
@@ -161,4 +183,5 @@ __all__ = [
     "SnrTriggerConfig",
     "record_with_snr_trigger",
     "record_with_snr_trigger_async",
+    "backend_available",
 ]
