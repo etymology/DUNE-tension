@@ -5,8 +5,16 @@ from __future__ import annotations
 import argparse
 import dataclasses
 import datetime as _dt
+import sys
 from pathlib import Path
 from typing import Any, Iterable, List, Optional, Tuple
+
+
+if __package__ in {None, ""}:
+    PROJECT_ROOT = Path(__file__).resolve().parents[2]
+    SRC_ROOT = PROJECT_ROOT / "src"
+    if SRC_ROOT.exists():
+        sys.path.insert(0, str(SRC_ROOT))
 
 import matplotlib.pyplot as plt
 from matplotlib.axes import Axes
