@@ -5,11 +5,14 @@ from __future__ import annotations
 import dataclasses
 import json
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Literal, Optional
 
 import numpy as np
 
-from comb_trigger import HarmonicCombConfig
+from spectrum_analysis.comb_trigger import HarmonicCombConfig
+
+
+TriggerMode = Literal["snr", "harmonic_comb"]
 
 
 @dataclasses.dataclass
@@ -19,6 +22,7 @@ class PitchCompareConfig:
     sample_rate: int = 44100
     noise_duration: float = 2.0
     snr_threshold_db: float = 2.0
+    trigger_mode: TriggerMode = "snr"
     min_frequency: float = 30.0
     max_frequency: float = 2000.0
     min_oscillations_per_window: float = 10.0
@@ -51,6 +55,20 @@ class PitchCompareConfig:
         if isinstance(comb_raw, dict):
             comb_config_data.update(comb_raw)
 
+        trigger_raw = normalized.get("trigger_mode")
+        if trigger_raw is not None:
+            trigger_aliases = {
+                "snr": "snr",
+                "rms": "snr",
+                "harmonic": "harmonic_comb",
+                "harmonic_comb": "harmonic_comb",
+                "harmonic-comb": "harmonic_comb",
+            }
+            trigger_normalized = str(trigger_raw).strip().lower()
+            normalized["trigger_mode"] = trigger_aliases.get(
+                trigger_normalized, trigger_normalized
+            )
+
         comb_aliases = {
             "comb_trigger_on_rmax": "on_rmax",
             "comb_trigger_off_rmax": "off_rmax",
@@ -78,6 +96,9 @@ class PitchCompareConfig:
 
         known = {f.name for f in dataclasses.fields(PitchCompareConfig)}
         filtered = {k: v for k, v in normalized.items() if k in known}
+        trigger_mode = filtered.get("trigger_mode")
+        if trigger_mode not in ("snr", "harmonic_comb", None):
+            filtered["trigger_mode"] = PitchCompareConfig.trigger_mode
         filtered["comb_trigger"] = HarmonicCombConfig(**comb_config_data)
         return PitchCompareConfig(**filtered)
 
