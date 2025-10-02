@@ -10,3 +10,4 @@ data/renamed_audio/*
 data/tension_data/tension_data.db
 build
 src/dune_tension.egg-info/
+rust/harmonic_comb/target/
