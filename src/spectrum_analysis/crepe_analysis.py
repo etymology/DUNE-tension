@@ -238,10 +238,10 @@ def crepe_activations_to_pitch(
 
     if expected_frequency is not None:
         try:
-            max_allowed = float(expected_frequency) * 2.0
+            max_allowed = float(expected_frequency) * 1.5
         except (TypeError, ValueError):
             max_allowed = float("nan")
-
+        print(f"Max allowed frequency for pitch estimate: {max_allowed:.1f} Hz")
         if np.isfinite(max_allowed) and max_allowed > 0.0:
             if freq_axis_array is None:
                 freq_axis_array = crepe_frequency_axis(activation.shape[1])

@@ -135,9 +135,9 @@ def record_with_harmonic_comb(
     nyquist = sample_rate / 2.0
 
     f_min = max(
-        expected_f0 / 2.0, freq_bins[1] if freq_bins.size > 1 else expected_f0 / 2.0
+        expected_f0 / 1.5, freq_bins[1] if freq_bins.size > 1 else expected_f0 / 2.0
     )
-    f_max = min(expected_f0 * 2.0, nyquist)
+    f_max = min(expected_f0 * 1.5, nyquist)
     if not np.isfinite(f_min) or not np.isfinite(f_max) or f_max <= f_min:
         raise ValueError("Invalid frequency band for harmonic comb trigger.")
 
