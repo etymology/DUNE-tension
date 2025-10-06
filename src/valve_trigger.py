@@ -41,8 +41,8 @@ import serial.tools.list_ports as port_list
 # QinHeng Electronics CH340 serial converter variables
 idVendor = "1A86"
 idProduct = "7523"
-turnon = [0xA0, 0x01, 0x01, 0xA2]
-turnoff = [0xA0, 0x01, 0x00, 0xA1]
+open_valve = [0xA0, 0x01, 0x01, 0xA2]
+close_valve = [0xA0, 0x01, 0x00, 0xA1]
 devicePresent = False
 
 ports = list(port_list.comports())
@@ -56,15 +56,9 @@ for p in ports:
 
 if devicePresent:
     print("Our device is connected")
-    usb_relay = serial.Serial(port, 9600, timeout=1)
+    usb_relay_valve = serial.Serial(port, 9600, timeout=1)
     while True:
-        usb_relay.write(turnon)
+        usb_relay_valve.write(open_valve)
         time.sleep(0.01)
-        usb_relay.write(turnoff)
+        usb_relay_valve.write(close_valve)
         time.sleep(2)
-
-
-else:
-    print("Our device is not connected")
-
-print("Device present: " + str(devicePresent))
