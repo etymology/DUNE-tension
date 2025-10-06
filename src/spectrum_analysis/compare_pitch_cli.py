@@ -182,7 +182,9 @@ def _to_numpy(value: Any) -> np.ndarray:
 
 
 ActivationResult = Tuple[np.ndarray, np.ndarray, np.ndarray]
-ActivationPlotEntry = Tuple[str, Optional[ActivationResult], Optional[np.ndarray]]
+ActivationPlotEntry = Tuple[
+    str, Optional[ActivationResult], Optional[np.ndarray], Optional[float]
+]
 
 
 def _crepe_pitch_overlay(result: ActivationResult) -> Optional[np.ndarray]:
@@ -292,10 +294,19 @@ def _populate_activation_axes(
         label: str
         result: Optional[ActivationResult]
         overlay: Optional[np.ndarray]
-        label, result, overlay = ("", None, None)
+        expected_frequency: Optional[float]
+        label, result, overlay, expected_frequency = ("", None, None, None)
         if idx < len(activation_results):
-            label, result, overlay = activation_results[idx]
-        _render_activation_axis(fig, ax, label, result, overlay, cfg)
+            label, result, overlay, expected_frequency = activation_results[idx]
+        _render_activation_axis(
+            fig,
+            ax,
+            label,
+            result,
+            overlay,
+            cfg=cfg,
+            expected_frequency=expected_frequency,
+        )
 
 
 def _render_activation_axis(
@@ -305,6 +316,7 @@ def _render_activation_axis(
     result: Optional[ActivationResult],
     overlay: Optional[np.ndarray],
     cfg: PitchCompareConfig,
+    expected_frequency: Optional[float] = None,
 ) -> None:
     x_limits: Optional[Tuple[float, float]] = None
     y_limits: Optional[Tuple[float, float]] = None
@@ -370,7 +382,12 @@ def _render_activation_axis(
                     )
                     ax.legend(loc="upper right", frameon=False)
 
-        legend_label = _activation_summary_label(frame_times, freq_axis, activation.T)
+        legend_label = _activation_summary_label(
+            frame_times,
+            freq_axis,
+            activation.T,
+            expected_frequency=expected_frequency,
+        )
         ax.text(
             1.02,
             0.0,
@@ -489,9 +506,18 @@ def _compute_crepe_crop_limits(
 
 
 def _activation_summary_label(
-    times: np.ndarray, freq_axis: np.ndarray, activation: np.ndarray
+    times: np.ndarray,
+    freq_axis: np.ndarray,
+    activation: np.ndarray,
+    *,
+    expected_frequency: Optional[float] = None,
 ) -> str:
-    freq_value, conf_value = crepe_activations_to_pitch(activation, times, freq_axis)
+    freq_value, conf_value = crepe_activations_to_pitch(
+        activation,
+        times,
+        freq_axis,
+        expected_frequency=expected_frequency,
+    )
     if not np.isfinite(freq_value) or not np.isfinite(conf_value):
         return "Fundamental: N/A\nConfidence: N/A"
     return f"Fundamental: {freq_value:.2f} Hz\nConfidence: {conf_value:.3f}"
@@ -547,6 +573,8 @@ def _run_comparison(cfg: PitchCompareConfig, output_dir: Path) -> None:
 
     activation_results: List[ActivationPlotEntry] = []
 
+    expected_f0 = cfg.expected_f0
+
     crepe_real = get_crepe_activations(
         filtered_audio,
         cfg.sample_rate,
@@ -559,9 +587,8 @@ def _run_comparison(cfg: PitchCompareConfig, output_dir: Path) -> None:
         if cfg.show_pitch_overlay and crepe_real is not None
         else None
     )
-    activation_results.append((real_label, crepe_real, real_overlay))
+    activation_results.append((real_label, crepe_real, real_overlay, expected_f0))
 
-    expected_f0 = cfg.expected_f0
     sr_augment_factor = _sr_augment_factor(expected_f0, warn=False)
     augmented_sr = (
         int(round(cfg.sample_rate * sr_augment_factor))
@@ -582,7 +609,9 @@ def _run_comparison(cfg: PitchCompareConfig, output_dir: Path) -> None:
         if cfg.show_pitch_overlay and crepe_scaled is not None
         else None
     )
-    activation_results.append((sr_augmented_label, crepe_scaled, scaled_overlay))
+    activation_results.append(
+        (sr_augmented_label, crepe_scaled, scaled_overlay, expected_f0)
+    )
 
     pesto_label = f"PESTO Activation ({cfg.pesto_model_name})"
     pesto_result = get_pesto_activations(filtered_audio, cfg.sample_rate, cfg=cfg)
@@ -591,10 +620,10 @@ def _run_comparison(cfg: PitchCompareConfig, output_dir: Path) -> None:
         if not cfg.show_pitch_overlay:
             overlay = None
         activation_results.append(
-            (pesto_label, (times_sec, freq_axis, activation_ft), overlay)
+            (pesto_label, (times_sec, freq_axis, activation_ft), overlay, None)
         )
     else:
-        activation_results.append((pesto_label, None, None))
+        activation_results.append((pesto_label, None, None, None))
 
     plot_results(
         timestamp=timestamp,
