@@ -1,64 +1,272 @@
+"""Utilities for triggering the pneumatic valve over the serial relay.
+
+This module provides a high-level :func:`air_pulse` function that opens the
+valve for a requested duration without blocking the caller.  It also exposes a
+simple command-line interface that fires a pulse each time the user presses the
+spacebar.
+"""
+
+from __future__ import annotations
+
+import argparse
+import sys
+import termios
+import threading
 import time
+import tty
+from dataclasses import dataclass
+from types import TracebackType
+from typing import IO, Iterable
+
 import serial
-import serial.tools.list_ports as port_list
+from serial import Serial
+from serial.tools import list_ports
 
-# Features:
-# 1. Onboard high-performance microcontrollers chip;
-# 2. Onboard CH340 USB control chip;
-# 3. Onboard power LED and relay status LED;
-# 4. Onboard 2-way 5V, 10A / 250VAC, 10A / 30VDC relays, relay life can be a continuous pull 10 million times;
-# 5. Module with overcurrent protection and relay diode freewheeling protection;
+_OPEN_COMMAND = bytes([0xA0, 0x01, 0x01, 0xA2])
+_CLOSE_COMMAND = bytes([0xA0, 0x01, 0x00, 0xA1])
 
-# Hardware introduction and description
-# Board size: 50 x 40mm
-# Board Interface Description:
-# COM1: common;
-# NC1: normally closed;
-# NO1: normally open.
-# COM2: common;
-# NC2: normally closed;
-# NO2: normally open.
 
-# Communication protocol description:
-# LC USB switch default communication baud rate: 9600BPS
-# Open the first USB switch: A0 01 01 A2
-# Turn off the first USB switch: A0 01 00 A1
-# Open the second USB switch: A0 02 01 A3
-# Turn off the second USB switch: A0 02 00 A2
+class DeviceNotFoundError(RuntimeError):
+    """Raised when the USB relay controlling the valve cannot be located."""
 
-# USB switch communication protocol
-# Data (1) --- start flag (default is 0xA0)
-# Data (2) --- switch address codes (0x01 and 0x02 represent the first and second switches, respectively)
-# Data (3) --- operating data (0x00 is "off", 0x01 is "on")
-# Data (4) --- check code
 
-# Relay status query command:
-# Send "FF" as hexadecimal (hex) to query.
-# For example, if relays 1 and 2 are ON, and relays 3 and 4 are OFF, sending the relay query command "FF"will return:
-# "CH1:ON \r\nCH2:ON \r\nCH3: OFF\r\nCH4:OFF\r\n"
-# (Each channel relay is to return 10 byte sequence information)
+def _find_valve_port(*, vendor: str, product: str) -> str:
+    """Return the system path for the configured valve relay.
 
-# QinHeng Electronics CH340 serial converter variables
-idVendor = "1A86"
-idProduct = "7523"
-open_valve = [0xA0, 0x01, 0x01, 0xA2]
-close_valve = [0xA0, 0x01, 0x00, 0xA1]
-devicePresent = False
+    Args:
+        vendor: USB vendor identifier expressed as a hexadecimal string.
+        product: USB product identifier expressed as a hexadecimal string.
 
-ports = list(port_list.comports())
+    Raises:
+        DeviceNotFoundError: If no matching serial port can be located.
+    """
 
-for p in ports:
-    if str(idVendor + ":" + idProduct) in p.hwid:
-        print("found it!")
-        port = p.device
-        devicePresent = True
-        break
+    hardware_id = f"{vendor}:{product}"
+    for port in list_ports.comports():
+        if hardware_id in port.hwid:
+            return port.device
+    raise DeviceNotFoundError(
+        "Unable to locate the USB relay controlling the air valve."
+    )
 
-if devicePresent:
-    print("Our device is connected")
-    usb_relay_valve = serial.Serial(port, 9600, timeout=1)
-    while True:
-        usb_relay_valve.write(open_valve)
-        time.sleep(0.01)
-        usb_relay_valve.write(close_valve)
-        time.sleep(2)
+
+@dataclass(slots=True)
+class ValveConfig:
+    """Configuration for the valve relay connection."""
+
+    vendor_id: str = "1A86"
+    product_id: str = "7523"
+    baud_rate: int = 9600
+    serial_timeout: float = 0
+
+
+class ValveController:
+    """Manage the serial connection to the valve relay."""
+
+    def __init__(self, *, port: str | None = None, config: ValveConfig | None = None):
+        self._config = config or ValveConfig()
+        serial_port = port or _find_valve_port(
+            vendor=self._config.vendor_id, product=self._config.product_id
+        )
+        try:
+            self._serial = Serial(
+                serial_port,
+                self._config.baud_rate,
+                timeout=self._config.serial_timeout,
+                write_timeout=self._config.serial_timeout,
+            )
+        except serial.SerialException as exc:  # pragma: no cover - passthrough error
+            raise RuntimeError("Unable to open the valve relay serial port.") from exc
+
+        self._lock = threading.Lock()
+        self._close_event: threading.Event | None = None
+        self._close_thread: threading.Thread | None = None
+
+    def pulse(self, duration: float) -> None:
+        """Open the valve immediately and close it after *duration* seconds.
+
+        The call returns as soon as the valve has been commanded to open; the
+        closing action is handled by a dedicated background thread.
+        """
+
+        if duration <= 0:
+            raise ValueError("Pulse duration must be positive.")
+
+        start = time.perf_counter()
+
+        with self._lock:
+            if self._close_event is not None:
+                self._close_event.set()
+
+            self._write(_OPEN_COMMAND)
+
+            cancel_event = threading.Event()
+            thread = threading.Thread(
+                target=self._close_after_delay,
+                args=(start, duration, cancel_event),
+                daemon=True,
+                name="valve-close",
+            )
+            self._close_event = cancel_event
+            self._close_thread = thread
+            thread.start()
+
+    def close(self) -> None:
+        """Close the valve and tidy up background resources."""
+
+        thread: threading.Thread | None
+        with self._lock:
+            if self._close_event is not None:
+                self._close_event.set()
+            thread = self._close_thread
+            self._close_event = None
+            self._close_thread = None
+
+        if thread is not None:
+            thread.join(timeout=0.1)
+
+        with self._lock:
+            if self._serial.is_open:
+                self._write(_CLOSE_COMMAND)
+                self._serial.close()
+
+    def __enter__(self) -> "ValveController":
+        return self
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        exc_tb: TracebackType | None,
+    ) -> None:
+        self.close()
+
+    def _write(self, payload: bytes) -> None:
+        self._serial.write(payload)
+        self._serial.flush()
+
+    def _close_after_delay(
+        self, start: float, duration: float, cancel_event: threading.Event
+    ) -> None:
+        target = start + duration
+        while not cancel_event.is_set():
+            remaining = target - time.perf_counter()
+            if remaining <= 0:
+                break
+            sleep_interval = _sleep_interval(remaining)
+            cancel_event.wait(sleep_interval)
+
+        if cancel_event.is_set():
+            return
+
+        with self._lock:
+            if self._close_event is cancel_event:
+                self._write(_CLOSE_COMMAND)
+                self._close_event = None
+                self._close_thread = None
+
+
+def _sleep_interval(remaining: float) -> float:
+    if remaining > 0.01:
+        return remaining - 0.005
+    if remaining > 0.002:
+        return 0.001
+    return max(remaining / 2, 0.0005)
+
+
+_DEFAULT_CONTROLLER: ValveController | None = None
+_DEFAULT_CONTROLLER_LOCK = threading.Lock()
+
+
+def _get_default_controller() -> ValveController:
+    global _DEFAULT_CONTROLLER
+    with _DEFAULT_CONTROLLER_LOCK:
+        if _DEFAULT_CONTROLLER is None:
+            _DEFAULT_CONTROLLER = ValveController()
+    return _DEFAULT_CONTROLLER
+
+
+def air_pulse(t_seconds: float) -> None:
+    controller = _get_default_controller()
+    controller.pulse(t_seconds)
+
+
+def _ensure_tty(stream: IO[str]) -> None:
+    if not stream.isatty():
+        raise RuntimeError("The CLI requires an interactive terminal.")
+
+
+def _cli(duration: float, port: str | None = None) -> int:
+    try:
+        _ensure_tty(sys.stdin)
+    except RuntimeError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
+
+    try:
+        controller = ValveController(port=port)
+    except DeviceNotFoundError:
+        print("Error: Air valve controller not found.", file=sys.stderr)
+        return 1
+    except RuntimeError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
+    print(
+        "Press SPACE to trigger the valve pulse, or 'q' to quit."
+        f" Pulse duration: {duration:.3f} s"
+    )
+
+    fd = sys.stdin.fileno()
+    old_settings = termios.tcgetattr(fd)
+    try:
+        tty.setcbreak(fd)
+        while True:
+            char = sys.stdin.read(1)
+            if char == " ":
+                try:
+                    controller.pulse(duration)
+                    print(
+                        f"Pulsed valve for {duration * 1_000:.1f} ms",
+                        flush=True,
+                    )
+                except Exception as exc:  # pragma: no cover - defensive
+                    print(f"Error while pulsing valve: {exc}", file=sys.stderr)
+                    return 1
+            elif char in {"q", "Q", "\x04"}:  # Ctrl+D
+                break
+    except KeyboardInterrupt:
+        pass
+    finally:
+        termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+        controller.close()
+
+    print("Exiting.")
+    return 0
+
+
+def _parse_args(argv: Iterable[str]) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Pulse the air valve whenever the spacebar is pressed.",
+    )
+    parser.add_argument(
+        "duration",
+        type=float,
+        help="Length of the valve pulse in seconds.",
+    )
+    parser.add_argument(
+        "--port",
+        help="Serial port path for the valve relay. Auto-detected when omitted.",
+    )
+    return parser.parse_args(argv)
+
+
+def main(argv: Iterable[str] | None = None) -> int:
+    args = _parse_args(argv if argv is not None else sys.argv[1:])
+    if args.duration <= 0:
+        print("Error: duration must be a positive number.", file=sys.stderr)
+        return 2
+    return _cli(args.duration, port=args.port)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
