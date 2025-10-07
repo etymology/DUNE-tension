@@ -383,6 +383,8 @@ def _acquire_audio_snr(cfg: "PitchCompareConfig", noise_rms: float) -> np.ndarra
     max_samples = int(cfg.max_record_seconds * cfg.sample_rate)
     collected_samples = 0
 
+    low_snr_duration = 0.0
+
     try:
         while collected_samples < max_samples:
             chunk = source.read()
@@ -402,8 +404,15 @@ def _acquire_audio_snr(cfg: "PitchCompareConfig", noise_rms: float) -> np.ndarra
             collected_samples += len(chunk)
 
             if ratio <= 1.0:
-                print("[INFO] Recording stopped (signal reached 0 dB SNR).")
-                break
+                low_snr_duration += len(chunk) / cfg.sample_rate
+                if low_snr_duration >= cfg.idle_timeout:
+                    print(
+                        "[INFO] Recording stopped (signal at or below 0 dB SNR for "
+                        f"{cfg.idle_timeout:.2f}s)."
+                    )
+                    break
+            else:
+                low_snr_duration = 0.0
         else:
             print("[WARN] Max recording length reached.")
     finally:
