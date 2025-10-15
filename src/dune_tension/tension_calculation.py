@@ -3,7 +3,14 @@ from typing import Sequence, Any
 import numpy as np
 from scipy.stats import gaussian_kde
 
-WIRE_DENSITY = 0.000152
+#   average wire density    0.1540460069 g/m
+#   minimum wire density    0.149 (g/m)
+#   maximum wire density    0.15925 (g/m)
+#   std wire density        0.006408457943 (g/m)
+
+# the wire density is consistent within batches but has a small variation between batches
+
+WIRE_DENSITY = 0.0001540460069  # in kg/m
 MAX_PASSING_TENSION = 8  # Note the minimum depends on the wire length
 MIN_PHYSICAL_TENSION = 2.5
 MAX_PHYSICAL_TENSION = (
