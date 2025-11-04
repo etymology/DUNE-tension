@@ -4,11 +4,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from threading import Event, Thread
-from typing import Any, Callable
+from typing import Any, Callable, Protocol
 import os
 import tkinter as tk
 
 from dune_tension.maestro import Controller, DummyController, ServoController
+from valve_trigger import DeviceNotFoundError, ValveController
 
 try:  # pragma: no cover - optional dependency
     from dune_tension.plc_io import (  # type: ignore
@@ -30,6 +31,30 @@ except Exception:  # pragma: no cover - graceful fallback when PLC IO is absent
 
     def spoof_goto_xy(x: float, y: float) -> bool:
         return True
+
+
+class ValveControllerProtocol(Protocol):
+    def start_strum(self) -> None: ...
+
+    def stop_strum(self) -> None: ...
+
+    def set_dwell_time(self, duration: float) -> None: ...
+
+    def close(self) -> None: ...
+
+
+class _DummyValveController:
+    def start_strum(self) -> None:  # pragma: no cover - trivial behaviour
+        return
+
+    def stop_strum(self) -> None:  # pragma: no cover - trivial behaviour
+        return
+
+    def set_dwell_time(self, duration: float) -> None:
+        return
+
+    def close(self) -> None:  # pragma: no cover - trivial behaviour
+        return
 
 
 @dataclass(slots=True)
@@ -66,6 +91,7 @@ class GUIContext:
     state_file: str
     stop_event: Event
     servo_controller: ServoController
+    valve_controller: ValveControllerProtocol
     get_xy: Callable[[], tuple[float, float]]
     goto_xy: Callable[[float, float], bool]
     focus_command_var: tk.StringVar
@@ -82,6 +108,19 @@ def _create_servo_controller() -> ServoController:
     if os.environ.get("SPOOF_SERVO"):
         return ServoController(servo=DummyController())
     return ServoController(Controller())
+
+
+def _create_valve_controller() -> ValveControllerProtocol:
+    """Return a valve controller, falling back to a dummy when unavailable."""
+
+    if os.environ.get("SPOOF_VALVE"):
+        return _DummyValveController()
+
+    try:
+        return ValveController()
+    except (DeviceNotFoundError, RuntimeError) as exc:
+        print(f"Valve controller unavailable: {exc}")
+        return _DummyValveController()
 
 
 def _resolve_plc_functions() -> tuple[
@@ -105,6 +144,11 @@ def create_context(
 
     stop_event = Event()
     servo_controller = _create_servo_controller()
+    valve_controller = _create_valve_controller()
+    try:
+        valve_controller.set_dwell_time(servo_controller.dwell_time)
+    except AttributeError:
+        pass
     get_xy, goto_xy = _resolve_plc_functions()
     if focus_command_var is None:
         focus_command_var = tk.StringVar(master=root, value="4000")
@@ -115,6 +159,7 @@ def create_context(
         state_file=state_file,
         stop_event=stop_event,
         servo_controller=servo_controller,
+        valve_controller=valve_controller,
         get_xy=get_xy,
         goto_xy=goto_xy,
         focus_command_var=focus_command_var,

@@ -320,8 +320,13 @@ def _configure_commands(
         command=lambda val: ctx.servo_controller.set_accel(int(float(val)))
     )
     widgets.dwell_slider.configure(
-        command=lambda val: ctx.servo_controller.set_dwell_time(float(val) / 100)
+        command=lambda val: _update_dwell_time(ctx, float(val) / 100)
     )
     widgets.focus_slider.configure(
         command=lambda val: ctx.servo_controller.focus_target(int(float(val)))
     )
+
+
+def _update_dwell_time(ctx: GUIContext, duration: float) -> None:
+    ctx.servo_controller.set_dwell_time(duration)
+    ctx.valve_controller.set_dwell_time(duration)
