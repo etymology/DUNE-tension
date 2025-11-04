@@ -81,6 +81,8 @@ class ValveController:
         self._lock = threading.Lock()
         self._close_event: threading.Event | None = None
         self._close_thread: threading.Thread | None = None
+        self._strum_stop_event: threading.Event | None = None
+        self._strum_thread: threading.Thread | None = None
 
     def pulse(self, duration: float) -> None:
         """Open the valve immediately and close it after *duration* seconds.
@@ -114,6 +116,8 @@ class ValveController:
     def close(self) -> None:
         """Close the valve and tidy up background resources."""
 
+        self.stop_strum()
+
         thread: threading.Thread | None
         with self._lock:
             if self._close_event is not None:
@@ -129,6 +133,38 @@ class ValveController:
             if self._serial.is_open:
                 self._write(_CLOSE_COMMAND)
                 self._serial.close()
+
+    def start_strum(self) -> None:
+        """Begin emitting 10 ms air pulses every second on a background thread."""
+
+        with self._lock:
+            if self._strum_thread is not None and self._strum_thread.is_alive():
+                return
+
+            stop_event = threading.Event()
+            thread = threading.Thread(
+                target=self._strum_loop,
+                args=(stop_event,),
+                daemon=True,
+                name="valve-strum",
+            )
+            self._strum_stop_event = stop_event
+            self._strum_thread = thread
+            thread.start()
+
+    def stop_strum(self) -> None:
+        """Stop the background strumming loop if it is running."""
+
+        with self._lock:
+            stop_event = self._strum_stop_event
+            thread = self._strum_thread
+            self._strum_stop_event = None
+            self._strum_thread = None
+
+        if stop_event is not None:
+            stop_event.set()
+        if thread is not None:
+            thread.join(timeout=0.1)
 
     def __enter__(self) -> "ValveController":
         return self
@@ -164,6 +200,12 @@ class ValveController:
                 self._write(_CLOSE_COMMAND)
                 self._close_event = None
                 self._close_thread = None
+
+    def _strum_loop(self, stop_event: threading.Event) -> None:
+        while not stop_event.is_set():
+            self.pulse(0.01)
+            if stop_event.wait(1.0):
+                break
 
 
 def _sleep_interval(remaining: float) -> float:
