@@ -65,8 +65,8 @@ def create_tensiometer(ctx: GUIContext) -> Tensiometer:
         record_duration=record_duration,
         measuring_duration=measuring_duration,
         plot_audio=w.plot_audio_var.get(),
-        start_servo_loop=ctx.servo_controller.start_loop,
-        stop_servo_loop=ctx.servo_controller.stop_loop,
+        start_strum_loop=ctx.servo_controller.start_loop,
+        stop_strum_loop=ctx.servo_controller.stop_loop,
         focus_wiggle=ctx.servo_controller.nudge_focus,
     )
 

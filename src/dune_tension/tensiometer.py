@@ -58,8 +58,8 @@ class Tensiometer:
         snr: float = 1,
         spoof: bool = False,
         spoof_movement: bool = False,
-        start_servo_loop: Optional[Callable[[], None]] = None,
-        stop_servo_loop: Optional[Callable[[], None]] = None,
+        start_strum_loop: Optional[Callable[[], None]] = None,
+        stop_strum_loop: Optional[Callable[[], None]] = None,
         focus_wiggle: Optional[Callable[[float], None]] = None,
     ) -> None:
         self.config = make_config(
@@ -100,8 +100,8 @@ class Tensiometer:
 
         self.focus_wiggle_func = focus_wiggle or (lambda delta: None)
 
-        self.start_servo_loop = start_servo_loop or (lambda: None)
-        self.stop_servo_loop = stop_servo_loop or (lambda: None)
+        self.start_strum_loop = start_strum_loop or (lambda: None)
+        self.stop_strum_loop = stop_strum_loop or (lambda: None)
 
         # State tracking for winder wiggle thread
         self._wiggle_event: threading.Event | None = None
@@ -514,7 +514,7 @@ class Tensiometer:
                 time=datetime.now(),
             )
 
-        self.start_servo_loop()
+        self.start_strum_loop()
         try:
             plc_dir = getattr(self, "_plc_direction", 1.0)
             focus_dir = getattr(self, "_focus_direction", 1)
@@ -530,7 +530,7 @@ class Tensiometer:
             self._plc_direction = plc_dir
             self._focus_direction = focus_dir
         finally:
-            self.stop_servo_loop()
+            self.stop_strum_loop()
             reset_plc()
 
         if wires is None:
