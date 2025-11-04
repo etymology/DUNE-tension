@@ -19,11 +19,11 @@ class HarmonicCombConfig:
     candidate_count: int = 36
     harmonic_weight_count: int = 10
     min_harmonics: int = 3
-    on_rmax: float = 0.01
-    off_rmax: float = 0.000001
+    on_rmax: float = 1e-5
+    off_rmax: float = 1e-13
     sfm_max: float = 0.6
-    on_frames: int = 3
-    off_frames: int = 2
+    on_frames: int = 2
+    off_frames: int = 5
 
     def harmonic_weights(self) -> np.ndarray:
         """Return per-harmonic weights used when scoring candidates."""
