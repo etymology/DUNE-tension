@@ -1,9 +1,9 @@
 {
-  "snr_threshold_db": 0.01,
-  "trigger_mode": "snr",
-  "max_record_seconds": 2,
+  "snr_threshold_db": 1,
+  "trigger_mode": "harmonic_comb",
+  "max_record_seconds": 10,
   "input_mode": "mic",
   "input_audio_path": "/home/ben/DUNE-tension/data/test_fixture",
   "over_subtraction": 1,
-  "expected_f0": 70.0
+  "expected_f0": 84
 }
