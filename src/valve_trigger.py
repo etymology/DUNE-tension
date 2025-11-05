@@ -12,7 +12,6 @@ import argparse
 import sys
 import termios
 import threading
-import time
 from math import ceil
 import tty
 from dataclasses import dataclass
