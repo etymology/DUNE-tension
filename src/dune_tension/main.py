@@ -1,13 +1,17 @@
-"""Entry point for the simplified tensiometer GUI."""
+"""Entry point for the tensiometer GUI."""
 
 from __future__ import annotations
 
-from dune_tension.simple_gui import run_app
+import sys
+from pathlib import Path
+
+if __package__ is None or __package__ == "":  # pragma: no cover - script execution shim
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from dune_tension.gui import run_app
 
 
 def main() -> None:
-    """Launch the redesigned GUI."""
-
     run_app()
 
 
