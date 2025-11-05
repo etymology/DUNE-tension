@@ -9,8 +9,8 @@ from typing import TYPE_CHECKING, Optional, Tuple
 import numpy as np
 from numpy.lib.stride_tricks import as_strided
 
-from audio_processing import determine_window_and_hop
-from pitch_compare_config import PitchCompareConfig
+from spectrum_analysis.audio_processing import determine_window_and_hop
+from spectrum_analysis.pitch_compare_config import PitchCompareConfig
 
 CREPE_FRAME_TARGET_RMS = 0.5
 CREPE_IDEAL_PITCH = 600.0
