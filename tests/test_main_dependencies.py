@@ -691,9 +691,6 @@ def test_focus_target_state_round_trip(tmp_path, monkeypatch):
     monkeypatch.setattr(main, "entry_confidence", DummyWidget("0.7"))
     monkeypatch.setattr(main, "entry_record_duration", DummyWidget("0.5"))
     monkeypatch.setattr(main, "entry_measuring_duration", DummyWidget("10"))
-    monkeypatch.setattr(main, "speed_slider", DummyWidget(1))
-    monkeypatch.setattr(main, "accel_slider", DummyWidget(1))
-    monkeypatch.setattr(main, "dwell_slider", DummyWidget(100))
     monkeypatch.setattr(main, "plot_audio_var", DummyVar(False))
 
     focus = DummyWidget(4567)
@@ -747,9 +744,6 @@ def test_load_state_bad_json(tmp_path, monkeypatch):
     monkeypatch.setattr(main, "entry_confidence", DummyWidget("0.7"))
     monkeypatch.setattr(main, "entry_record_duration", DummyWidget("0.5"))
     monkeypatch.setattr(main, "entry_measuring_duration", DummyWidget("10"))
-    monkeypatch.setattr(main, "speed_slider", DummyWidget(1))
-    monkeypatch.setattr(main, "accel_slider", DummyWidget(1))
-    monkeypatch.setattr(main, "dwell_slider", DummyWidget(100))
     monkeypatch.setattr(main, "plot_audio_var", DummyVar(False))
 
     focus = DummyWidget(4000)
