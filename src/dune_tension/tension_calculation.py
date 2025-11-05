@@ -1,4 +1,4 @@
-from typing import Sequence, Any
+from typing import Optional, Sequence
 
 import numpy as np
 from scipy.stats import gaussian_kde
@@ -11,11 +11,12 @@ from scipy.stats import gaussian_kde
 # the wire density is consistent within batches but has a small variation between batches
 
 WIRE_DENSITY = 0.0001540460069  # in kg/m
-MAX_PASSING_TENSION = 10  # Note the minimum depends on the wire length
+MAX_PASSING_TENSION = 8  # Note the minimum depends on the wire length
 MIN_PHYSICAL_TENSION = 2.5
 MAX_PHYSICAL_TENSION = (
     10  # considering higher than 10 not possible because of winder tension control
 )
+NOMINAL_TENSION = 6.5
 
 
 def calculate_kde_max(sample: Sequence[float]) -> float:
@@ -46,10 +47,21 @@ def calculate_kde_max(sample: Sequence[float]) -> float:
     max_kde_sample_value = x_range[np.argmax(kde_sample_values)]
     return max_kde_sample_value
 
+def wire_equation(length: Optional[float] = None, frequency: Optional[float] = None, tension: Optional[float] = NOMINAL_TENSION) -> dict[str, float]:
+    """Calculate wire properties given any two of length, frequency, and tension.
 
-def tension_lookup(length: float, frequency: float) -> float:
-    tension = (2 * length * frequency) ** 2 * WIRE_DENSITY
-    return tension
+    Returns a dictionary with keys 'length', 'frequency', and 'tension'.
+    """
+    if length is not None and frequency is not None:
+        tension = (2 * length * frequency) ** 2 * WIRE_DENSITY
+    elif length is not None and tension is not None:
+        frequency = (tension / (WIRE_DENSITY * (2 * length) ** 2)) ** 0.5
+    elif frequency is not None and tension is not None:
+        length = (tension / (WIRE_DENSITY * (2 * frequency) ** 2)) ** 0.5
+    else:
+        raise ValueError("At least two of length, frequency, or tension must be provided.")
+
+    return {"length": length, "frequency": frequency, "tension": tension}
 
 
 def tension_pass(tension: float, length: float) -> bool:
@@ -58,26 +70,3 @@ def tension_pass(tension: float, length: float) -> bool:
 
 def tension_plausible(tension: float) -> bool:
     return tension < MAX_PHYSICAL_TENSION and tension > MIN_PHYSICAL_TENSION
-
-
-def has_cluster(data: Sequence[Any], key: str, n: int) -> list[Any]:
-    """Return a subset of ``data`` of size ``n`` forming a cluster.
-
-    ``data`` may be a list of dictionaries or objects with attributes
-    referenced by ``key``. The function checks every combination of ``n``
-    items and returns the first subset whose ``key`` values have a small
-    standard deviation (<0.1).
-    """
-    if len(data) < n:
-        return []
-    return data
-
-    # for subset in combinations(data, n):
-    #     values = [
-    #         item[key] if isinstance(item, dict) else getattr(item, key)
-    #         for item in subset
-    #     ]
-    #     if np.std(values) < 0.5:
-    #         return list(subset)
-
-    # return []

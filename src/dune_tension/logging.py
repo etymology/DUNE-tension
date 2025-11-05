@@ -1,5 +1,4 @@
 import os
-from datetime import datetime
 from typing import Dict, List
 
 import matplotlib.pyplot as plt
@@ -8,9 +7,7 @@ import pandas as pd
 import seaborn as sns
 
 from dune_tension.data_cache import get_samples_dataframe
-from dune_tension.results import TensionResult
 from dune_tension.tensiometer_functions import TensiometerConfig
-from dune_tension.tension_calculation import calculate_kde_max, has_cluster
 
 
 def get_expected_range(layer: str) -> range:
@@ -35,69 +32,35 @@ def _compute_tensions(
     """Return tension series and plotting DataFrames grouped by side."""
     tension_series: Dict[str, Dict[int, float]] = {"A": {}, "B": {}}
     line_data: List[pd.DataFrame] = []
-    hist_data: List[pd.DataFrame] = []
-    missing: Dict[str, List[int]] = {"A": [], "B": []}
+    histogram_data: List[pd.DataFrame] = []
+    missing_wires: Dict[str, List[int]] = {"A": [], "B": []}
 
     expected = get_expected_range(config.layer)
     for side in ["A", "B"]:
         side_df = samples[samples["side"] == side]
-        measured: Dict[int, float] = {}
+        measured_wire_tensions: Dict[int, float] = {}
         for wire in expected:
             wire_df = side_df[side_df["wire_number"] == wire]
             if len(wire_df) < config.samples_per_wire:
                 continue
-            records = [
-                TensionResult(
-                    apa_name=row.apa_name,
-                    layer=row.layer,
-                    side=row.side,
-                    wire_number=int(row.wire_number),
-                    frequency=float(row.frequency),
-                    confidence=float(row.confidence),
-                    x=float(row.x),
-                    y=float(row.y),
-                    wires=[],
-                    time=datetime.fromisoformat(row.time)
-                    if isinstance(row.time, str)
-                    else row.time,
-                )
-                for row in wire_df.itertuples()
-            ]
-            cluster = has_cluster(records, "tension", config.samples_per_wire)
-            if not cluster:
-                continue
-            freq = calculate_kde_max([r.frequency for r in cluster])
-            conf = float(np.average([r.confidence for r in cluster]))
-            x = round(float(np.average([r.x for r in cluster])), 1)
-            y = round(float(np.average([r.y for r in cluster])), 1)
-            tr = TensionResult(
-                apa_name=config.apa_name,
-                layer=config.layer,
-                side=side,
-                wire_number=wire,
-                frequency=freq,
-                confidence=conf,
-                x=x,
-                y=y,
-                wires=[float(r.tension) for r in cluster],
-                time=datetime.now(),
-            )
-            measured[wire] = tr.tension
+            # take the latest tension result from the wire_df by sorting wire_df["time"]
+            latest_tension_result = wire_df.sort_values("time").iloc[-1]
+            measured_wire_tensions[wire] = latest_tension_result.tension
             line_data.append(
                 pd.DataFrame(
                     {
                         "wire_number": [wire],
-                        "tension": [tr.tension],
+                        "tension": [latest_tension_result.tension],
                         "side_label": f"Side {side}",
                     }
                 )
             )
-            hist_data.append(
-                pd.DataFrame({"tension": [tr.tension], "side_label": f"Side {side}"})
+            histogram_data.append(
+                pd.DataFrame({"tension": [latest_tension_result.tension], "side_label": f"Side {side}"})
             )
-        tension_series[side] = measured
-        missing[side] = sorted(set(expected) - set(measured.keys()))
-    return tension_series, line_data, hist_data, missing
+        tension_series[side] = measured_wire_tensions
+        missing_wires[side] = sorted(set(expected) - set(measured_wire_tensions.keys()))
+    return tension_series, line_data, histogram_data, missing_wires
 
 
 def write_summary_csv(tension_series: Dict[str, Dict[int, float]], path: str) -> None:
@@ -118,7 +81,7 @@ def write_summary_csv(tension_series: Dict[str, Dict[int, float]], path: str) ->
 
 def save_plot(
     line_data: List[pd.DataFrame],
-    hist_data: List[pd.DataFrame],
+    histogram_data: List[pd.DataFrame],
     apa_name: str,
     layer: str,
     output_dir: str,
@@ -127,7 +90,7 @@ def save_plot(
     if not line_data:
         return
     line_df = pd.concat(line_data)
-    hist_df = pd.concat(hist_data)
+    hist_df = pd.concat(histogram_data)
 
     plt.figure(figsize=(14, 5))
 
@@ -222,7 +185,7 @@ def update_tension_logs(config: TensiometerConfig) -> Dict[str, str]:
     df = df.dropna(subset=["wire_number", "frequency"])
     df["wire_number"] = df["wire_number"].astype(int)
 
-    tension_series, line_data, hist_data, missing = _compute_tensions(config, df)
+    tension_series, line_data, histogram_data, missing_wires = _compute_tensions(config, df)
 
     output_dir = "data/tension_plots"
     summary_path = (
@@ -231,8 +194,8 @@ def update_tension_logs(config: TensiometerConfig) -> Dict[str, str]:
     bad_path = f"data/badwires/badwires_{config.apa_name}_{config.layer}.txt"
 
     write_summary_csv(tension_series, summary_path)
-    save_plot(line_data, hist_data, config.apa_name, config.layer, output_dir)
-    write_missing_wires(bad_path, config.apa_name, config.layer, missing)
+    save_plot(line_data, histogram_data, config.apa_name, config.layer, output_dir)
+    write_missing_wires(bad_path, config.apa_name, config.layer, missing_wires)
 
     return {
         "badwires": bad_path,

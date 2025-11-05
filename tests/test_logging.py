@@ -78,7 +78,7 @@ def setup_module(module):
             mod.TensionResult = Dummy
         sys.modules[name] = mod
     global analyze
-    from dune_tension import analyze as analyze_mod
+    from dune_tension import logging as analyze_mod
 
     analyze = analyze_mod
 

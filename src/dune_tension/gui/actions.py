@@ -350,7 +350,7 @@ def monitor_tension_logs(ctx: GUIContext) -> None:
 
         def run() -> None:
             try:
-                from dune_tension.analyze import update_tension_logs
+                from dune_tension.logging import update_tension_logs
 
                 update_tension_logs(cfg)
                 print(f"Updated tension logs for {cfg.apa_name} layer {cfg.layer}")

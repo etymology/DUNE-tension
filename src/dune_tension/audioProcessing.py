@@ -13,9 +13,12 @@ os.environ.setdefault("MPLBACKEND", "Agg")
 import matplotlib.pyplot as plt
 import crepe
 from tension_calculation import (
-    tension_lookup,
-    tension_pass,
+    tension_pass, wire_equation
 )
+import sounddevice as sd
+import os
+import random
+import math
 
 # Optional dependencies used for alternative pitch detection
 try:
@@ -27,10 +30,6 @@ except Exception:  # pragma: no cover - optional
 
 # Lazily initialized default pesto model
 _PESTO_MODEL = None
-import sounddevice as sd
-import os
-import random
-import math
 
 
 def load_audio_data(file_name):
@@ -400,7 +399,7 @@ def record_audio_filtered(duration, sample_rate, plot=False, normalize=True):
 
 def analyze_sample(audio_sample, sample_rate, wire_length):
     frequency, confidence = get_pitch_crepe(audio_sample, sample_rate)
-    tension = tension_lookup(length=wire_length, frequency=frequency)
+    tension = wire_equation(length=wire_length, frequency=frequency)["tension"]
     tension_ok = tension_pass(tension, wire_length)
     if not tension_ok:
         for i in [2, 3, 4]:

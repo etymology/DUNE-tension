@@ -11,6 +11,7 @@ import sqlite3
 from typing import Sequence
 import tkinter as tk
 from tkinter import ttk
+from plc_io import goto_xy, get_xy
 
 DEFAULT_LAYER_OPTIONS: tuple[str, ...] = ("X", "V", "U", "G")
 DEFAULT_SIDE_OPTIONS: tuple[str, ...] = ("A", "B")
@@ -424,7 +425,7 @@ class TensionApp:
             self._log(f"Invalid wire number: {wire_text}")
             return
 
-        outcome = self._perform_measurement(wire_number, context)
+        outcome = self.collect_tension_samples(wire_number, context)
         if outcome is None:
             return
 
@@ -630,8 +631,7 @@ def get_current_position(
     *, context: MeasurementContext
 ) -> tuple[float, float]:  # pragma: no cover - stub function
     """Return the current ``(x, y)`` stage position."""
-
-    raise NotImplementedError
+    get_xy(context=context)
 
 
 __all__ = [

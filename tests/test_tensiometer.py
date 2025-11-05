@@ -182,7 +182,7 @@ def test_generate_result_single_sample():
         y=2.0,
         wires=[2.0],
     )
-    result = t._generate_result([sample], wire_number=1, wire_x=1.5, wire_y=2.5)
+    result = t._merge_results([sample], wire_number=1, wire_x=1.5, wire_y=2.5)
     assert result.tension == 0.5
     assert result.frequency == 5.0
     assert result.tension_pass
@@ -231,7 +231,7 @@ def test_generate_result_multi_sample():
             wires=[1.8],
         ),
     ]
-    result = t._generate_result(wires, wire_number=1, wire_x=2.0, wire_y=3.0)
+    result = t._merge_results(wires, wire_number=1, wire_x=2.0, wire_y=3.0)
     assert result.frequency == 3.0  # max frequency via stub
     assert result.tension == pytest.approx(0.3)  # frequency * 0.1 via stub
     assert result.tension_pass

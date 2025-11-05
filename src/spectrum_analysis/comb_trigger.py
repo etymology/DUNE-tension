@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections import deque
 from dataclasses import dataclass
+from datetime import time
 
 import numpy as np
 
@@ -119,10 +120,11 @@ def record_with_harmonic_comb(
     expected_f0: float,
     sample_rate: int,
     max_record_seconds: float,
-    comb_cfg: HarmonicCombConfig,
+    timeout_seconds: float,
+    comb_cfg: HarmonicCombConfig = HarmonicCombConfig(),
 ) -> np.ndarray:
     """Record audio using the harmonic comb trigger."""
-
+    start_time = time.time()
     if sd is None:
         raise RuntimeError(
             "sounddevice is required for microphone recording but is not available."
@@ -164,7 +166,7 @@ def record_with_harmonic_comb(
     triggered = False
 
     try:
-        while collected_samples < max_samples:
+        while collected_samples < max_samples and time.time() < start_time + timeout_seconds:
             chunk = source.read()
             if chunk.size == 0:
                 continue
