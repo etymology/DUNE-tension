@@ -1,124 +1,72 @@
-import sys
-import types
-from pathlib import Path
+from __future__ import annotations
 
-# Ensure src on path
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+import sqlite3
+from types import SimpleNamespace
 
-_STUB_MODULES = [
-    "matplotlib",
-    "matplotlib.pyplot",
-    "numpy",
-    "pandas",
-    "seaborn",
-    "data_cache",
-    "results",
-    "tensiometer_functions",
-    "tension_calculation",
-]
-_saved = {}
+import pytest
+
+try:
+    import pandas as pd
+except ModuleNotFoundError:  # pragma: no cover - dependency optional in tests
+    pytest.skip("pandas is required for summaries tests", allow_module_level=True)
+
+from dune_tension import summaries
+from dune_tension.results import EXPECTED_COLUMNS
 
 
-def setup_module(module):
-    for name in _STUB_MODULES:
-        _saved[name] = sys.modules.get(name)
-        mod = types.ModuleType(name)
-        if name == "data_cache":
-            mod.get_samples_dataframe = lambda path: None
-        elif name == "tensiometer_functions":
-
-            class DummyConfig:
-                pass
-
-            mod.TensiometerConfig = DummyConfig
-        elif name == "tension_calculation":
-            mod.calculate_kde_max = lambda x: 0
-            mod.has_cluster = lambda a, b, c: []
-        elif name == "pandas":
-
-            class _Column(list):
-                def tolist(self):
-                    return list(self)
-
-            class DummyDF:
-                def __init__(self, data):
-                    self._data = {k: _Column(v) for k, v in data.items()}
-
-                def __getitem__(self, key):
-                    return self._data[key]
-
-                @property
-                def columns(self):
-                    return list(self._data.keys())
-
-            def _read_csv(path):
-                p = Path(path)
-                if not p.exists():
-                    raise FileNotFoundError(path)
-                lines = [
-                    line.strip() for line in p.read_text().splitlines() if line.strip()
-                ]
-                headers = lines[0].split(",")
-                cols = {h: [] for h in headers}
-                for line in lines[1:]:
-                    for h, val in zip(headers, line.split(",")):
-                        try:
-                            cols[h].append(float(val))
-                        except ValueError:
-                            cols[h].append(val)
-                return DummyDF(cols)
-
-            mod.DataFrame = DummyDF
-            mod.read_csv = _read_csv
-        elif name == "results":
-
-            class Dummy:
-                pass
-
-            mod.TensionResult = Dummy
-        sys.modules[name] = mod
-    global analyze
-    from dune_tension import summaries as analyze_mod
-
-    analyze = analyze_mod
-
-
-def teardown_module(module):
-    for name in _STUB_MODULES:
-        if _saved[name] is None:
-            del sys.modules[name]
-        else:
-            sys.modules[name] = _saved[name]
-
-
-def test_order_missing_wires_basic():
+def test_order_missing_wires_basic() -> None:
     missing = [8, 1, 5, 7]
     measured = [10]
-    ordered = analyze._order_missing_wires(missing, measured)
+    ordered = summaries._order_missing_wires(missing, measured)
     assert ordered == [8, 7, 5, 1]
 
 
-def test_order_missing_no_measured():
+def test_order_missing_no_measured() -> None:
     missing = [3, 1, 2]
-    ordered = analyze._order_missing_wires(missing, [])
+    ordered = summaries._order_missing_wires(missing, [])
     assert ordered == [1, 2, 3]
 
 
-def test_get_missing_wires_from_summary(tmp_path, monkeypatch):
-    # Create fake summary CSV in temporary directory
-    base = tmp_path / "data" / "tension_summaries"
-    base.mkdir(parents=True)
-    csv = base / "tension_summary_APA_X.csv"
-    csv.write_text("wire_number,A,B\n1,1,\n2,,2\n")
+def test_get_missing_wires_from_database(tmp_path, monkeypatch) -> None:
+    db_path = tmp_path / "data" / "tension_data" / "tension_data.db"
+    db_path.parent.mkdir(parents=True)
 
-    monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(analyze, "get_expected_range", lambda _l: range(1, 3))
+    base_row = {
+        "apa_name": "APA",
+        "layer": "X",
+        "side": "A",
+        "wire_number": 1,
+        "frequency": 100.0,
+        "confidence": 0.9,
+        "x": 0.0,
+        "y": 0.0,
+        "time": "2024-01-01T00:00:00",
+        "zone": 0,
+        "wire_length": 0.0,
+        "tension": 1.0,
+        "tension_pass": True,
+    }
 
-    cfg = analyze.TensiometerConfig()
-    cfg.apa_name = "APA"
-    cfg.layer = "X"
+    rows = [
+        base_row,
+        {**base_row, "side": "B", "wire_number": 2, "time": "2024-01-01T00:01:00"},
+    ]
 
-    missing = analyze.get_missing_wires(cfg)
+    df = pd.DataFrame(rows, columns=EXPECTED_COLUMNS)
+    with sqlite3.connect(db_path) as conn:
+        df.to_sql("tension_data", conn, if_exists="replace", index=False)
+
+    monkeypatch.setattr(summaries, "get_expected_range", lambda _layer: range(1, 3))
+
+    config = SimpleNamespace(
+        apa_name="APA",
+        layer="X",
+        data_path=str(db_path),
+        samples_per_wire=1,
+        confidence_threshold=0.0,
+    )
+
+    missing = summaries.get_missing_wires(config)
 
     assert missing["A"] == [2]
     assert missing["B"] == [1]
