@@ -134,7 +134,7 @@ class Tensiometer:
 
         start_x, start_y = self.get_current_xy_position()
         # Wiggle by roughly half the wire pitch to avoid hitting adjacent wires
-        wiggle_width = abs(getattr(self.config, "dy", 5.0) / 20)
+        wiggle_width = 0 # abs(getattr(self.config, "dy", 5.0) / 20)
 
         def _run() -> None:
             while self._wiggle_event and self._wiggle_event.is_set():

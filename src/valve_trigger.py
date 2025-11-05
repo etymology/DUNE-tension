@@ -13,6 +13,7 @@ import sys
 import termios
 import threading
 import time
+from math import ceil
 import tty
 from dataclasses import dataclass
 from types import TracebackType
@@ -77,10 +78,7 @@ class ValveController:
             )
         except serial.SerialException as exc:  # pragma: no cover - passthrough error
             raise RuntimeError("Unable to open the valve relay serial port.") from exc
-
         self._lock = threading.Lock()
-        self._close_event: threading.Event | None = None
-        self._close_thread: threading.Thread | None = None
         self._strum_stop_event: threading.Event | None = None
         self._strum_thread: threading.Thread | None = None
 
@@ -90,49 +88,14 @@ class ValveController:
         The call returns as soon as the valve has been commanded to open; the
         closing action is handled by a dedicated background thread.
         """
-
         if duration <= 0:
             raise ValueError("Pulse duration must be positive.")
 
-        start = time.perf_counter()
+        n_pad = ceil(duration * self._config.baud_rate / 10)  # 8N1
+        padding = b'\x00' * n_pad                  # choose a byte the device ignores
+        self._serial.write(_OPEN_COMMAND + padding + _CLOSE_COMMAND)
+        self._serial.flush()
 
-        with self._lock:
-            if self._close_event is not None:
-                self._close_event.set()
-
-            self._write(_OPEN_COMMAND)
-
-            cancel_event = threading.Event()
-            thread = threading.Thread(
-                target=self._close_after_delay,
-                args=(start, duration, cancel_event),
-                daemon=True,
-                name="valve-close",
-            )
-            self._close_event = cancel_event
-            self._close_thread = thread
-            thread.start()
-
-    def close(self) -> None:
-        """Close the valve and tidy up background resources."""
-
-        self.stop_strum()
-
-        thread: threading.Thread | None
-        with self._lock:
-            if self._close_event is not None:
-                self._close_event.set()
-            thread = self._close_thread
-            self._close_event = None
-            self._close_thread = None
-
-        if thread is not None:
-            thread.join(timeout=0.1)
-
-        with self._lock:
-            if self._serial.is_open:
-                self._write(_CLOSE_COMMAND)
-                self._serial.close()
 
     def start_strum(self) -> None:
         """Begin emitting 10 ms air pulses every second on a background thread."""
@@ -169,6 +132,11 @@ class ValveController:
     def __enter__(self) -> "ValveController":
         return self
 
+    def close(self) -> None:
+        """Close the serial connection to the valve relay."""
+        self.stop_strum()
+        self._serial.close()
+        
     def __exit__(
         self,
         exc_type: type[BaseException] | None,
@@ -181,40 +149,11 @@ class ValveController:
         self._serial.write(payload)
         self._serial.flush()
 
-    def _close_after_delay(
-        self, start: float, duration: float, cancel_event: threading.Event
-    ) -> None:
-        target = start + duration
-        while not cancel_event.is_set():
-            remaining = target - time.perf_counter()
-            if remaining <= 0:
-                break
-            sleep_interval = _sleep_interval(remaining)
-            cancel_event.wait(sleep_interval)
-
-        if cancel_event.is_set():
-            return
-
-        with self._lock:
-            if self._close_event is cancel_event:
-                self._write(_CLOSE_COMMAND)
-                self._close_event = None
-                self._close_thread = None
-
     def _strum_loop(self, stop_event: threading.Event) -> None:
         while not stop_event.is_set():
-            self.pulse(0.01)
-            if stop_event.wait(1.0):
+            self.pulse(0.003)
+            if stop_event.wait(1):
                 break
-
-
-def _sleep_interval(remaining: float) -> float:
-    if remaining > 0.01:
-        return remaining - 0.005
-    if remaining > 0.002:
-        return 0.001
-    return max(remaining / 2, 0.0005)
-
 
 _DEFAULT_CONTROLLER: ValveController | None = None
 _DEFAULT_CONTROLLER_LOCK = threading.Lock()
@@ -266,11 +205,9 @@ def _cli(duration: float, port: str | None = None) -> int:
             char = sys.stdin.read(1)
             if char == " ":
                 try:
-                    controller.pulse(duration)
-                    print(
-                        f"Pulsed valve for {duration * 1_000:.1f} ms",
-                        flush=True,
-                    )
+                    # controller.pulse(duration)
+                    controller.start_strum()
+                    print(f"Pulsed valve for {duration:.3f} seconds.")
                 except Exception as exc:  # pragma: no cover - defensive
                     print(f"Error while pulsing valve: {exc}", file=sys.stderr)
                     return 1
