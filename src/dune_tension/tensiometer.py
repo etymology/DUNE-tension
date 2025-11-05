@@ -201,7 +201,7 @@ class Tensiometer:
         )
 
     def measure_auto(self) -> None:
-        from dune_tension.logging import get_missing_wires
+        from dune_tension.summaries import get_missing_wires
 
         wires_dict = get_missing_wires(self.config)
         wires_to_measure = wires_dict.get(self.config.side, [])

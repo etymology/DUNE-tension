@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 
-from dune_tension.data_cache import get_samples_dataframe
+from dune_tension.data_cache import get_results_dataframe
 from dune_tension.tensiometer_functions import TensiometerConfig
 
 
@@ -56,7 +56,12 @@ def _compute_tensions(
                 )
             )
             histogram_data.append(
-                pd.DataFrame({"tension": [latest_tension_result.tension], "side_label": f"Side {side}"})
+                pd.DataFrame(
+                    {
+                        "tension": [latest_tension_result.tension],
+                        "side_label": f"Side {side}",
+                    }
+                )
             )
         tension_series[side] = measured_wire_tensions
         missing_wires[side] = sorted(set(expected) - set(measured_wire_tensions.keys()))
@@ -174,7 +179,7 @@ def _order_missing_wires(missing: List[int], measured: List[int]) -> List[int]:
 
 def update_tension_logs(config: TensiometerConfig) -> Dict[str, str]:
     """Generate summary CSV, plot and missing wire log for ``config``."""
-    samples = get_samples_dataframe(config.data_path)
+    samples = get_results_dataframe(config.data_path)
     mask = (
         (samples["apa_name"] == config.apa_name)
         & (samples["layer"] == config.layer)
@@ -185,7 +190,9 @@ def update_tension_logs(config: TensiometerConfig) -> Dict[str, str]:
     df = df.dropna(subset=["wire_number", "frequency"])
     df["wire_number"] = df["wire_number"].astype(int)
 
-    tension_series, line_data, histogram_data, missing_wires = _compute_tensions(config, df)
+    tension_series, line_data, histogram_data, missing_wires = _compute_tensions(
+        config, df
+    )
 
     output_dir = "data/tension_plots"
     summary_path = (

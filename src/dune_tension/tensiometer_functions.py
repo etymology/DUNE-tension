@@ -39,7 +39,7 @@ class TensiometerConfig:
     def __post_init__(self):
         # All tension measurements are now stored in a single SQLite file
         # rather than separate files for each APA/layer pair.
-        self.data_path = f"data/tension_data/tension_data_{self.apa_name}_{self.layer}.db"
+        self.data_path = f"data/tension_data/tension_data.db"
 
 
 def make_config(

@@ -105,7 +105,7 @@ def measure_calibrate(ctx: GUIContext) -> None:
 @_run_in_thread
 def measure_auto(ctx: GUIContext) -> None:
     """Automatically measure the full APA."""
-
+    print("Starting automatic measurement of full APA")
     tensiometer: Tensiometer | None = None
     try:
         tensiometer = create_tensiometer(ctx)
@@ -350,7 +350,7 @@ def monitor_tension_logs(ctx: GUIContext) -> None:
 
         def run() -> None:
             try:
-                from dune_tension.logging import update_tension_logs
+                from dune_tension.summaries import update_tension_logs
 
                 update_tension_logs(cfg)
                 print(f"Updated tension logs for {cfg.apa_name} layer {cfg.layer}")
