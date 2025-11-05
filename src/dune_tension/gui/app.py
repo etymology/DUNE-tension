@@ -8,7 +8,7 @@ import tkinter as tk
 
 from dune_tension.gui.actions import (
     calibrate_background_noise,
-    clear_outliers,
+    measure_outliers,
     clear_range,
     handle_close,
     interrupt,
@@ -17,7 +17,7 @@ from dune_tension.gui.actions import (
     measure_auto,
     measure_calibrate,
     measure_condition,
-    measure_list,
+    measure_list_button,
     monitor_tension_logs,
     set_manual_tension,
     update_focus_command_indicator,
@@ -177,8 +177,8 @@ def _create_widgets(
     btn_measure_condition = tk.Button(measure_frame, text="Measure Condition")
     btn_measure_condition.grid(row=6, column=2)
 
-    btn_clear_outliers = tk.Button(measure_frame, text="Clear Outliers")
-    btn_clear_outliers.grid(row=7, column=2)
+    btn_remeasure_outliers = tk.Button(measure_frame, text="Remeasure Outliers")
+    btn_remeasure_outliers.grid(row=7, column=2)
 
     tk.Label(measure_frame, text="Set Tensions:").grid(row=8, column=0, sticky="e")
     entry_set_tension = tk.Entry(measure_frame)
@@ -258,7 +258,7 @@ def _create_widgets(
         "interrupt": btn_interrupt,
         "clear_range": btn_clear_range,
         "measure_condition": btn_measure_condition,
-        "clear_outliers": btn_clear_outliers,
+        "remeasure_outliers": btn_remeasure_outliers,
         "set_tension": btn_set_tension,
         "calibrate_noise": btn_calibrate_noise,
         "manual_go": btn_manual_go,
@@ -275,12 +275,12 @@ def _configure_commands(
     """Attach the GUI callbacks to the Tkinter widgets."""
 
     buttons["calibrate"].configure(command=lambda: measure_calibrate(ctx))
-    buttons["measure_list"].configure(command=lambda: measure_list(ctx))
+    buttons["measure_list"].configure(command=lambda: measure_list_button(ctx))
     buttons["measure_auto"].configure(command=lambda: measure_auto(ctx))
     buttons["interrupt"].configure(command=lambda: interrupt(ctx))
     buttons["clear_range"].configure(command=lambda: clear_range(ctx))
     buttons["measure_condition"].configure(command=lambda: measure_condition(ctx))
-    buttons["clear_outliers"].configure(command=lambda: clear_outliers(ctx))
+    buttons["remeasure_outliers"].configure(command=lambda: measure_outliers(ctx))
     buttons["set_tension"].configure(command=lambda: set_manual_tension(ctx))
     buttons["calibrate_noise"].configure(
         command=lambda: calibrate_background_noise(ctx)

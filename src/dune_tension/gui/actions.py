@@ -7,12 +7,12 @@ import os
 import re
 from threading import Thread
 from typing import Any
+import pandas as pd  
 
 import sounddevice as sd  # type: ignore
 from tkinter import messagebox
 
 from dune_tension.data_cache import (
-    clear_outliers as cache_clear_outliers,
     clear_wire_range,
     get_dataframe,
     update_dataframe,
@@ -141,7 +141,7 @@ def _parse_ranges(text: str) -> list[tuple[int, int]]:
 
 
 @_run_in_thread
-def measure_list(ctx: GUIContext) -> None:
+def measure_list_button(ctx: GUIContext) -> None:
     """Measure a comma separated list of wire ranges."""
 
     tensiometer: Tensiometer | None = None
@@ -223,15 +223,6 @@ def measure_condition(ctx: GUIContext) -> None:
             print(f"No wires satisfy: {expr}")
             return
         print(f"Measuring wires {wires} matching '{expr}'")
-        for wire in wires:
-            clear_wire_range(
-                tensiometer.config.data_path,
-                tensiometer.config.apa_name,
-                tensiometer.config.layer,
-                tensiometer.config.side,
-                wire,
-                wire,
-            )
         tensiometer.measure_list(wires, preserve_order=False)
     finally:
         _cleanup_after_measurement(ctx, tensiometer)
@@ -262,22 +253,62 @@ def clear_range(ctx: GUIContext) -> None:
     print(f"Cleared ranges: {ctx.widgets.entry_clear_range.get()}")
 
 
-def clear_outliers(ctx: GUIContext) -> None:
+def measure_outliers(ctx: GUIContext) -> None:
     cfg = _make_config_from_widgets(ctx)
     try:
         conf = float(ctx.widgets.entry_confidence.get())
     except ValueError:
         conf = 0.7
-    removed = cache_clear_outliers(
-        cfg.data_path,
-        cfg.apa_name,
-        cfg.layer,
-        cfg.side,
-        2.0,
-        conf,
+    
+    df = get_dataframe(cfg.data_path)
+    mask = (
+        (df["apa_name"] == cfg.apa_name)
+        & (df["layer"] == cfg.layer)
+        & (df["side"] == cfg.side)
+        & (df["confidence"].astype(float) >= conf)
     )
-    if removed:
-        print(f"Cleared outlier wires: {removed}")
+    subset = df[mask].copy()
+    subset["tension"] = pd.to_numeric(subset["tension"], errors="coerce")
+    subset["wire_number"] = pd.to_numeric(subset["wire_number"], errors="coerce")
+    subset = subset.dropna(subset=["tension", "wire_number"])
+    if subset.empty:
+        return []
+
+    # Ensure rolling window follows wire order
+    subset = subset.sort_values("wire_number")
+
+    # 8-wire centered moving average (require full window -> edges will be NaN)
+    rolling_mean = (
+        subset["tension"].rolling(window=8, center=True, min_periods=8).mean()
+    )
+
+    # Residuals from the rolling mean
+    residuals = subset["tension"] - rolling_mean
+
+    # Global std of residuals (ignore edges with NaN rolling mean)
+    resid_std = residuals.std(skipna=True)
+
+    if pd.isna(resid_std) or resid_std == 0:
+        return []
+
+    # Flag outliers where residual magnitude exceeds 2 * global residual std
+    is_outlier = rolling_mean.notna() & (residuals.abs() > 2 * resid_std)
+    outliers = subset.loc[is_outlier, "wire_number"].astype(int).tolist()
+
+    # measure the list of outliers
+
+    tensiometer: Tensiometer | None = None
+
+    try:
+        tensiometer = create_tensiometer(ctx)
+        save_state(ctx)
+        print(f"Measuring wires: {outliers}")
+        tensiometer.measure_list(outliers, preserve_order=False)
+    finally:
+        _cleanup_after_measurement(ctx, tensiometer)
+
+    if outliers:
+        print(f"Cleared outlier wires: {outliers}")
     else:
         print("No outlier wires found")
 
@@ -360,7 +391,7 @@ def monitor_tension_logs(ctx: GUIContext) -> None:
             ctx.monitor_thread = Thread(target=run, daemon=True)
             ctx.monitor_thread.start()
 
-    ctx.root.after(2000, lambda: monitor_tension_logs(ctx))
+    ctx.root.after(1000, lambda: monitor_tension_logs(ctx))
 
 
 def manual_goto(ctx: GUIContext) -> None:

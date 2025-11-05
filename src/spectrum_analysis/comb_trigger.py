@@ -9,7 +9,7 @@ from datetime import time
 import numpy as np
 
 from spectrum_analysis.audio_sources import MicSource, sd
-
+import time
 
 @dataclass
 class HarmonicCombConfig:
@@ -20,8 +20,8 @@ class HarmonicCombConfig:
     candidate_count: int = 36
     harmonic_weight_count: int = 10
     min_harmonics: int = 3
-    on_rmax: float = 1e-5
-    off_rmax: float = 1e-13
+    on_rmax: float = 1e-13
+    off_rmax: float = 1e-15
     sfm_max: float = 0.6
     on_frames: int = 2
     off_frames: int = 5
@@ -166,7 +166,7 @@ def record_with_harmonic_comb(
     triggered = False
 
     try:
-        while collected_samples < max_samples and time.time() < start_time + timeout_seconds:
+        while collected_samples < max_samples :
             chunk = source.read()
             if chunk.size == 0:
                 continue
@@ -242,6 +242,9 @@ def record_with_harmonic_comb(
             if collected_samples >= max_samples:
                 print("[WARN] Max recording length reached.")
                 break
+            if time.time() > start_time + timeout_seconds:
+                print("[WARN] Recording timed out.")
+                break
 
             if stop_recording:
                 break
@@ -251,6 +254,7 @@ def record_with_harmonic_comb(
         source.stop()
 
     if not collected:
-        raise RuntimeError("No audio captured above the comb trigger thresholds.")
+        print("[WARN] No audio captured above the comb trigger thresholds.")
+        return None
 
     return np.concatenate(collected).astype(np.float32)

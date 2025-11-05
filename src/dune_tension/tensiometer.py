@@ -4,12 +4,13 @@ from typing import Optional, Callable
 import time
 import numpy as np
 import pandas as pd
-from random import gauss
+from random import gauss, choice
 
 try:
     from tension_calculation import wire_equation, tension_plausible
 except ImportError:  # fallback for older stubs
     pass
+from spectrum_analysis.pitch_compare_config import PitchCompareConfig
 from tensiometer_functions import (
     make_config,
     measure_list,
@@ -18,8 +19,8 @@ from tensiometer_functions import (
 )
 from geometry import zone_lookup, length_lookup
 from audioProcessing import get_samplerate, get_noise_threshold
-from spectrum_analysis.comb_trigger import record_with_harmonic_comb
 from spectrum_analysis.crepe_analysis import estimate_pitch_from_audio
+from spectrum_analysis.audio_processing import acquire_audio
 
 try:
     from plc_io import is_web_server_active, increment, set_speed, reset_plc
@@ -265,6 +266,13 @@ class Tensiometer:
         expected_frequency = wire_equation(length=length)["frequency"]
         measuring_timeout = self.config.measuring_duration
         passing_wires = []
+        audio_acquisition_config = PitchCompareConfig(
+            sample_rate=self.samplerate,
+            max_record_seconds=self.config.record_duration,
+            expected_f0=expected_frequency,
+            snr_threshold_db=self.snr,
+            trigger_mode="snr",
+        )
         while (time.time() - start_time) < measuring_timeout:
             if check_stop_event(self.stop_event, "tension measurement interrupted!"):
                 return None, wire_y
@@ -273,42 +281,47 @@ class Tensiometer:
             # trigger a valve pulse using pulse from valve_trigger.py
             self.strum_func()
             # record audio with harmonic comb
-            audio_sample = record_with_harmonic_comb(
-                expected_f0=expected_frequency,
-                sample_rate=self.samplerate,
-                max_record_seconds=self.config.record_duration,
-                timeout_seconds=0.5,
-            )
-            # estimate pitch from audio sample
-            frequency, confidence = estimate_pitch_from_audio(
-                audio_sample,
-                self.samplerate,
-                expected_frequency,
-            )
-            wire_result = TensionResult(
-                        self.config.apa_name,
-                        self.config.layer,
-                        self.config.side,
-                        wire_number,
-                        frequency,
-                        confidence,
-                        x,
-                        y,
-                        time=datetime.now(),
-                    )
 
-            # if the confidence is good, log the sample
-            if wire_result.confidence >= self.config.confidence_threshold and tension_plausible(
-                wire_result.tension
-            ):
-                passing_wires.append(wire_result)
+            audio_sample = acquire_audio(cfg=audio_acquisition_config, noise_rms=0.05)
+
+            if audio_sample is not None:
+                # estimate pitch from audio sample
+                frequency, confidence = estimate_pitch_from_audio(
+                    audio_sample,
+                    self.samplerate,
+                    expected_frequency,
+                )
+                print(
+                    f"sample of wire {wire_number}: Measured frequency {frequency:.2f} Hz with confidence {confidence:.2f}"
+                )
+                wire_result = TensionResult(
+                    self.config.apa_name,
+                    self.config.layer,
+                    self.config.side,
+                    wire_number,
+                    frequency,
+                    confidence,
+                    x,
+                    y,
+                    time=datetime.now(),
+                )
+
+                # if the confidence is good, log the sample
+                if (
+                    wire_result.confidence >= self.config.confidence_threshold
+                    and tension_plausible(wire_result.tension)
+                ):
+                    passing_wires.append(wire_result)
+                else:
+                    self.wiggle_func(0, choice([-0.5, 0.5]))
+                    self.focus_wiggle_func(choice([-10, 10]))
 
                 if len(passing_wires) >= self.config.samples_per_wire:
                     break
             else:
                 # wiggle the winder a bit to try to improve the signal
-                self.wiggle_func()
-                self.focus_wiggle_func()
+                self.wiggle_func(0, choice([-0.5, 0.5]))
+                self.focus_wiggle_func(choice([-10, 10]))
         return passing_wires
 
     def _merge_results(
@@ -318,6 +331,8 @@ class Tensiometer:
         wire_x: float,
         wire_y: float,
     ) -> TensionResult:
+        if passing_wires == []:
+            return None
         if self.config.samples_per_wire == 1:
             return passing_wires[0]
         elif len(passing_wires) > 0:
@@ -368,7 +383,6 @@ class Tensiometer:
                 confidence=0.0,
                 x=wire_x,
                 y=wire_y,
-                wires=[],
                 time=datetime.now(),
             )
 
@@ -389,13 +403,14 @@ class Tensiometer:
 
         result = self._merge_results(wires_results, wire_number, wire_x, wire_y)
 
-        if result.tension == 0:
+        if result is None:
             print(f"measurement failed for wire number {wire_number}.")
+            return result
         if not result.tension_pass:
             print(f"Tension failed for wire number {wire_number}.")
         ttf = time.time() - start_time
         print(
-            f"Wire number {wire_number} has length {length * 1000:.1f}mm tension {result.tension:.1f}N frequency {result.frequency:.1f}Hz with confidence {result.confidence * 100:.1f}%.\n at {result.x},{result.y}\n"
+            f"result: Wire number {wire_number} has length {length * 1000:.1f}mm tension {result.tension:.1f}N frequency {result.frequency:.1f}Hz with confidence {result.confidence:.2f}.\n at {result.x},{result.y}\n"
             f"Took {ttf} seconds to finish."
         )
         result.ttf = ttf

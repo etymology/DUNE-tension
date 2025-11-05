@@ -416,7 +416,8 @@ def _acquire_audio_snr(cfg: "PitchCompareConfig", noise_rms: float) -> np.ndarra
         source.stop()
 
     if not collected:
-        raise RuntimeError("No audio captured above the SNR threshold.")
+        # raise RuntimeError("No audio captured above the SNR threshold.")
+        return None
 
     return np.concatenate(collected).astype(np.float32)
 

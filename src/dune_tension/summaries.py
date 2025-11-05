@@ -216,15 +216,18 @@ def update_tension_logs(config: TensiometerConfig) -> Dict[str, str]:
 def get_missing_wires(config: TensiometerConfig) -> Dict[str, List[int]]:
     """Return missing wire numbers for each side for ``config``."""
 
-    summary_path = (
-        f"data/tension_summaries/tension_summary_{config.apa_name}_{config.layer}.csv"
+    samples = get_results_dataframe(config.data_path)
+    mask = (
+        (samples["apa_name"] == config.apa_name)
+        & (samples["layer"] == config.layer)
+        & (samples["confidence"].astype(float) >= config.confidence_threshold)
     )
+    expected = get_expected_range(config.layer)
+    df = samples[mask].copy()
 
-    try:
-        df = pd.read_csv(summary_path)
-    except FileNotFoundError:
-        expected = list(get_expected_range(config.layer))
-        return {"A": expected.copy(), "B": expected.copy()}
+    df["wire_number"] = pd.to_numeric(df["wire_number"], errors="coerce")
+    df = df.dropna(subset=["wire_number", "frequency"])
+    df["wire_number"] = df["wire_number"].astype(int)
 
     wire_numbers = [int(w) for w in df["wire_number"]]
     col_a = df["A"] if "A" in df.columns else [float("nan")] * len(wire_numbers)

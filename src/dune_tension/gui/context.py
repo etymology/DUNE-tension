@@ -109,7 +109,7 @@ def _make_strum_callback(controller: ValveController | None) -> Callable[[], Non
 
     def _strum() -> None:
         try:
-            controller.pulse(0.003)
+            controller.pulse(0.002)
         except Exception as exc:
             print(f"Warning: Valve pulse failed: {exc}")
 

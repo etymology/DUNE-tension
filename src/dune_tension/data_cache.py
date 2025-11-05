@@ -94,7 +94,7 @@ def clear_wire_range(
     update_results_dataframe(file_path, samples_df[mask_s].reset_index(drop=True))
 
 
-def clear_outliers(
+def find_outliers(
     file_path: str,
     apa_name: str,
     layer: str,
@@ -102,7 +102,7 @@ def clear_outliers(
     sigma: float = 3.0,
     confidence_threshold: float = 0.0,
 ) -> list[int]:
-    """Remove wires whose tension deviates from the 8-wire centered moving average
+    """Find wires whose tension deviates from the 8-wire centered moving average
     by more than `sigma` times the *global std of residuals* (tension - rolling mean).
 
     Returns the list of wire numbers removed.
@@ -141,8 +141,5 @@ def clear_outliers(
     # Flag outliers where residual magnitude exceeds sigma * global residual std
     is_outlier = rolling_mean.notna() & (residuals.abs() > sigma * resid_std)
     outliers = subset.loc[is_outlier, "wire_number"].astype(int).tolist()
-
-    for wire in outliers:
-        clear_wire_range(file_path, apa_name, layer, side, wire, wire)
 
     return outliers
