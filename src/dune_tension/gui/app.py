@@ -189,38 +189,19 @@ def _create_widgets(
     btn_calibrate_noise = tk.Button(measure_frame, text="Calibrate Noise")
     btn_calibrate_noise.grid(row=11, column=2)
 
-    tk.Label(servo_frame, text="Servo Speed (1–255):").grid(row=0, column=0, sticky="e")
-    speed_slider = tk.Scale(servo_frame, from_=1, to=255, orient=tk.HORIZONTAL)
-    speed_slider.set(1)
-    speed_slider.grid(row=0, column=1, sticky="ew")
-
-    tk.Label(servo_frame, text="Servo Acceleration (1–255):").grid(
-        row=1, column=0, sticky="e"
-    )
-    accel_slider = tk.Scale(servo_frame, from_=1, to=255, orient=tk.HORIZONTAL)
-    accel_slider.set(1)
-    accel_slider.grid(row=1, column=1, sticky="ew")
-
-    tk.Label(servo_frame, text="Dwell Time (0.00–2.00s):").grid(
-        row=2, column=0, sticky="e"
-    )
-    dwell_slider = tk.Scale(servo_frame, from_=0, to=200, orient=tk.HORIZONTAL)
-    dwell_slider.set(100)
-    dwell_slider.grid(row=2, column=1, sticky="ew")
-
-    tk.Label(servo_frame, text="Focus:").grid(row=3, column=0, sticky="e")
+    tk.Label(servo_frame, text="Focus:").grid(row=0, column=0, sticky="e")
     focus_slider = tk.Scale(servo_frame, from_=4000, to=8000, orient=tk.HORIZONTAL)
     focus_slider.set(4000)
-    focus_slider.grid(row=3, column=1, sticky="ew")
+    focus_slider.grid(row=0, column=1, sticky="ew")
 
     tk.Label(servo_frame, textvariable=focus_command_var).grid(
-        row=4, column=0, sticky="e"
+        row=1, column=0, sticky="e"
     )
     focus_command_canvas: tk.Canvas | None = None
     focus_command_dot: Any | None = None
     if hasattr(tk, "Canvas"):
         focus_command_canvas = tk.Canvas(servo_frame, height=10)
-        focus_command_canvas.grid(row=4, column=1, sticky="ew")
+        focus_command_canvas.grid(row=1, column=1, sticky="ew")
         focus_command_canvas.create_line(0, 5, int(focus_slider.cget("length")), 5)
         focus_command_dot = focus_command_canvas.create_oval(
             0, 0, 0, 0, fill="blue", outline=""
@@ -266,9 +247,6 @@ def _create_widgets(
         entry_clear_range=entry_clear_range,
         entry_condition=entry_condition,
         entry_set_tension=entry_set_tension,
-        speed_slider=speed_slider,
-        accel_slider=accel_slider,
-        dwell_slider=dwell_slider,
         focus_slider=focus_slider,
         entry_xy=entry_xy,
     )
@@ -313,15 +291,6 @@ def _configure_commands(
         button.configure(command=partial(manual_increment, ctx, dx, dy))
 
     widgets = ctx.widgets
-    widgets.speed_slider.configure(
-        command=lambda val: ctx.servo_controller.set_speed(int(float(val)))
-    )
-    widgets.accel_slider.configure(
-        command=lambda val: ctx.servo_controller.set_accel(int(float(val)))
-    )
-    widgets.dwell_slider.configure(
-        command=lambda val: ctx.servo_controller.set_dwell_time(float(val) / 100)
-    )
     widgets.focus_slider.configure(
         command=lambda val: ctx.servo_controller.focus_target(int(float(val)))
     )

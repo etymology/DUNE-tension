@@ -50,9 +50,6 @@ class GUIWidgets:
     entry_clear_range: tk.Entry
     entry_condition: tk.Entry
     entry_set_tension: tk.Entry
-    speed_slider: tk.Scale
-    accel_slider: tk.Scale
-    dwell_slider: tk.Scale
     focus_slider: tk.Scale
     entry_xy: tk.Entry
 

@@ -20,9 +20,6 @@ class _PersistedState:
     wire_list: str
     samples_per_wire: int
     confidence_threshold: float
-    servo_speed: int
-    servo_accel: int
-    servo_dwell: int
     plot_audio: bool
     focus_target: int
     condition: str
@@ -53,9 +50,6 @@ def save_state(ctx: GUIContext) -> None:
         wire_list=w.entry_wire_list.get(),
         samples_per_wire=samples,
         confidence_threshold=conf,
-        servo_speed=int(w.speed_slider.get()),
-        servo_accel=int(w.accel_slider.get()),
-        servo_dwell=int(w.dwell_slider.get()),
         plot_audio=bool(w.plot_audio_var.get()),
         focus_target=int(w.focus_slider.get()),
         condition=w.entry_condition.get(),
@@ -94,9 +88,6 @@ def load_state(ctx: GUIContext) -> None:
     _set_entry(w.entry_wire_list, data.get("wire_list", ""))
     _set_entry(w.entry_samples, data.get("samples_per_wire", 3))
     _set_entry(w.entry_confidence, data.get("confidence_threshold", 0.7))
-    w.speed_slider.set(int(data.get("servo_speed", 1)))
-    w.accel_slider.set(int(data.get("servo_accel", 1)))
-    w.dwell_slider.set(int(data.get("servo_dwell", 100)))
     w.plot_audio_var.set(bool(data.get("plot_audio", False)))
     w.focus_slider.set(int(data.get("focus_target", 4000)))
     _set_entry(w.entry_condition, data.get("condition", ""))
