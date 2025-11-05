@@ -7,7 +7,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from audio_sources import MicSource, sd
+from spectrum_analysis.audio_sources import MicSource, sd
 
 
 @dataclass
