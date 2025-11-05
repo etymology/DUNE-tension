@@ -19,6 +19,7 @@ from dune_tension.gui.actions import (
     measure_condition,
     measure_list_button,
     monitor_tension_logs,
+    refresh_tension_logs,
     set_manual_tension,
     update_focus_command_indicator,
 )
@@ -101,6 +102,9 @@ def _create_widgets(
 
     manual_move_frame = tk.LabelFrame(bottom_frame, text="Manual Move")
     manual_move_frame.grid(row=3, column=0, sticky="ew", pady=5)
+
+    btn_refresh_plots = tk.Button(bottom_frame, text="Refresh Plots")
+    btn_refresh_plots.grid(row=4, column=0, sticky="ew", pady=(10, 0))
 
     tk.Label(apa_frame, text="APA Name:").grid(row=0, column=0, sticky="e")
     entry_apa = tk.Entry(apa_frame)
@@ -262,6 +266,7 @@ def _create_widgets(
         "set_tension": btn_set_tension,
         "calibrate_noise": btn_calibrate_noise,
         "manual_go": btn_manual_go,
+        "refresh_plots": btn_refresh_plots,
     }
 
     return widgets, focus_command_canvas, focus_command_dot, buttons, pad_buttons
@@ -286,6 +291,7 @@ def _configure_commands(
         command=lambda: calibrate_background_noise(ctx)
     )
     buttons["manual_go"].configure(command=lambda: manual_goto(ctx))
+    buttons["refresh_plots"].configure(command=lambda: refresh_tension_logs(ctx))
 
     for button, dx, dy in pad_buttons:
         button.configure(command=partial(manual_increment, ctx, dx, dy))
