@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional
 
@@ -372,7 +373,7 @@ def record_noise_sample(cfg: "PitchCompareConfig") -> np.ndarray:
     return np.squeeze(noise).astype(np.float32)
 
 
-def _acquire_audio_snr(cfg: "PitchCompareConfig", noise_rms: float) -> np.ndarray:
+def _acquire_audio_snr(cfg: "PitchCompareConfig", noise_rms: float, timeout: float) -> np.ndarray:
     _, hop = determine_window_and_hop(cfg)
     source = MicSource(cfg.sample_rate, hop)
     source.start()
@@ -385,9 +386,12 @@ def _acquire_audio_snr(cfg: "PitchCompareConfig", noise_rms: float) -> np.ndarra
     idle_limit = int(cfg.idle_timeout * cfg.sample_rate)
     max_samples = int(cfg.max_record_seconds * cfg.sample_rate)
     collected_samples = 0
-
+    start_time = time.time()
+    # set the start time as the current time
+    start_time = time.time()
+    timeout += start_time
     try:
-        while collected_samples < max_samples:
+        while collected_samples < max_samples and time.time() < timeout:
             chunk = source.read()
             if chunk.size == 0:
                 continue
@@ -422,7 +426,7 @@ def _acquire_audio_snr(cfg: "PitchCompareConfig", noise_rms: float) -> np.ndarra
     return np.concatenate(collected).astype(np.float32)
 
 
-def acquire_audio(cfg: "PitchCompareConfig", noise_rms: float) -> np.ndarray:
+def acquire_audio(cfg: "PitchCompareConfig", noise_rms: float, timeout: float) -> np.ndarray:
     """Record audio using the configured trigger or load from file."""
 
     if cfg.input_mode == "file":
@@ -436,12 +440,12 @@ def acquire_audio(cfg: "PitchCompareConfig", noise_rms: float) -> np.ndarray:
     trigger_mode = getattr(cfg, "trigger_mode", "snr")
 
     if trigger_mode != "harmonic_comb":
-        return _acquire_audio_snr(cfg, noise_rms)
+        return _acquire_audio_snr(cfg, noise_rms, timeout)
 
     expected_f0 = cfg.expected_f0
     if expected_f0 is None or not np.isfinite(expected_f0) or expected_f0 <= 0.0:
         print("[WARN] expected_f0 missing; falling back to RMS trigger.")
-        return _acquire_audio_snr(cfg, noise_rms)
+        return _acquire_audio_snr(cfg, noise_rms, timeout)
 
     try:
         return record_with_harmonic_comb(
@@ -452,4 +456,4 @@ def acquire_audio(cfg: "PitchCompareConfig", noise_rms: float) -> np.ndarray:
         )
     except ValueError:
         print("[WARN] Invalid frequency band; falling back to RMS trigger.")
-        return _acquire_audio_snr(cfg, noise_rms)
+        return _acquire_audio_snr(cfg, noise_rms,timeout)

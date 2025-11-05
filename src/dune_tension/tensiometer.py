@@ -282,7 +282,7 @@ class Tensiometer:
             self.strum_func()
             # record audio with harmonic comb
 
-            audio_sample = acquire_audio(cfg=audio_acquisition_config, noise_rms=0.05)
+            audio_sample = acquire_audio(cfg=audio_acquisition_config, noise_rms=0.05,timeout=3)
 
             if audio_sample is not None:
                 # estimate pitch from audio sample
@@ -313,15 +313,13 @@ class Tensiometer:
                 ):
                     passing_wires.append(wire_result)
                 else:
-                    self.wiggle_func(0, choice([-0.5, 0.5]))
-                    self.focus_wiggle_func(choice([-10, 10]))
-
+                    self.wiggle_func(1)
                 if len(passing_wires) >= self.config.samples_per_wire:
                     break
             else:
-                # wiggle the winder a bit to try to improve the signal
-                self.wiggle_func(0, choice([-0.5, 0.5]))
-                self.focus_wiggle_func(choice([-10, 10]))
+                print(f"sample of wire {wire_number}: No audio detected.")
+                self.wiggle_func(1)
+
         return passing_wires
 
     def _merge_results(

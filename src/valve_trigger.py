@@ -150,7 +150,7 @@ class ValveController:
 
     def _strum_loop(self, stop_event: threading.Event) -> None:
         while not stop_event.is_set():
-            self.pulse(0.003)
+            self.pulse(0.01)
             if stop_event.wait(1):
                 break
 
