@@ -422,7 +422,9 @@ def _acquire_audio_snr(cfg: "PitchCompareConfig", noise_rms: float) -> np.ndarra
     return np.concatenate(collected).astype(np.float32)
 
 
-def acquire_audio(cfg: "PitchCompareConfig", noise_rms: float) -> np.ndarray:
+def acquire_audio(
+    cfg: "PitchCompareConfig", noise_rms: float, show_audio: bool = False
+) -> np.ndarray:
     """Record audio using the configured trigger or load from file."""
 
     if cfg.input_mode == "file":
@@ -431,25 +433,106 @@ def acquire_audio(cfg: "PitchCompareConfig", noise_rms: float) -> np.ndarray:
                 "input_audio_path must be provided when input_mode is 'file'"
             )
         audio, _ = load_audio(Path(cfg.input_audio_path), cfg.sample_rate)
-        return audio
+    else:
+        trigger_mode = getattr(cfg, "trigger_mode", "snr")
 
-    trigger_mode = getattr(cfg, "trigger_mode", "snr")
+        if trigger_mode != "harmonic_comb":
+            audio = _acquire_audio_snr(cfg, noise_rms)
+        else:
+            expected_f0 = cfg.expected_f0
+            if (
+                expected_f0 is None
+                or not np.isfinite(expected_f0)
+                or expected_f0 <= 0.0
+            ):
+                print("[WARN] expected_f0 missing; falling back to RMS trigger.")
+                audio = _acquire_audio_snr(cfg, noise_rms)
+            else:
+                try:
+                    audio = record_with_harmonic_comb(
+                        expected_f0=expected_f0,
+                        sample_rate=cfg.sample_rate,
+                        max_record_seconds=cfg.max_record_seconds,
+                        comb_cfg=cfg.comb_trigger,
+                    )
+                except ValueError:
+                    print("[WARN] Invalid frequency band; falling back to RMS trigger.")
+                    audio = _acquire_audio_snr(cfg, noise_rms)
 
-    if trigger_mode != "harmonic_comb":
-        return _acquire_audio_snr(cfg, noise_rms)
+    if show_audio:
+        _visualize_acquired_audio(audio, cfg)
 
-    expected_f0 = cfg.expected_f0
-    if expected_f0 is None or not np.isfinite(expected_f0) or expected_f0 <= 0.0:
-        print("[WARN] expected_f0 missing; falling back to RMS trigger.")
-        return _acquire_audio_snr(cfg, noise_rms)
+    return audio
+
+
+def _visualize_acquired_audio(
+    audio: Optional[np.ndarray], cfg: "PitchCompareConfig"
+) -> None:
+    """Render diagnostic plots for ``audio`` using shared CLI helpers."""
+
+    if audio is None or audio.size == 0:
+        print("[WARN] No audio available for visualization.")
+        return
 
     try:
-        return record_with_harmonic_comb(
-            expected_f0=expected_f0,
-            sample_rate=cfg.sample_rate,
-            max_record_seconds=cfg.max_record_seconds,
-            comb_cfg=cfg.comb_trigger,
+        from spectrum_analysis.compare_pitch_cli import (
+            _crepe_pitch_overlay,
+            plot_results,
         )
-    except ValueError:
-        print("[WARN] Invalid frequency band; falling back to RMS trigger.")
-        return _acquire_audio_snr(cfg, noise_rms)
+        from spectrum_analysis.crepe_analysis import (
+            get_crepe_activations,
+            _sr_augment_factor,
+        )
+        from spectrum_analysis.pitch_compare_config import ensure_output_dir
+    except Exception as exc:  # pragma: no cover - import guards for optional deps
+        print(
+            "[WARN] Unable to import plotting helpers; skipping visualization:",
+            exc,
+        )
+        return
+
+    import datetime as _dt
+
+    timestamp = _dt.datetime.now().strftime("%Y%m%d-%H%M%S")
+    output_dir = Path(cfg.output_directory)
+    ensure_output_dir(output_dir)
+
+    freqs, times, power = compute_spectrogram(audio, cfg)
+
+    activation_results: list[
+        tuple[
+            str,
+            Optional[tuple[np.ndarray, np.ndarray, np.ndarray]],
+            Optional[np.ndarray],
+            Optional[float],
+        ]
+    ] = []
+    expected_f0 = getattr(cfg, "expected_f0", None)
+    sr_factor = _sr_augment_factor(expected_f0, warn=False)
+    sr_factor = float(sr_factor) if np.isfinite(sr_factor) and sr_factor > 0.0 else 1.0
+    augmented_sr = int(round(cfg.sample_rate * sr_factor))
+    label = f"CREPE Activation (augmented sr {augmented_sr} Hz; x{sr_factor:g})"
+
+    crepe_result = get_crepe_activations(
+        audio,
+        cfg.sample_rate,
+        expected_pitch=expected_f0,
+        cfg=cfg,
+        warn=False,
+    )
+    overlay = None
+    if crepe_result is not None and getattr(cfg, "show_pitch_overlay", False):
+        overlay = _crepe_pitch_overlay(crepe_result)
+
+    activation_results.append((label, crepe_result, overlay, expected_f0))
+
+    plot_results(
+        timestamp=timestamp,
+        audio=audio,
+        freqs=freqs,
+        times=times,
+        power=power,
+        activation_results=activation_results,
+        cfg=cfg,
+        output_dir=output_dir,
+    )
