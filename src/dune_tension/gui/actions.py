@@ -65,8 +65,7 @@ def create_tensiometer(ctx: GUIContext) -> Tensiometer:
         record_duration=record_duration,
         measuring_duration=measuring_duration,
         plot_audio=w.plot_audio_var.get(),
-        start_strum_loop=ctx.servo_controller.start_loop,
-        stop_strum_loop=ctx.servo_controller.stop_loop,
+        strum=ctx.strum,
         focus_wiggle=ctx.servo_controller.nudge_focus,
     )
 
@@ -415,6 +414,11 @@ def update_focus_command_indicator(ctx: GUIContext, value: int) -> None:
 def handle_close(ctx: GUIContext) -> None:
     ctx.stop_event.set()
     ctx.servo_controller.stop_loop()
+    if ctx.valve_controller is not None:
+        try:
+            ctx.valve_controller.close()
+        except Exception:
+            pass
     try:
         sd.stop()
     except Exception:
