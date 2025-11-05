@@ -7,7 +7,7 @@ import os
 import re
 from threading import Thread
 from typing import Any
-import pandas as pd  
+import pandas as pd
 
 import sounddevice as sd  # type: ignore
 from tkinter import messagebox
@@ -259,7 +259,7 @@ def measure_outliers(ctx: GUIContext) -> None:
         conf = float(ctx.widgets.entry_confidence.get())
     except ValueError:
         conf = 0.7
-    
+
     df = get_dataframe(cfg.data_path)
     mask = (
         (df["apa_name"] == cfg.apa_name)
@@ -392,6 +392,26 @@ def monitor_tension_logs(ctx: GUIContext) -> None:
             ctx.monitor_thread.start()
 
     ctx.root.after(1000, lambda: monitor_tension_logs(ctx))
+
+
+@_run_in_thread
+def refresh_tension_logs(ctx: GUIContext) -> None:
+    """Force an update of the tension logs regardless of file changes."""
+
+    cfg = _make_config_from_widgets(ctx)
+
+    try:
+        from dune_tension.summaries import update_tension_logs
+
+        update_tension_logs(cfg)
+        try:
+            ctx.monitor_last_path = cfg.data_path
+            ctx.monitor_last_mtime = os.path.getmtime(cfg.data_path)
+        except OSError:
+            ctx.monitor_last_mtime = None
+        print(f"Manually refreshed tension logs for {cfg.apa_name} layer {cfg.layer}")
+    except Exception as exc:
+        print(f"Failed to refresh logs: {exc}")
 
 
 def manual_goto(ctx: GUIContext) -> None:
