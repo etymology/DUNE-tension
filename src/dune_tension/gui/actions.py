@@ -38,8 +38,6 @@ def create_tensiometer(ctx: GUIContext) -> Tensiometer:
 
     try:
         confidence = float(w.entry_confidence.get())
-        if not (0.0 <= confidence <= 1.0):
-            raise ValueError("Confidence threshold must be between 0.0 and 1.0")
     except ValueError as exc:
         messagebox.showerror("Input Error", str(exc))
         raise
@@ -292,9 +290,9 @@ def measure_outliers(ctx: GUIContext) -> None:
         return []
 
     # Flag outliers where residual magnitude exceeds 2 * global residual std
-    is_outlier = rolling_mean.notna() & (residuals.abs() > 2 * resid_std)
+    is_outlier = rolling_mean.notna() & (residuals.abs() > resid_std)
     outliers = subset.loc[is_outlier, "wire_number"].astype(int).tolist()
-
+    outliers = set(outliers)
     # measure the list of outliers
 
     tensiometer: Tensiometer | None = None

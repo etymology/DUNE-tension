@@ -265,8 +265,8 @@ class ServoController:
         self.servo.setRange(1, 4000, 8000)  # focus servo
         self.focus_position = focus_position
         try:
-            self.servo.setSpeed(1, 100)
-            self.servo.setAccel(1, 100)
+            self.servo.setSpeed(1, 0)
+            self.servo.setAccel(1, 0)
         except Exception:
             pass
 

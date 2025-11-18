@@ -99,7 +99,7 @@ def find_outliers(
     apa_name: str,
     layer: str,
     side: str,
-    sigma: float = 3.0,
+    sigma: float = 2.0,
     confidence_threshold: float = 0.0,
 ) -> list[int]:
     """Find wires whose tension deviates from the 8-wire centered moving average
@@ -142,4 +142,4 @@ def find_outliers(
     is_outlier = rolling_mean.notna() & (residuals.abs() > sigma * resid_std)
     outliers = subset.loc[is_outlier, "wire_number"].astype(int).tolist()
 
-    return outliers
+    return set(outliers)

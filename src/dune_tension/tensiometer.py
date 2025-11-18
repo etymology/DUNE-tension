@@ -313,12 +313,32 @@ class Tensiometer:
                 ):
                     passing_wires.append(wire_result)
                 else:
-                    self.wiggle_func(1)
+                    # if the tension is plausible at double the frequency use that
+                    alt_frequency = frequency * 2
+                    doubled_wire_result = TensionResult(
+                        self.config.apa_name,
+                        self.config.layer,
+                        self.config.side,
+                        wire_number,
+                        alt_frequency,
+                        confidence,
+                        x,
+                        y,
+                        time=datetime.now(),
+                    )
+                    if tension_plausible(doubled_wire_result.tension):
+                        print(
+                            f"sample of wire {wire_number}: Doubling frequency to {alt_frequency:.2f} Hz for plausible tension."
+                        )
+                        # passing_wires.append(doubled_wire_result)
+                    else:
+                        print("wiggling due to low confidence or implausible tension.")
+                        self.wiggle_func(0, choice([-0.1, 0.1]))
+                        self.focus_wiggle_func(choice([-100,100]))
                 if len(passing_wires) >= self.config.samples_per_wire:
                     break
             else:
                 print(f"sample of wire {wire_number}: No audio detected.")
-                self.wiggle_func(1)
 
         return passing_wires
 
