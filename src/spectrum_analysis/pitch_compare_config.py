@@ -21,7 +21,7 @@ class PitchCompareConfig:
 
     sample_rate: int = 44100
     noise_duration: float = 2.0
-    snr_threshold_db: float = 0.1
+    snr_threshold_db: float = 1
     trigger_mode: TriggerMode = "harmonic_comb"
     min_frequency: float = 30.0
     max_frequency: float = 2000.0
