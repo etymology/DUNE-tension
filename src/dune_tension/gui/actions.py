@@ -7,13 +7,13 @@ import os
 import re
 from threading import Thread
 from typing import Any
-import pandas as pd
 
 import sounddevice as sd  # type: ignore
 from tkinter import messagebox
 
 from dune_tension.data_cache import (
     clear_wire_range,
+    find_outliers,
     get_dataframe,
     update_dataframe,
 )
@@ -259,42 +259,21 @@ def measure_outliers(ctx: GUIContext) -> None:
         conf = float(ctx.widgets.entry_confidence.get())
     except ValueError:
         conf = 0.7
+    try:
+        times_sigma = float(ctx.widgets.entry_times_sigma.get())
+    except ValueError:
+        times_sigma = 2.0
 
-    df = get_dataframe(cfg.data_path)
-    mask = (
-        (df["apa_name"] == cfg.apa_name)
-        & (df["layer"] == cfg.layer)
-        & (df["side"] == cfg.side)
-        & (df["confidence"].astype(float) >= conf)
+    outliers = set(
+        find_outliers(
+            cfg.data_path,
+            cfg.apa_name,
+            cfg.layer,
+            cfg.side,
+            times_sigma=times_sigma,
+            confidence_threshold=conf,
+        )
     )
-    subset = df[mask].copy()
-    subset["tension"] = pd.to_numeric(subset["tension"], errors="coerce")
-    subset["wire_number"] = pd.to_numeric(subset["wire_number"], errors="coerce")
-    subset = subset.dropna(subset=["tension", "wire_number"])
-    if subset.empty:
-        return []
-
-    # Ensure rolling window follows wire order
-    subset = subset.sort_values("wire_number")
-
-    # 8-wire centered moving average (require full window -> edges will be NaN)
-    rolling_mean = (
-        subset["tension"].rolling(window=8, center=True, min_periods=8).mean()
-    )
-
-    # Residuals from the rolling mean
-    residuals = subset["tension"] - rolling_mean
-
-    # Global std of residuals (ignore edges with NaN rolling mean)
-    resid_std = residuals.std(skipna=True)
-
-    if pd.isna(resid_std) or resid_std == 0:
-        return []
-
-    # Flag outliers where residual magnitude exceeds 2 * global residual std
-    is_outlier = rolling_mean.notna() & (residuals.abs() > resid_std)
-    outliers = subset.loc[is_outlier, "wire_number"].astype(int).tolist()
-    outliers = set(outliers)
     # measure the list of outliers
 
     tensiometer: Tensiometer | None = None

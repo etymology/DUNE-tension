@@ -190,6 +190,12 @@ def _create_widgets(
     btn_measure_condition = tk.Button(measure_frame, text="Measure Condition")
     btn_measure_condition.grid(row=6, column=2)
 
+    tk.Label(measure_frame, text="Outlier σ Multiplier:").grid(
+        row=7, column=0, sticky="e"
+    )
+    entry_times_sigma = tk.Entry(measure_frame)
+    entry_times_sigma.grid(row=7, column=1)
+    entry_times_sigma.insert(0, "2.0")
     btn_remeasure_outliers = tk.Button(measure_frame, text="Remeasure Outliers")
     btn_remeasure_outliers.grid(row=7, column=2)
 
@@ -261,6 +267,7 @@ def _create_widgets(
         plot_audio_var=plot_audio_var,
         entry_clear_range=entry_clear_range,
         entry_condition=entry_condition,
+        entry_times_sigma=entry_times_sigma,
         entry_set_tension=entry_set_tension,
         focus_slider=focus_slider,
         entry_xy=entry_xy,
