@@ -2,7 +2,7 @@
 # geometry constants
 from __future__ import annotations
 
-X_MIN: int = 1070
+X_MIN: int = 1050
 X_MAX: int = 7030
 Y_MIN: int = 325
 Y_MAX: int = 2625
@@ -74,7 +74,7 @@ def refine_position(
     low_candidates: list[tuple[float, float]] = [
         c
         for c in candidates
-        if c[1] < Y_MAX / 2 and score(c) > COMB_SPACING / 2 * 5.75 / 8
+        if c[1] < Y_MAX / 2 and score(c) > 200
     ]
     if low_candidates:
         return max(low_candidates, key=score)
