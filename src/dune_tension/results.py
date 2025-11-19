@@ -10,12 +10,12 @@ class TensionResult:
     apa_name: str
     layer: str
     side: str
-    taped: bool = False
     wire_number: int
     frequency: float
     confidence: float
     x: float
     y: float
+    taped: bool = False
     time: datetime | None = None
 
     zone: int = field(init=False)
