@@ -41,6 +41,8 @@ class GUIWidgets:
     layer_var: tk.StringVar
     side_var: tk.StringVar
     flipped_var: tk.BooleanVar
+    a_taped_var: tk.BooleanVar
+    b_taped_var: tk.BooleanVar
     entry_wire: tk.Entry
     entry_wire_list: tk.Entry
     entry_samples: tk.Entry

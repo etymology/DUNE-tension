@@ -10,6 +10,7 @@ class TensionResult:
     apa_name: str
     layer: str
     side: str
+    taped: bool = False
     wire_number: int
     frequency: float
     confidence: float
@@ -25,7 +26,9 @@ class TensionResult:
     def __post_init__(self) -> None:
         self.zone = zone_lookup(self.x)
         try:
-            self.wire_length = length_lookup(self.layer, self.wire_number, self.zone)
+            self.wire_length = length_lookup(
+                self.layer, self.wire_number, self.zone, taped=self.taped
+            )
             self.tension = wire_equation(self.wire_length, self.frequency)["tension"]
             self.tension_pass = tension_pass(self.tension, self.wire_length)
         except ValueError:
@@ -37,4 +40,3 @@ class TensionResult:
 
 
 EXPECTED_COLUMNS = [f.name for f in fields(TensionResult)]
-

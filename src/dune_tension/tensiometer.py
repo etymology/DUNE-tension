@@ -48,6 +48,8 @@ class Tensiometer:
         layer: str,
         side: str,
         flipped: bool = False,
+        a_taped: bool = False,
+        b_taped: bool = False,
         stop_event: Optional[threading.Event] = None,
         samples_per_wire: int = 1,
         confidence_threshold: float = 2,
@@ -101,6 +103,9 @@ class Tensiometer:
 
         self.strum_func = strum or (lambda: None)
 
+        self.a_taped = bool(a_taped)
+        self.b_taped = bool(b_taped)
+
         # State tracking for winder wiggle thread
         self._wiggle_event: threading.Event | None = None
         self._wiggle_thread: threading.Thread | None = None
@@ -121,6 +126,14 @@ class Tensiometer:
         self.record_audio_func = lambda duration, sample_rate: record_audio_filtered(
             duration, sample_rate=sample_rate, normalize=True
         )
+
+    def _is_current_side_taped(self) -> bool:
+        side = self.config.side.upper()
+        if side == "A":
+            return self.a_taped
+        if side == "B":
+            return self.b_taped
+        return False
 
     def start_wiggle(self) -> None:
         """Begin wiggling the winder in a background thread."""
@@ -282,7 +295,9 @@ class Tensiometer:
             self.strum_func()
             # record audio with harmonic comb
 
-            audio_sample = acquire_audio(cfg=audio_acquisition_config, noise_rms=0.05,timeout=3)
+            audio_sample = acquire_audio(
+                cfg=audio_acquisition_config, noise_rms=0.05, timeout=3
+            )
 
             if audio_sample is not None:
                 # estimate pitch from audio sample
@@ -295,14 +310,15 @@ class Tensiometer:
                     f"sample of wire {wire_number}: Measured frequency {frequency:.2f} Hz with confidence {confidence:.2f}"
                 )
                 wire_result = TensionResult(
-                    self.config.apa_name,
-                    self.config.layer,
-                    self.config.side,
-                    wire_number,
-                    frequency,
-                    confidence,
-                    x,
-                    y,
+                    apa_name=self.config.apa_name,
+                    layer=self.config.layer,
+                    side=self.config.side,
+                    taped=self._is_current_side_taped(),
+                    wire_number=wire_number,
+                    frequency=frequency,
+                    confidence=confidence,
+                    x=x,
+                    y=y,
                     time=datetime.now(),
                 )
 
@@ -316,14 +332,15 @@ class Tensiometer:
                     # if the tension is plausible at double the frequency use that
                     alt_frequency = frequency * 2
                     doubled_wire_result = TensionResult(
-                        self.config.apa_name,
-                        self.config.layer,
-                        self.config.side,
-                        wire_number,
-                        alt_frequency,
-                        confidence,
-                        x,
-                        y,
+                        apa_name=self.config.apa_name,
+                        layer=self.config.layer,
+                        side=self.config.side,
+                        taped=self._is_current_side_taped(),
+                        wire_number=wire_number,
+                        frequency=alt_frequency,
+                        confidence=confidence,
+                        x=x,
+                        y=y,
                         time=datetime.now(),
                     )
                     if tension_plausible(doubled_wire_result.tension):
@@ -334,7 +351,7 @@ class Tensiometer:
                     else:
                         print("wiggling due to low confidence or implausible tension.")
                         self.wiggle_func(0, choice([-0.1, 0.1]))
-                        self.focus_wiggle_func(choice([-100,100]))
+                        self.focus_wiggle_func(choice([-100, 100]))
                 if len(passing_wires) >= self.config.samples_per_wire:
                     break
             else:
@@ -368,6 +385,7 @@ class Tensiometer:
             apa_name=self.config.apa_name,
             layer=self.config.layer,
             side=self.config.side,
+            taped=self._is_current_side_taped(),
             wire_number=wire_number,
             frequency=frequency,
             confidence=confidence,
@@ -380,7 +398,12 @@ class Tensiometer:
         self, wire_number: int, wire_x: float, wire_y: float
     ) -> Optional[TensionResult]:
         reset_plc()
-        length = length_lookup(self.config.layer, wire_number, zone_lookup(wire_x))
+        length = length_lookup(
+            self.config.layer,
+            wire_number,
+            zone_lookup(wire_x),
+            taped=self._is_current_side_taped(),
+        )
         assert length != np.float64("nan"), "Length lookup returned NaN"
         start_time = time.time()
 
@@ -396,6 +419,7 @@ class Tensiometer:
                 apa_name=self.config.apa_name,
                 layer=self.config.layer,
                 side=self.config.side,
+                taped=self._is_current_side_taped(),
                 wire_number=wire_number,
                 frequency=0.0,
                 confidence=0.0,

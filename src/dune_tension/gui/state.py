@@ -16,6 +16,8 @@ class _PersistedState:
     layer: str
     side: str
     flipped: bool
+    a_taped: bool
+    b_taped: bool
     wire_number: str
     wire_list: str
     samples_per_wire: int
@@ -46,6 +48,8 @@ def save_state(ctx: GUIContext) -> None:
         layer=w.layer_var.get(),
         side=w.side_var.get(),
         flipped=bool(w.flipped_var.get()),
+        a_taped=bool(w.a_taped_var.get()),
+        b_taped=bool(w.b_taped_var.get()),
         wire_number=w.entry_wire.get(),
         wire_list=w.entry_wire_list.get(),
         samples_per_wire=samples,
@@ -84,6 +88,8 @@ def load_state(ctx: GUIContext) -> None:
     w.layer_var.set(data.get("layer", "X"))
     w.side_var.set(data.get("side", "A"))
     w.flipped_var.set(bool(data.get("flipped", False)))
+    w.a_taped_var.set(bool(data.get("a_taped", False)))
+    w.b_taped_var.set(bool(data.get("b_taped", False)))
     _set_entry(w.entry_wire, data.get("wire_number", ""))
     _set_entry(w.entry_wire_list, data.get("wire_list", ""))
     _set_entry(w.entry_samples, data.get("samples_per_wire", 3))

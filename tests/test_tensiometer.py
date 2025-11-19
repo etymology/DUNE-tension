@@ -84,7 +84,7 @@ sys.modules["pandas"] = pandas_stub
 # geometry
 geo_stub = types.ModuleType("geometry")
 geo_stub.zone_lookup = lambda x: 1
-geo_stub.length_lookup = lambda layer, wire, zone: 1.0
+geo_stub.length_lookup = lambda layer, wire, zone, taped=False: 1.0
 geo_stub.refine_position = lambda layer, side, zone, wire: (0.0, 0.0)
 sys.modules["geometry"] = geo_stub
 
@@ -166,7 +166,7 @@ tf_stub.get_xy_from_file = lambda cfg, num: (0.0, 0.0)
 tf_stub.check_stop_event = lambda evt, msg="": False
 sys.modules["tensiometer_functions"] = tf_stub
 
-from dune_tension.tensiometer import Tensiometer, TensionResult
+from dune_tension.tensiometer import Tensiometer, TensionResult  # noqa: E402
 
 
 def test_generate_result_single_sample():
