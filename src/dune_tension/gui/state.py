@@ -25,6 +25,7 @@ class _PersistedState:
     plot_audio: bool
     focus_target: int
     condition: str
+    times_sigma: float
     set_tension: str
     record_duration: str
     measuring_duration: str
@@ -42,6 +43,10 @@ def save_state(ctx: GUIContext) -> None:
         conf = float(w.entry_confidence.get())
     except ValueError:
         conf = 0.7
+    try:
+        times_sigma = float(w.entry_times_sigma.get())
+    except ValueError:
+        times_sigma = 2.0
 
     state = _PersistedState(
         apa_name=w.entry_apa.get(),
@@ -57,6 +62,7 @@ def save_state(ctx: GUIContext) -> None:
         plot_audio=bool(w.plot_audio_var.get()),
         focus_target=int(w.focus_slider.get()),
         condition=w.entry_condition.get(),
+        times_sigma=times_sigma,
         set_tension=w.entry_set_tension.get(),
         record_duration=w.entry_record_duration.get(),
         measuring_duration=w.entry_measuring_duration.get(),
@@ -97,6 +103,7 @@ def load_state(ctx: GUIContext) -> None:
     w.plot_audio_var.set(bool(data.get("plot_audio", False)))
     w.focus_slider.set(int(data.get("focus_target", 4000)))
     _set_entry(w.entry_condition, data.get("condition", ""))
+    _set_entry(w.entry_times_sigma, data.get("times_sigma", 2.0))
     _set_entry(w.entry_set_tension, data.get("set_tension", ""))
     _set_entry(w.entry_record_duration, data.get("record_duration", 0.5))
     _set_entry(w.entry_measuring_duration, data.get("measuring_duration", 10.0))

@@ -52,6 +52,7 @@ class GUIWidgets:
     plot_audio_var: tk.BooleanVar
     entry_clear_range: tk.Entry
     entry_condition: tk.Entry
+    entry_times_sigma: tk.Entry
     entry_set_tension: tk.Entry
     focus_slider: tk.Scale
     entry_xy: tk.Entry
