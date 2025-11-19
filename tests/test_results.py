@@ -24,11 +24,11 @@ sys.modules["geometry"] = geo_stub
 
 # tension_calculation stub
 tc_stub = types.ModuleType("tension_calculation")
-tc_stub.tension_lookup = lambda l, f: 0.0
-tc_stub.tension_pass = lambda t, l: True
+tc_stub.tension_lookup = lambda length, frequency: 0.0
+tc_stub.tension_pass = lambda tension, length: True
 sys.modules["tension_calculation"] = tc_stub
 
-from dune_tension.results import TensionResult
+from dune_tension.results import TensionResult  # noqa: E402
 
 
 def test_value_error_defaults():

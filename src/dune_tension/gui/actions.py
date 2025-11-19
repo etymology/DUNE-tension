@@ -55,6 +55,8 @@ def create_tensiometer(ctx: GUIContext) -> Tensiometer:
         layer=w.layer_var.get(),
         side=w.side_var.get(),
         flipped=w.flipped_var.get(),
+        a_taped=w.a_taped_var.get(),
+        b_taped=w.b_taped_var.get(),
         spoof=spoof_audio,
         spoof_movement=bool(os.environ.get("SPOOF_PLC")),
         stop_event=ctx.stop_event,

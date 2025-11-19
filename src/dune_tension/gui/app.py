@@ -123,6 +123,15 @@ def _create_widgets(
         row=3, column=1, sticky="w"
     )
 
+    a_taped_var = tk.BooleanVar(value=False)
+    tk.Checkbutton(apa_frame, text="A taped", variable=a_taped_var).grid(
+        row=4, column=0, sticky="w"
+    )
+    b_taped_var = tk.BooleanVar(value=False)
+    tk.Checkbutton(apa_frame, text="B taped", variable=b_taped_var).grid(
+        row=4, column=1, sticky="w"
+    )
+
     tk.Label(measure_frame, text="Samples per Wire (≥1):").grid(
         row=0, column=0, sticky="e"
     )
@@ -241,6 +250,8 @@ def _create_widgets(
         layer_var=layer_var,
         side_var=side_var,
         flipped_var=flipped_var,
+        a_taped_var=a_taped_var,
+        b_taped_var=b_taped_var,
         entry_wire=entry_wire,
         entry_wire_list=entry_wire_list,
         entry_samples=entry_samples,
