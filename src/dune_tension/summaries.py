@@ -6,8 +6,8 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 
-from dune_tension.data_cache import get_results_dataframe
-from dune_tension.tensiometer_functions import TensiometerConfig
+from data_cache import get_results_dataframe
+from tensiometer_functions import TensiometerConfig
 
 
 def get_expected_range(layer: str) -> range:
