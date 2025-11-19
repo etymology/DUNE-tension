@@ -333,8 +333,8 @@ class Tensiometer:
                         # passing_wires.append(doubled_wire_result)
                     else:
                         print("wiggling due to low confidence or implausible tension.")
-                        self.wiggle_func(0, choice([-0.1, 0.1]))
-                        self.focus_wiggle_func(choice([-100,100]))
+                        self.wiggle_func(0, gauss(0, 1))
+                        # self.focus_wiggle_func(choice([-100,100]))
                 if len(passing_wires) >= self.config.samples_per_wire:
                     break
             else:

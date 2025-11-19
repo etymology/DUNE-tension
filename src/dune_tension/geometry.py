@@ -2,10 +2,10 @@
 # geometry constants
 from __future__ import annotations
 
-X_MIN: int = 1058
-X_MAX: int = 7011
-Y_MIN: int = 181
-Y_MAX: int = 2460
+X_MIN: int = 1070
+X_MAX: int = 7030
+Y_MIN: int = 325
+Y_MAX: int = 2625
 
 
 G_LENGTH: float = 1.285
