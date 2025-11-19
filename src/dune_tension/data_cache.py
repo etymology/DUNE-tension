@@ -99,7 +99,7 @@ def find_outliers(
     apa_name: str,
     layer: str,
     side: str,
-    times_sigma: float = 2,
+    times_sigma: float = 2.5,
     confidence_threshold: float = 0.0,
 ) -> list[int]:
     """Find wires whose tension deviates from the 8-wire centered moving average
