@@ -74,10 +74,12 @@ def refine_position(
     low_candidates: list[tuple[float, float]] = [
         c
         for c in candidates
-        if c[1] < Y_MAX / 2 and score(c) > COMB_SPACING / 2 * 5.75 / 8
+        if score(c) > 200
     ]
     if low_candidates:
-        return max(low_candidates, key=score)
+        #choose the low candidate with the lowest y value
+        return min(low_candidates, key=lambda c: c[1])
+    
     return max(candidates, key=score)
 
 

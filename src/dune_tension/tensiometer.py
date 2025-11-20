@@ -286,6 +286,14 @@ class Tensiometer:
             snr_threshold_db=self.snr,
             trigger_mode="snr",
         )
+        def wiggle() -> None:
+            x_wiggle = gauss(0, 10)
+            y_perturb = gauss(0,1)
+            if self.config.dx != 0:
+                self.wiggle_func(x_wiggle, x_wiggle /self.config.dx * -self.config.dy+y_perturb)
+            else:
+                self.wiggle_func(x_wiggle, 0)
+
         while (time.time() - start_time) < measuring_timeout:
             if check_stop_event(self.stop_event, "tension measurement interrupted!"):
                 return None, wire_y
@@ -296,7 +304,7 @@ class Tensiometer:
             # record audio with harmonic comb
 
             audio_sample = acquire_audio(
-                cfg=audio_acquisition_config, noise_rms=0.05, timeout=3
+                cfg=audio_acquisition_config, noise_rms=0.05, timeout=0.1
             )
 
             if audio_sample is not None:
@@ -329,14 +337,34 @@ class Tensiometer:
                 ):
                     passing_wires.append(wire_result)
                 else:
-                    print("wiggling due to low confidence or implausible tension.")
-                    self.wiggle_func(0, gauss(0, 1))
-                    # self.focus_wiggle_func(choice([-100,100]))
+                    half_frequency_wire_result = TensionResult(
+                        apa_name=self.config.apa_name,
+                        layer=self.config.layer,
+                        side=self.config.side,
+                        taped=self._is_current_side_taped(),
+                        wire_number=wire_number,
+                        frequency=frequency / 2,
+                        confidence=confidence,
+                        x=x,
+                        y=y,
+                        time=datetime.now(),
+                    )
+                    if half_frequency_wire_result.confidence >= self.config.confidence_threshold and tension_plausible(
+                        half_frequency_wire_result.tension
+                    ):
+                        print(
+                            f"sample of wire {wire_number}: Accepting half-frequency {half_frequency_wire_result.frequency:.2f} Hz with confidence {half_frequency_wire_result.confidence:.2f}"
+                        )
+                        passing_wires.append(half_frequency_wire_result)
+                    else:
+                        print("wiggling due to low confidence or implausible tension.")
+                        wiggle()
                 if len(passing_wires) >= self.config.samples_per_wire:
                     break
+
             else:
                 print(f"sample of wire {wire_number}: No audio detected.")
-
+                wiggle()
         return passing_wires
 
     def _merge_results(

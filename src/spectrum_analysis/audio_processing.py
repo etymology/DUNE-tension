@@ -391,7 +391,10 @@ def _acquire_audio_snr(cfg: "PitchCompareConfig", noise_rms: float, timeout: flo
     start_time = time.time()
     timeout += start_time
     try:
-        while collected_samples < max_samples and time.time() < timeout:
+        while collected_samples < max_samples:
+            if time.time() >= timeout and not recording_started:
+                print("[INFO] Timeout reached while waiting for audio event.")
+                break
             chunk = source.read()
             if chunk.size == 0:
                 continue
