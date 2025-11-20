@@ -126,7 +126,7 @@ def find_outliers(
 
     # 8-wire centered moving average (require full window -> edges will be NaN)
     rolling_mean = (
-        subset["tension"].rolling(window=8, center=True, min_periods=8).mean()
+        subset["tension"].rolling(window=15, center=True, min_periods=15).mean()
     )
 
     # Residuals from the rolling mean

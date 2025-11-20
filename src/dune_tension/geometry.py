@@ -74,7 +74,7 @@ def refine_position(
     low_candidates: list[tuple[float, float]] = [
         c
         for c in candidates
-        if score(c) > 200
+        if score(c) > 400
     ]
     if low_candidates:
         #choose the low candidate with the lowest y value

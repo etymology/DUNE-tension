@@ -287,8 +287,8 @@ class Tensiometer:
             trigger_mode="snr",
         )
         def wiggle() -> None:
-            x_wiggle = gauss(0, 10)
-            y_perturb = gauss(0,1)
+            x_wiggle = gauss(0, 20)
+            y_perturb = gauss(0,2)
             if self.config.dx != 0:
                 self.wiggle_func(x_wiggle, x_wiggle /self.config.dx * -self.config.dy+y_perturb)
             else:
@@ -355,7 +355,7 @@ class Tensiometer:
                         print(
                             f"sample of wire {wire_number}: Accepting half-frequency {half_frequency_wire_result.frequency:.2f} Hz with confidence {half_frequency_wire_result.confidence:.2f}"
                         )
-                        passing_wires.append(half_frequency_wire_result)
+                        # passing_wires.append(half_frequency_wire_result)
                     else:
                         print("wiggling due to low confidence or implausible tension.")
                         wiggle()
