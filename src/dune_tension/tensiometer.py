@@ -287,12 +287,13 @@ class Tensiometer:
             trigger_mode="snr",
         )
         def wiggle() -> None:
-            x_wiggle = gauss(0, 20)
-            y_perturb = gauss(0,2)
+            x_wiggle_target = gauss(wire_x,length*1000/20)
+
+            y_target = gauss(wire_y,self.config.dy/5)-(x_wiggle_target-wire_x)/self.config.dx*self.config.dy
             if self.config.dx != 0:
-                self.wiggle_func(x_wiggle, x_wiggle /self.config.dx * -self.config.dy+y_perturb)
+                self.goto_xy_func(x_wiggle_target, y_target)
             else:
-                self.wiggle_func(x_wiggle, 0)
+                self.wiggle_func(x_wiggle_target, 0)
 
         while (time.time() - start_time) < measuring_timeout:
             if check_stop_event(self.stop_event, "tension measurement interrupted!"):
@@ -304,7 +305,7 @@ class Tensiometer:
             # record audio with harmonic comb
 
             audio_sample = acquire_audio(
-                cfg=audio_acquisition_config, noise_rms=0.05, timeout=0.1
+                cfg=audio_acquisition_config, noise_rms=0.03, timeout=0.1
             )
 
             if audio_sample is not None:
@@ -315,7 +316,7 @@ class Tensiometer:
                     expected_frequency,
                 )
                 print(
-                    f"sample of wire {wire_number}: Measured frequency {frequency:.2f} Hz with confidence {confidence:.2f}"
+                    f"sample of wire {wire_number}: Measured frequency {frequency:.2f} Hz {wire_equation(length=length,frequency=frequency)} with confidence {confidence:.2f}"
                 )
                 wire_result = TensionResult(
                     apa_name=self.config.apa_name,
@@ -337,28 +338,30 @@ class Tensiometer:
                 ):
                     passing_wires.append(wire_result)
                 else:
-                    half_frequency_wire_result = TensionResult(
-                        apa_name=self.config.apa_name,
-                        layer=self.config.layer,
-                        side=self.config.side,
-                        taped=self._is_current_side_taped(),
-                        wire_number=wire_number,
-                        frequency=frequency / 2,
-                        confidence=confidence,
-                        x=x,
-                        y=y,
-                        time=datetime.now(),
-                    )
-                    if half_frequency_wire_result.confidence >= self.config.confidence_threshold and tension_plausible(
-                        half_frequency_wire_result.tension
-                    ):
-                        print(
-                            f"sample of wire {wire_number}: Accepting half-frequency {half_frequency_wire_result.frequency:.2f} Hz with confidence {half_frequency_wire_result.confidence:.2f}"
-                        )
-                        # passing_wires.append(half_frequency_wire_result)
-                    else:
-                        print("wiggling due to low confidence or implausible tension.")
-                        wiggle()
+                    # half_frequency_wire_result = TensionResult(
+                    #     apa_name=self.config.apa_name,
+                    #     layer=self.config.layer,
+                    #     side=self.config.side,
+                    #     taped=self._is_current_side_taped(),
+                    #     wire_number=wire_number,
+                    #     frequency=frequency / 2,
+                    #     confidence=confidence,
+                    #     x=x,
+                    #     y=y,
+                    #     time=datetime.now(),
+                    # )
+                    # if half_frequency_wire_result.confidence >= self.config.confidence_threshold and tension_plausible(
+                    #     half_frequency_wire_result.tension
+                    # ):
+                    #     print(
+                    #         f"sample of wire {wire_number}: Accepting half-frequency {half_frequency_wire_result.frequency:.2f} Hz with confidence {half_frequency_wire_result.confidence:.2f}"
+                    #     )
+                    #     wiggle()
+
+                    #     # passing_wires.append(half_frequency_wire_result)
+                    # else:
+                    print("wiggling due to low confidence or implausible tension.")
+                    wiggle()
                 if len(passing_wires) >= self.config.samples_per_wire:
                     break
 
@@ -413,7 +416,6 @@ class Tensiometer:
             taped=self._is_current_side_taped(),
         )
         assert length != np.float64("nan"), "Length lookup returned NaN"
-        start_time = time.time()
 
         if check_stop_event(self.stop_event):
             return
@@ -435,7 +437,7 @@ class Tensiometer:
                 y=wire_y,
                 time=datetime.now(),
             )
-
+        start_time = time.time()
         try:
             wires_results = self._collect_samples(
                 wire_number=wire_number,
