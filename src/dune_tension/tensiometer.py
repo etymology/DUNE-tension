@@ -287,13 +287,16 @@ class Tensiometer:
             trigger_mode="snr",
         )
         def wiggle() -> None:
-            x_wiggle_target = gauss(wire_x,length*1000/20)
+            if choice([True, False]):
+                x_wiggle_target = gauss(wire_x, min(length * 1000 / 20, 3*self.config.dx))
 
-            y_target = gauss(wire_y,self.config.dy/5)-(x_wiggle_target-wire_x)/self.config.dx*self.config.dy
-            if self.config.dx != 0:
-                self.goto_xy_func(x_wiggle_target, y_target)
+                y_target = gauss(wire_y,1)-(x_wiggle_target-wire_x)/self.config.dx*self.config.dy
+                if self.config.dx != 0:
+                    self.goto_xy_func(x_wiggle_target, y_target)
+                else:
+                    self.wiggle_func(x_wiggle_target, 0)
             else:
-                self.wiggle_func(x_wiggle_target, 0)
+                self.focus_wiggle_func(gauss(0,50))
 
         while (time.time() - start_time) < measuring_timeout:
             if check_stop_event(self.stop_event, "tension measurement interrupted!"):

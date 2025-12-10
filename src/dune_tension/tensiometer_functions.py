@@ -60,7 +60,7 @@ def make_config(
         wire_min, wire_max = 1, 481 if layer == "G" else 480
     else:
         dx, dy = 8.0, 5.75
-        wire_min, wire_max = 8, 1146
+        wire_min, wire_max = 8, 1145
         if (layer == "U" and side == "A") or (layer == "V" and side == "B"):
             dy = -dy
     if flipped:
