@@ -287,16 +287,17 @@ class Tensiometer:
             trigger_mode="snr",
         )
         def wiggle() -> None:
-            if choice([True, False]):
-                x_wiggle_target = gauss(wire_x, min(length * 1000 / 20, 3*self.config.dx))
-
-                y_target = gauss(wire_y,1)-(x_wiggle_target-wire_x)/self.config.dx*self.config.dy
+            if choice([True, True, False]):
+                x_wiggle_target = gauss(wire_x, min(length * 1000 / 20,8))
                 if self.config.dx != 0:
-                    self.goto_xy_func(x_wiggle_target, y_target)
+                    y_target = gauss(wire_y, 1)-(x_wiggle_target-wire_x)/self.config.dx*self.config.dy
                 else:
-                    self.wiggle_func(x_wiggle_target, 0)
+                    y_target = gauss(wire_y, self.config.dy/4)   
+                print("wiggling to", x_wiggle_target, y_target)
+                self.goto_xy_func(x_wiggle_target, y_target)
             else:
-                self.focus_wiggle_func(gauss(0,50))
+                print("wiggling focus")
+                self.focus_wiggle_func(gauss(0, 20))
 
         while (time.time() - start_time) < measuring_timeout:
             if check_stop_event(self.stop_event, "tension measurement interrupted!"):
@@ -308,7 +309,7 @@ class Tensiometer:
             # record audio with harmonic comb
 
             audio_sample = acquire_audio(
-                cfg=audio_acquisition_config, noise_rms=0.03, timeout=0.1
+                cfg=audio_acquisition_config, noise_rms=get_noise_threshold()/3, timeout=0.1
             )
 
             if audio_sample is not None:
@@ -363,7 +364,6 @@ class Tensiometer:
 
                     #     # passing_wires.append(half_frequency_wire_result)
                     # else:
-                    print("wiggling due to low confidence or implausible tension.")
                     wiggle()
                 if len(passing_wires) >= self.config.samples_per_wire:
                     break

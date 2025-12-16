@@ -315,8 +315,8 @@ class ServoController:
         self.focus_position = target
 
         self.servo.setTarget(1, target)
-        while self.servo.isMoving(1):
-            time.sleep(0.01)
+        # while self.servo.isMoving(1):
+        #     time.sleep(0.01)
 
     def wiggle_focus(self, sigma: float = 20.0) -> None:
         """Randomly adjust the focus servo around the current position."""
