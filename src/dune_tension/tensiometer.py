@@ -287,17 +287,17 @@ class Tensiometer:
             trigger_mode="snr",
         )
         def wiggle() -> None:
-            if choice([True, True, False]):
-                x_wiggle_target = gauss(wire_x, min(length * 1000 / 20,8))
+            if choice([True, False]):
+                x_wiggle_target = gauss(wire_x, min(length * 1000 / 20,10))
                 if self.config.dx != 0:
                     y_target = gauss(wire_y, 1)-(x_wiggle_target-wire_x)/self.config.dx*self.config.dy
                 else:
-                    y_target = gauss(wire_y, self.config.dy/4)   
+                    y_target = gauss(wire_y, 1)   
                 print("wiggling to", x_wiggle_target, y_target)
                 self.goto_xy_func(x_wiggle_target, y_target)
             else:
                 print("wiggling focus")
-                self.focus_wiggle_func(gauss(0, 20))
+                self.focus_wiggle_func(gauss(0, 10))
 
         while (time.time() - start_time) < measuring_timeout:
             if check_stop_event(self.stop_event, "tension measurement interrupted!"):
@@ -342,27 +342,25 @@ class Tensiometer:
                 ):
                     passing_wires.append(wire_result)
                 else:
-                    # half_frequency_wire_result = TensionResult(
+                    # double_frequency_wire_result = TensionResult(
                     #     apa_name=self.config.apa_name,
                     #     layer=self.config.layer,
                     #     side=self.config.side,
                     #     taped=self._is_current_side_taped(),
                     #     wire_number=wire_number,
-                    #     frequency=frequency / 2,
+                    #     frequency=frequency * 2,
                     #     confidence=confidence,
                     #     x=x,
                     #     y=y,
                     #     time=datetime.now(),
                     # )
-                    # if half_frequency_wire_result.confidence >= self.config.confidence_threshold and tension_plausible(
-                    #     half_frequency_wire_result.tension
+                    # if double_frequency_wire_result.confidence >= self.config.confidence_threshold and tension_plausible(
+                    #     double_frequency_wire_result.tension
                     # ):
                     #     print(
-                    #         f"sample of wire {wire_number}: Accepting half-frequency {half_frequency_wire_result.frequency:.2f} Hz with confidence {half_frequency_wire_result.confidence:.2f}"
+                    #         f"sample of wire {wire_number}: Accepting double-frequency {double_frequency_wire_result.frequency:.2f} Hz with confidence {double_frequency_wire_result.confidence:.2f}"
                     #     )
-                    #     wiggle()
-
-                    #     # passing_wires.append(half_frequency_wire_result)
+                    #     passing_wires.append(double_frequency_wire_result)
                     # else:
                     wiggle()
                 if len(passing_wires) >= self.config.samples_per_wire:
