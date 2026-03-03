@@ -1,0 +1,5 @@
+USAPA10TEST - Layer X, Side A:
+  All wires measured
+USAPA10TEST - Layer X, Side B:
+  All wires measured
+

@@ -1,0 +1,5 @@
+USAPA10 - Layer G, Side A:
+  Missing wire_numbers: 189
+USAPA10 - Layer G, Side B:
+  All wires measured
+

@@ -84,7 +84,7 @@ sys.modules["pandas"] = pandas_stub
 # geometry
 geo_stub = types.ModuleType("geometry")
 geo_stub.zone_lookup = lambda x: 1
-geo_stub.length_lookup = lambda layer, wire, zone: 1.0
+geo_stub.length_lookup = lambda layer, wire, zone, taped=False: 1.0
 geo_stub.refine_position = lambda layer, side, zone, wire: (0.0, 0.0)
 sys.modules["geometry"] = geo_stub
 
@@ -166,7 +166,7 @@ tf_stub.get_xy_from_file = lambda cfg, num: (0.0, 0.0)
 tf_stub.check_stop_event = lambda evt, msg="": False
 sys.modules["tensiometer_functions"] = tf_stub
 
-from dune_tension.tensiometer import Tensiometer, TensionResult
+from dune_tension.tensiometer import Tensiometer, TensionResult  # noqa: E402
 
 
 def test_generate_result_single_sample():
@@ -182,7 +182,7 @@ def test_generate_result_single_sample():
         y=2.0,
         wires=[2.0],
     )
-    result = t._generate_result([sample], wire_number=1, wire_x=1.5, wire_y=2.5)
+    result = t._merge_results([sample], wire_number=1, wire_x=1.5, wire_y=2.5)
     assert result.tension == 0.5
     assert result.frequency == 5.0
     assert result.tension_pass
@@ -231,7 +231,7 @@ def test_generate_result_multi_sample():
             wires=[1.8],
         ),
     ]
-    result = t._generate_result(wires, wire_number=1, wire_x=2.0, wire_y=3.0)
+    result = t._merge_results(wires, wire_number=1, wire_x=2.0, wire_y=3.0)
     assert result.frequency == 3.0  # max frequency via stub
     assert result.tension == pytest.approx(0.3)  # frequency * 0.1 via stub
     assert result.tension_pass

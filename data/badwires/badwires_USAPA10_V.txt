@@ -1,0 +1,5 @@
+USAPA10 - Layer V, Side A:
+  Missing wire_numbers: 1145, 1146
+USAPA10 - Layer V, Side B:
+  All wires measured
+

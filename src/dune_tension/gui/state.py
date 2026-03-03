@@ -16,16 +16,16 @@ class _PersistedState:
     layer: str
     side: str
     flipped: bool
+    a_taped: bool
+    b_taped: bool
     wire_number: str
     wire_list: str
     samples_per_wire: int
     confidence_threshold: float
-    servo_speed: int
-    servo_accel: int
-    servo_dwell: int
     plot_audio: bool
     focus_target: int
     condition: str
+    times_sigma: float
     set_tension: str
     record_duration: str
     measuring_duration: str
@@ -43,22 +43,26 @@ def save_state(ctx: GUIContext) -> None:
         conf = float(w.entry_confidence.get())
     except ValueError:
         conf = 0.7
+    try:
+        times_sigma = float(w.entry_times_sigma.get())
+    except ValueError:
+        times_sigma = 2.0
 
     state = _PersistedState(
         apa_name=w.entry_apa.get(),
         layer=w.layer_var.get(),
         side=w.side_var.get(),
         flipped=bool(w.flipped_var.get()),
+        a_taped=bool(w.a_taped_var.get()),
+        b_taped=bool(w.b_taped_var.get()),
         wire_number=w.entry_wire.get(),
         wire_list=w.entry_wire_list.get(),
         samples_per_wire=samples,
         confidence_threshold=conf,
-        servo_speed=int(w.speed_slider.get()),
-        servo_accel=int(w.accel_slider.get()),
-        servo_dwell=int(w.dwell_slider.get()),
         plot_audio=bool(w.plot_audio_var.get()),
         focus_target=int(w.focus_slider.get()),
         condition=w.entry_condition.get(),
+        times_sigma=times_sigma,
         set_tension=w.entry_set_tension.get(),
         record_duration=w.entry_record_duration.get(),
         measuring_duration=w.entry_measuring_duration.get(),
@@ -90,16 +94,16 @@ def load_state(ctx: GUIContext) -> None:
     w.layer_var.set(data.get("layer", "X"))
     w.side_var.set(data.get("side", "A"))
     w.flipped_var.set(bool(data.get("flipped", False)))
+    w.a_taped_var.set(bool(data.get("a_taped", False)))
+    w.b_taped_var.set(bool(data.get("b_taped", False)))
     _set_entry(w.entry_wire, data.get("wire_number", ""))
     _set_entry(w.entry_wire_list, data.get("wire_list", ""))
     _set_entry(w.entry_samples, data.get("samples_per_wire", 3))
     _set_entry(w.entry_confidence, data.get("confidence_threshold", 0.7))
-    w.speed_slider.set(int(data.get("servo_speed", 1)))
-    w.accel_slider.set(int(data.get("servo_accel", 1)))
-    w.dwell_slider.set(int(data.get("servo_dwell", 100)))
     w.plot_audio_var.set(bool(data.get("plot_audio", False)))
     w.focus_slider.set(int(data.get("focus_target", 4000)))
     _set_entry(w.entry_condition, data.get("condition", ""))
+    _set_entry(w.entry_times_sigma, data.get("times_sigma", 2.0))
     _set_entry(w.entry_set_tension, data.get("set_tension", ""))
     _set_entry(w.entry_record_duration, data.get("record_duration", 0.5))
     _set_entry(w.entry_measuring_duration, data.get("measuring_duration", 10.0))

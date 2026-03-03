@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from dune_tension.results import EXPECTED_COLUMNS, RAW_SAMPLE_COLUMNS
+from dune_tension.results import EXPECTED_COLUMNS
 
 # Global cache
 _dataframe_cache: dict[str, pd.DataFrame] = {}
@@ -16,12 +16,6 @@ _dataframe_cache: dict[str, pd.DataFrame] = {}
 def _ensure_data_table(conn: sqlite3.Connection) -> None:
     columns_sql = ", ".join(f"{col} TEXT" for col in EXPECTED_COLUMNS)
     conn.execute(f"CREATE TABLE IF NOT EXISTS tension_data ({columns_sql})")
-    conn.commit()
-
-
-def _ensure_samples_table(conn: sqlite3.Connection) -> None:
-    columns_sql = ", ".join(f"{col} TEXT" for col in RAW_SAMPLE_COLUMNS)
-    conn.execute(f"CREATE TABLE IF NOT EXISTS tension_samples ({columns_sql})")
     conn.commit()
 
 
@@ -46,26 +40,26 @@ def update_dataframe(file_path: str, df: pd.DataFrame) -> None:
         df.to_sql("tension_data", conn, if_exists="replace", index=False)
 
 
-def get_samples_dataframe(file_path: str) -> pd.DataFrame:
+def get_results_dataframe(file_path: str) -> pd.DataFrame:
     """Return DataFrame of raw samples."""
     key = f"samples:{file_path}"
     if key not in _dataframe_cache:
         if Path(file_path).exists():
             with sqlite3.connect(file_path) as conn:
-                _ensure_samples_table(conn)
-                df = pd.read_sql_query("SELECT * FROM tension_samples", conn)
+                _ensure_data_table(conn)
+                df = pd.read_sql_query("SELECT * FROM tension_data", conn)
         else:
-            df = pd.DataFrame(columns=RAW_SAMPLE_COLUMNS)
+            df = pd.DataFrame(columns=EXPECTED_COLUMNS)
         _dataframe_cache[key] = df
     return _dataframe_cache[key]
 
 
-def update_samples_dataframe(file_path: str, df: pd.DataFrame) -> None:
+def update_results_dataframe(file_path: str, df: pd.DataFrame) -> None:
     """Write raw sample DataFrame to disk and update cache."""
     key = f"samples:{file_path}"
     _dataframe_cache[key] = df.copy()
     with sqlite3.connect(file_path) as conn:
-        _ensure_samples_table(conn)
+        _ensure_data_table(conn)
         df.to_sql("tension_samples", conn, if_exists="replace", index=False)
 
 
@@ -90,25 +84,25 @@ def clear_wire_range(
     update_dataframe(file_path, df[mask].reset_index(drop=True))
 
     # Clear raw sample data
-    samples_df = get_samples_dataframe(file_path)
+    samples_df = get_results_dataframe(file_path)
     mask_s = ~(
         (samples_df["apa_name"] == apa_name)
         & (samples_df["layer"] == layer)
         & (samples_df["side"] == side)
         & (samples_df["wire_number"].astype(int).between(start, end))
     )
-    update_samples_dataframe(file_path, samples_df[mask_s].reset_index(drop=True))
+    update_results_dataframe(file_path, samples_df[mask_s].reset_index(drop=True))
 
 
-def clear_outliers(
+def find_outliers(
     file_path: str,
     apa_name: str,
     layer: str,
     side: str,
-    sigma: float = 3.0,
+    times_sigma: float = 2.5,
     confidence_threshold: float = 0.0,
 ) -> list[int]:
-    """Remove wires whose tension deviates from the 8-wire centered moving average
+    """Find wires whose tension deviates from the 8-wire centered moving average
     by more than `sigma` times the *global std of residuals* (tension - rolling mean).
 
     Returns the list of wire numbers removed.
@@ -132,7 +126,7 @@ def clear_outliers(
 
     # 8-wire centered moving average (require full window -> edges will be NaN)
     rolling_mean = (
-        subset["tension"].rolling(window=8, center=True, min_periods=8).mean()
+        subset["tension"].rolling(window=20, center=True, min_periods=20).mean()
     )
 
     # Residuals from the rolling mean
@@ -145,10 +139,7 @@ def clear_outliers(
         return []
 
     # Flag outliers where residual magnitude exceeds sigma * global residual std
-    is_outlier = rolling_mean.notna() & (residuals.abs() > sigma * resid_std)
+    is_outlier = rolling_mean.notna() & (residuals.abs() > times_sigma * resid_std)
     outliers = subset.loc[is_outlier, "wire_number"].astype(int).tolist()
 
-    for wire in outliers:
-        clear_wire_range(file_path, apa_name, layer, side, wire, wire)
-
-    return outliers
+    return set(outliers)

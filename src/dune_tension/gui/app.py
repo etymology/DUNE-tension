@@ -8,7 +8,7 @@ import tkinter as tk
 
 from dune_tension.gui.actions import (
     calibrate_background_noise,
-    clear_outliers,
+    measure_outliers,
     clear_range,
     handle_close,
     interrupt,
@@ -17,8 +17,9 @@ from dune_tension.gui.actions import (
     measure_auto,
     measure_calibrate,
     measure_condition,
-    measure_list,
+    measure_list_button,
     monitor_tension_logs,
+    refresh_tension_logs,
     set_manual_tension,
     update_focus_command_indicator,
 )
@@ -102,6 +103,9 @@ def _create_widgets(
     manual_move_frame = tk.LabelFrame(bottom_frame, text="Manual Move")
     manual_move_frame.grid(row=3, column=0, sticky="ew", pady=5)
 
+    btn_refresh_plots = tk.Button(bottom_frame, text="Refresh Plots")
+    btn_refresh_plots.grid(row=4, column=0, sticky="ew", pady=(10, 0))
+
     tk.Label(apa_frame, text="APA Name:").grid(row=0, column=0, sticky="e")
     entry_apa = tk.Entry(apa_frame)
     entry_apa.grid(row=0, column=1)
@@ -117,6 +121,15 @@ def _create_widgets(
     flipped_var = tk.BooleanVar(value=False)
     tk.Checkbutton(apa_frame, text="Flipped", variable=flipped_var).grid(
         row=3, column=1, sticky="w"
+    )
+
+    a_taped_var = tk.BooleanVar(value=False)
+    tk.Checkbutton(apa_frame, text="A taped", variable=a_taped_var).grid(
+        row=4, column=0, sticky="w"
+    )
+    b_taped_var = tk.BooleanVar(value=False)
+    tk.Checkbutton(apa_frame, text="B taped", variable=b_taped_var).grid(
+        row=4, column=1, sticky="w"
     )
 
     tk.Label(measure_frame, text="Samples per Wire (≥1):").grid(
@@ -177,8 +190,14 @@ def _create_widgets(
     btn_measure_condition = tk.Button(measure_frame, text="Measure Condition")
     btn_measure_condition.grid(row=6, column=2)
 
-    btn_clear_outliers = tk.Button(measure_frame, text="Clear Outliers")
-    btn_clear_outliers.grid(row=7, column=2)
+    tk.Label(measure_frame, text="Outlier σ Multiplier:").grid(
+        row=7, column=0, sticky="e"
+    )
+    entry_times_sigma = tk.Entry(measure_frame)
+    entry_times_sigma.grid(row=7, column=1)
+    entry_times_sigma.insert(0, "2.0")
+    btn_remeasure_outliers = tk.Button(measure_frame, text="Remeasure Outliers")
+    btn_remeasure_outliers.grid(row=7, column=2)
 
     tk.Label(measure_frame, text="Set Tensions:").grid(row=8, column=0, sticky="e")
     entry_set_tension = tk.Entry(measure_frame)
@@ -189,38 +208,19 @@ def _create_widgets(
     btn_calibrate_noise = tk.Button(measure_frame, text="Calibrate Noise")
     btn_calibrate_noise.grid(row=11, column=2)
 
-    tk.Label(servo_frame, text="Servo Speed (1–255):").grid(row=0, column=0, sticky="e")
-    speed_slider = tk.Scale(servo_frame, from_=1, to=255, orient=tk.HORIZONTAL)
-    speed_slider.set(1)
-    speed_slider.grid(row=0, column=1, sticky="ew")
-
-    tk.Label(servo_frame, text="Servo Acceleration (1–255):").grid(
-        row=1, column=0, sticky="e"
-    )
-    accel_slider = tk.Scale(servo_frame, from_=1, to=255, orient=tk.HORIZONTAL)
-    accel_slider.set(1)
-    accel_slider.grid(row=1, column=1, sticky="ew")
-
-    tk.Label(servo_frame, text="Dwell Time (0.00–2.00s):").grid(
-        row=2, column=0, sticky="e"
-    )
-    dwell_slider = tk.Scale(servo_frame, from_=0, to=200, orient=tk.HORIZONTAL)
-    dwell_slider.set(100)
-    dwell_slider.grid(row=2, column=1, sticky="ew")
-
-    tk.Label(servo_frame, text="Focus:").grid(row=3, column=0, sticky="e")
+    tk.Label(servo_frame, text="Focus:").grid(row=0, column=0, sticky="e")
     focus_slider = tk.Scale(servo_frame, from_=4000, to=8000, orient=tk.HORIZONTAL)
     focus_slider.set(4000)
-    focus_slider.grid(row=3, column=1, sticky="ew")
+    focus_slider.grid(row=0, column=1, sticky="ew")
 
     tk.Label(servo_frame, textvariable=focus_command_var).grid(
-        row=4, column=0, sticky="e"
+        row=1, column=0, sticky="e"
     )
     focus_command_canvas: tk.Canvas | None = None
     focus_command_dot: Any | None = None
     if hasattr(tk, "Canvas"):
         focus_command_canvas = tk.Canvas(servo_frame, height=10)
-        focus_command_canvas.grid(row=4, column=1, sticky="ew")
+        focus_command_canvas.grid(row=1, column=1, sticky="ew")
         focus_command_canvas.create_line(0, 5, int(focus_slider.cget("length")), 5)
         focus_command_dot = focus_command_canvas.create_oval(
             0, 0, 0, 0, fill="blue", outline=""
@@ -256,6 +256,8 @@ def _create_widgets(
         layer_var=layer_var,
         side_var=side_var,
         flipped_var=flipped_var,
+        a_taped_var=a_taped_var,
+        b_taped_var=b_taped_var,
         entry_wire=entry_wire,
         entry_wire_list=entry_wire_list,
         entry_samples=entry_samples,
@@ -265,10 +267,8 @@ def _create_widgets(
         plot_audio_var=plot_audio_var,
         entry_clear_range=entry_clear_range,
         entry_condition=entry_condition,
+        entry_times_sigma=entry_times_sigma,
         entry_set_tension=entry_set_tension,
-        speed_slider=speed_slider,
-        accel_slider=accel_slider,
-        dwell_slider=dwell_slider,
         focus_slider=focus_slider,
         entry_xy=entry_xy,
     )
@@ -280,10 +280,11 @@ def _create_widgets(
         "interrupt": btn_interrupt,
         "clear_range": btn_clear_range,
         "measure_condition": btn_measure_condition,
-        "clear_outliers": btn_clear_outliers,
+        "remeasure_outliers": btn_remeasure_outliers,
         "set_tension": btn_set_tension,
         "calibrate_noise": btn_calibrate_noise,
         "manual_go": btn_manual_go,
+        "refresh_plots": btn_refresh_plots,
     }
 
     return widgets, focus_command_canvas, focus_command_dot, buttons, pad_buttons
@@ -297,31 +298,23 @@ def _configure_commands(
     """Attach the GUI callbacks to the Tkinter widgets."""
 
     buttons["calibrate"].configure(command=lambda: measure_calibrate(ctx))
-    buttons["measure_list"].configure(command=lambda: measure_list(ctx))
+    buttons["measure_list"].configure(command=lambda: measure_list_button(ctx))
     buttons["measure_auto"].configure(command=lambda: measure_auto(ctx))
     buttons["interrupt"].configure(command=lambda: interrupt(ctx))
     buttons["clear_range"].configure(command=lambda: clear_range(ctx))
     buttons["measure_condition"].configure(command=lambda: measure_condition(ctx))
-    buttons["clear_outliers"].configure(command=lambda: clear_outliers(ctx))
+    buttons["remeasure_outliers"].configure(command=lambda: measure_outliers(ctx))
     buttons["set_tension"].configure(command=lambda: set_manual_tension(ctx))
     buttons["calibrate_noise"].configure(
         command=lambda: calibrate_background_noise(ctx)
     )
     buttons["manual_go"].configure(command=lambda: manual_goto(ctx))
+    buttons["refresh_plots"].configure(command=lambda: refresh_tension_logs(ctx))
 
     for button, dx, dy in pad_buttons:
         button.configure(command=partial(manual_increment, ctx, dx, dy))
 
     widgets = ctx.widgets
-    widgets.speed_slider.configure(
-        command=lambda val: ctx.servo_controller.set_speed(int(float(val)))
-    )
-    widgets.accel_slider.configure(
-        command=lambda val: ctx.servo_controller.set_accel(int(float(val)))
-    )
-    widgets.dwell_slider.configure(
-        command=lambda val: ctx.servo_controller.set_dwell_time(float(val) / 100)
-    )
     widgets.focus_slider.configure(
         command=lambda val: ctx.servo_controller.focus_target(int(float(val)))
     )

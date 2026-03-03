@@ -12,8 +12,8 @@ import sounddevice as sd  # type: ignore
 from tkinter import messagebox
 
 from dune_tension.data_cache import (
-    clear_outliers as cache_clear_outliers,
     clear_wire_range,
+    find_outliers,
     get_dataframe,
     update_dataframe,
 )
@@ -38,8 +38,6 @@ def create_tensiometer(ctx: GUIContext) -> Tensiometer:
 
     try:
         confidence = float(w.entry_confidence.get())
-        if not (0.0 <= confidence <= 1.0):
-            raise ValueError("Confidence threshold must be between 0.0 and 1.0")
     except ValueError as exc:
         messagebox.showerror("Input Error", str(exc))
         raise
@@ -57,6 +55,8 @@ def create_tensiometer(ctx: GUIContext) -> Tensiometer:
         layer=w.layer_var.get(),
         side=w.side_var.get(),
         flipped=w.flipped_var.get(),
+        a_taped=w.a_taped_var.get(),
+        b_taped=w.b_taped_var.get(),
         spoof=spoof_audio,
         spoof_movement=bool(os.environ.get("SPOOF_PLC")),
         stop_event=ctx.stop_event,
@@ -65,8 +65,7 @@ def create_tensiometer(ctx: GUIContext) -> Tensiometer:
         record_duration=record_duration,
         measuring_duration=measuring_duration,
         plot_audio=w.plot_audio_var.get(),
-        start_servo_loop=ctx.servo_controller.start_loop,
-        stop_servo_loop=ctx.servo_controller.stop_loop,
+        strum=ctx.strum,
         focus_wiggle=ctx.servo_controller.nudge_focus,
     )
 
@@ -105,7 +104,7 @@ def measure_calibrate(ctx: GUIContext) -> None:
 @_run_in_thread
 def measure_auto(ctx: GUIContext) -> None:
     """Automatically measure the full APA."""
-
+    print("Starting automatic measurement of full APA")
     tensiometer: Tensiometer | None = None
     try:
         tensiometer = create_tensiometer(ctx)
@@ -142,7 +141,7 @@ def _parse_ranges(text: str) -> list[tuple[int, int]]:
 
 
 @_run_in_thread
-def measure_list(ctx: GUIContext) -> None:
+def measure_list_button(ctx: GUIContext) -> None:
     """Measure a comma separated list of wire ranges."""
 
     tensiometer: Tensiometer | None = None
@@ -224,15 +223,6 @@ def measure_condition(ctx: GUIContext) -> None:
             print(f"No wires satisfy: {expr}")
             return
         print(f"Measuring wires {wires} matching '{expr}'")
-        for wire in wires:
-            clear_wire_range(
-                tensiometer.config.data_path,
-                tensiometer.config.apa_name,
-                tensiometer.config.layer,
-                tensiometer.config.side,
-                wire,
-                wire,
-            )
         tensiometer.measure_list(wires, preserve_order=False)
     finally:
         _cleanup_after_measurement(ctx, tensiometer)
@@ -263,22 +253,41 @@ def clear_range(ctx: GUIContext) -> None:
     print(f"Cleared ranges: {ctx.widgets.entry_clear_range.get()}")
 
 
-def clear_outliers(ctx: GUIContext) -> None:
+def measure_outliers(ctx: GUIContext) -> None:
     cfg = _make_config_from_widgets(ctx)
     try:
         conf = float(ctx.widgets.entry_confidence.get())
     except ValueError:
         conf = 0.7
-    removed = cache_clear_outliers(
-        cfg.data_path,
-        cfg.apa_name,
-        cfg.layer,
-        cfg.side,
-        2.0,
-        conf,
+    try:
+        times_sigma = float(ctx.widgets.entry_times_sigma.get())
+    except ValueError:
+        times_sigma = 2.0
+
+    outliers = set(
+        find_outliers(
+            cfg.data_path,
+            cfg.apa_name,
+            cfg.layer,
+            cfg.side,
+            times_sigma=times_sigma,
+            confidence_threshold=conf,
+        )
     )
-    if removed:
-        print(f"Cleared outlier wires: {removed}")
+    # measure the list of outliers
+
+    tensiometer: Tensiometer | None = None
+
+    try:
+        tensiometer = create_tensiometer(ctx)
+        save_state(ctx)
+        print(f"Measuring wires: {outliers}")
+        tensiometer.measure_list(outliers, preserve_order=False)
+    finally:
+        _cleanup_after_measurement(ctx, tensiometer)
+
+    if outliers:
+        print(f"Cleared outlier wires: {outliers}")
     else:
         print("No outlier wires found")
 
@@ -350,7 +359,7 @@ def monitor_tension_logs(ctx: GUIContext) -> None:
 
         def run() -> None:
             try:
-                from dune_tension.analyze import update_tension_logs
+                from dune_tension.summaries import update_tension_logs
 
                 update_tension_logs(cfg)
                 print(f"Updated tension logs for {cfg.apa_name} layer {cfg.layer}")
@@ -361,7 +370,27 @@ def monitor_tension_logs(ctx: GUIContext) -> None:
             ctx.monitor_thread = Thread(target=run, daemon=True)
             ctx.monitor_thread.start()
 
-    ctx.root.after(2000, lambda: monitor_tension_logs(ctx))
+    ctx.root.after(1000, lambda: monitor_tension_logs(ctx))
+
+
+@_run_in_thread
+def refresh_tension_logs(ctx: GUIContext) -> None:
+    """Force an update of the tension logs regardless of file changes."""
+
+    cfg = _make_config_from_widgets(ctx)
+
+    try:
+        from dune_tension.summaries import update_tension_logs
+
+        update_tension_logs(cfg)
+        try:
+            ctx.monitor_last_path = cfg.data_path
+            ctx.monitor_last_mtime = os.path.getmtime(cfg.data_path)
+        except OSError:
+            ctx.monitor_last_mtime = None
+        print(f"Manually refreshed tension logs for {cfg.apa_name} layer {cfg.layer}")
+    except Exception as exc:
+        print(f"Failed to refresh logs: {exc}")
 
 
 def manual_goto(ctx: GUIContext) -> None:
@@ -415,6 +444,11 @@ def update_focus_command_indicator(ctx: GUIContext, value: int) -> None:
 def handle_close(ctx: GUIContext) -> None:
     ctx.stop_event.set()
     ctx.servo_controller.stop_loop()
+    if ctx.valve_controller is not None:
+        try:
+            ctx.valve_controller.close()
+        except Exception:
+            pass
     try:
         sd.stop()
     except Exception:

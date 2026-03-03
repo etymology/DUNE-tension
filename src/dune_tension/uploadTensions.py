@@ -36,7 +36,7 @@ def uploadTensions(apa_name: str, layer: str, create_layer_action_id: str) -> No
     # print(f" Successfully performed action with ID: {create_layer_action_id}")
 
     tensions_sideA, tensions_sideB = load_tension_summary(apa_name, layer)
-
+    print(f" Uploading {len(tensions_sideA)} tensions for APA {apa_name} layer {layer}...")
     actionData_fields = [
         "measuredTensions_sideA",
         "measuredTensions_sideB",
@@ -63,4 +63,4 @@ def uploadTensions(apa_name: str, layer: str, create_layer_action_id: str) -> No
 
 
 if __name__ == "__main__":
-    uploadTensions("USAPA9*", "G", r"68bf085507c9af803121a611")
+    uploadTensions("USAPA11", "G", r"698392969c0b3b26e5f29f47")

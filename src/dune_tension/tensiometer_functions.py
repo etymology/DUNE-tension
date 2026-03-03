@@ -39,7 +39,7 @@ class TensiometerConfig:
     def __post_init__(self):
         # All tension measurements are now stored in a single SQLite file
         # rather than separate files for each APA/layer pair.
-        self.data_path = "data/tension_data/tension_data.db"
+        self.data_path = f"data/tension_data/tension_data.db"
 
 
 def make_config(
@@ -60,7 +60,7 @@ def make_config(
         wire_min, wire_max = 1, 481 if layer == "G" else 480
     else:
         dx, dy = 8.0, 5.75
-        wire_min, wire_max = 8, 1146
+        wire_min, wire_max = 8, 1145
         if (layer == "U" and side == "A") or (layer == "V" and side == "B"):
             dy = -dy
     if flipped:

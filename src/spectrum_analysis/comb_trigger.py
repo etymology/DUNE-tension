@@ -4,11 +4,12 @@ from __future__ import annotations
 
 from collections import deque
 from dataclasses import dataclass
+from datetime import time
 
 import numpy as np
 
 from spectrum_analysis.audio_sources import MicSource, sd
-
+import time
 
 @dataclass
 class HarmonicCombConfig:
@@ -19,8 +20,8 @@ class HarmonicCombConfig:
     candidate_count: int = 36
     harmonic_weight_count: int = 10
     min_harmonics: int = 3
-    on_rmax: float = 1e-5
-    off_rmax: float = 1e-13
+    on_rmax: float = 1e-13
+    off_rmax: float = 1e-15
     sfm_max: float = 0.6
     on_frames: int = 2
     off_frames: int = 5
@@ -119,10 +120,11 @@ def record_with_harmonic_comb(
     expected_f0: float,
     sample_rate: int,
     max_record_seconds: float,
-    comb_cfg: HarmonicCombConfig,
+    timeout_seconds: float,
+    comb_cfg: HarmonicCombConfig = HarmonicCombConfig(),
 ) -> np.ndarray:
     """Record audio using the harmonic comb trigger."""
-
+    start_time = time.time()
     if sd is None:
         raise RuntimeError(
             "sounddevice is required for microphone recording but is not available."
@@ -164,7 +166,7 @@ def record_with_harmonic_comb(
     triggered = False
 
     try:
-        while collected_samples < max_samples:
+        while collected_samples < max_samples :
             chunk = source.read()
             if chunk.size == 0:
                 continue
@@ -240,6 +242,9 @@ def record_with_harmonic_comb(
             if collected_samples >= max_samples:
                 print("[WARN] Max recording length reached.")
                 break
+            if time.time() > start_time + timeout_seconds:
+                print("[WARN] Recording timed out.")
+                break
 
             if stop_recording:
                 break
@@ -249,6 +254,7 @@ def record_with_harmonic_comb(
         source.stop()
 
     if not collected:
-        raise RuntimeError("No audio captured above the comb trigger thresholds.")
+        print("[WARN] No audio captured above the comb trigger thresholds.")
+        return None
 
     return np.concatenate(collected).astype(np.float32)

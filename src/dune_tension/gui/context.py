@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import os
+from dataclasses import dataclass, field
 from threading import Event, Thread
 from typing import Any, Callable
-import os
 import tkinter as tk
 
 from dune_tension.maestro import Controller, DummyController, ServoController
+from valve_trigger import DeviceNotFoundError, ValveController
 
 try:  # pragma: no cover - optional dependency
     from dune_tension.plc_io import (  # type: ignore
@@ -40,6 +41,8 @@ class GUIWidgets:
     layer_var: tk.StringVar
     side_var: tk.StringVar
     flipped_var: tk.BooleanVar
+    a_taped_var: tk.BooleanVar
+    b_taped_var: tk.BooleanVar
     entry_wire: tk.Entry
     entry_wire_list: tk.Entry
     entry_samples: tk.Entry
@@ -49,10 +52,8 @@ class GUIWidgets:
     plot_audio_var: tk.BooleanVar
     entry_clear_range: tk.Entry
     entry_condition: tk.Entry
+    entry_times_sigma: tk.Entry
     entry_set_tension: tk.Entry
-    speed_slider: tk.Scale
-    accel_slider: tk.Scale
-    dwell_slider: tk.Scale
     focus_slider: tk.Scale
     entry_xy: tk.Entry
 
@@ -66,6 +67,7 @@ class GUIContext:
     state_file: str
     stop_event: Event
     servo_controller: ServoController
+    valve_controller: ValveController | None
     get_xy: Callable[[], tuple[float, float]]
     goto_xy: Callable[[float, float], bool]
     focus_command_var: tk.StringVar
@@ -74,6 +76,7 @@ class GUIContext:
     monitor_last_path: str = ""
     monitor_last_mtime: float | None = None
     monitor_thread: Thread | None = None
+    strum: Callable[[], None] = field(default=lambda: None)
 
 
 def _create_servo_controller() -> ServoController:
@@ -82,6 +85,38 @@ def _create_servo_controller() -> ServoController:
     if os.environ.get("SPOOF_SERVO"):
         return ServoController(servo=DummyController())
     return ServoController(Controller())
+
+
+def _create_valve_controller() -> ValveController | None:
+    """Attempt to create a :class:`ValveController`, logging failures."""
+
+    if os.environ.get("SPOOF_VALVE"):
+        return None
+
+    try:
+        return ValveController()
+    except (DeviceNotFoundError, RuntimeError) as exc:
+        print(f"Warning: Unable to initialise valve controller: {exc}")
+        return None
+
+
+def _make_strum_callback(controller: ValveController | None) -> Callable[[], None]:
+    """Return a callable that emits a single valve pulse when invoked."""
+
+    if controller is None:
+
+        def _noop() -> None:
+            return
+
+        return _noop
+
+    def _strum() -> None:
+        try:
+            controller.pulse(0.002)
+        except Exception as exc:
+            print(f"Warning: Valve pulse failed: {exc}")
+
+    return _strum
 
 
 def _resolve_plc_functions() -> tuple[
@@ -105,6 +140,8 @@ def create_context(
 
     stop_event = Event()
     servo_controller = _create_servo_controller()
+    valve_controller = _create_valve_controller()
+    strum = _make_strum_callback(valve_controller)
     get_xy, goto_xy = _resolve_plc_functions()
     if focus_command_var is None:
         focus_command_var = tk.StringVar(master=root, value="4000")
@@ -115,7 +152,9 @@ def create_context(
         state_file=state_file,
         stop_event=stop_event,
         servo_controller=servo_controller,
+        valve_controller=valve_controller,
         get_xy=get_xy,
         goto_xy=goto_xy,
         focus_command_var=focus_command_var,
+        strum=strum,
     )

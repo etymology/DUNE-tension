@@ -123,7 +123,7 @@ sys.modules["tensiometer_functions"] = tfunc_stub
 # Minimal data_cache stub with clear_wire_range
 dc_stub = types.ModuleType("data_cache")
 dc_stub.clear_wire_range = lambda *a, **k: None
-dc_stub.clear_outliers = lambda *a, **k: []
+dc_stub.remeasure_outliers = lambda *a, **k: []
 dc_stub.get_dataframe = lambda path: None
 dc_stub.update_dataframe = lambda path, df: None
 sys.modules["data_cache"] = dc_stub
@@ -352,7 +352,7 @@ def test_clear_range_invokes_cache(monkeypatch):
     assert (apa, layer, side, start, end) == ("APA", "X", "A", 10, 12)
 
 
-def test_clear_outliers_invokes_cache(monkeypatch):
+def test_remeasure_outliers_invokes_cache(monkeypatch):
     called = []
 
     def dummy_clear(path, apa, layer, side, sigma, conf):
@@ -366,9 +366,9 @@ def test_clear_outliers_invokes_cache(monkeypatch):
     monkeypatch.setattr(main, "entry_samples", DummyGetter("1"))
     monkeypatch.setattr(main, "entry_confidence", DummyGetter("0.7"))
     monkeypatch.setattr(main, "plot_audio_var", DummyGetter(False))
-    monkeypatch.setattr(main, "cache_clear_outliers", dummy_clear)
+    monkeypatch.setattr(main, "cache_remeasure_outliers", dummy_clear)
 
-    main.clear_outliers()
+    main.remeasure_outliers()
     assert called
     path, apa, layer, side, sigma, conf = called[-1]
     assert (apa, layer, side) == ("APA", "X", "A")
@@ -691,9 +691,6 @@ def test_focus_target_state_round_trip(tmp_path, monkeypatch):
     monkeypatch.setattr(main, "entry_confidence", DummyWidget("0.7"))
     monkeypatch.setattr(main, "entry_record_duration", DummyWidget("0.5"))
     monkeypatch.setattr(main, "entry_measuring_duration", DummyWidget("10"))
-    monkeypatch.setattr(main, "speed_slider", DummyWidget(1))
-    monkeypatch.setattr(main, "accel_slider", DummyWidget(1))
-    monkeypatch.setattr(main, "dwell_slider", DummyWidget(100))
     monkeypatch.setattr(main, "plot_audio_var", DummyVar(False))
 
     focus = DummyWidget(4567)
@@ -747,9 +744,6 @@ def test_load_state_bad_json(tmp_path, monkeypatch):
     monkeypatch.setattr(main, "entry_confidence", DummyWidget("0.7"))
     monkeypatch.setattr(main, "entry_record_duration", DummyWidget("0.5"))
     monkeypatch.setattr(main, "entry_measuring_duration", DummyWidget("10"))
-    monkeypatch.setattr(main, "speed_slider", DummyWidget(1))
-    monkeypatch.setattr(main, "accel_slider", DummyWidget(1))
-    monkeypatch.setattr(main, "dwell_slider", DummyWidget(100))
     monkeypatch.setattr(main, "plot_audio_var", DummyVar(False))
 
     focus = DummyWidget(4000)
