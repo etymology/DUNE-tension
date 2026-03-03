@@ -297,7 +297,7 @@ class Tensiometer:
                 self.goto_xy_func(x_wiggle_target, y_target)
             else:
                 print("wiggling focus")
-                self.focus_wiggle_func(gauss(0, 10))
+                self.focus_wiggle_func(gauss(0, 50))
 
         while (time.time() - start_time) < measuring_timeout:
             if check_stop_event(self.stop_event, "tension measurement interrupted!"):
