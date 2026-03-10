@@ -3,7 +3,10 @@ import threading
 import time
 from random import gauss
 
-from geometry import comb_positions
+try:  # pragma: no cover - fallback for legacy test stubs
+    from dune_tension.geometry import comb_positions
+except ImportError:  # pragma: no cover
+    from geometry import comb_positions
 
 # Global lock to ensure exclusive PLC communication
 PLC_LOCK = threading.RLock()

@@ -2,8 +2,12 @@ from dataclasses import dataclass, field
 from typing import Optional, Callable
 import math
 from typing import List, Tuple
-from data_cache import get_dataframe
 from threading import Event
+
+try:  # pragma: no cover - fallback for legacy test stubs
+    from dune_tension.data_cache import get_dataframe
+except ImportError:  # pragma: no cover
+    from data_cache import get_dataframe
 
 
 def check_stop_event(
@@ -89,7 +93,10 @@ def get_xy_from_file(
     wire_number: int,
 ) -> Optional[tuple[float, float]]:
     import numpy as np
-    from geometry import refine_position
+    try:  # pragma: no cover - fallback for legacy test stubs
+        from dune_tension.geometry import refine_position
+    except ImportError:  # pragma: no cover
+        from geometry import refine_position
 
     df_all = get_dataframe(config.data_path)
     df = df_all[

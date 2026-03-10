@@ -1,8 +1,12 @@
 from dataclasses import dataclass, field, fields
 from datetime import datetime
 
-from geometry import zone_lookup, length_lookup
-from tension_calculation import tension_pass, wire_equation
+try:  # pragma: no cover - fallback for legacy test stubs
+    from dune_tension.geometry import zone_lookup, length_lookup
+    from dune_tension.tension_calculation import tension_pass, wire_equation
+except ImportError:  # pragma: no cover
+    from geometry import zone_lookup, length_lookup
+    from tension_calculation import tension_pass, wire_equation
 
 
 @dataclass

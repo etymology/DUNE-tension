@@ -5,7 +5,15 @@ import socket
 import sys
 
 # Local Python imports and variables
-from m2m.client_credentials import client_id, client_secret, auth0_domain, db_domain
+try:  # pragma: no cover - fallback for legacy script execution
+    from dune_tension.m2m.client_credentials import (
+        client_id,
+        client_secret,
+        auth0_domain,
+        db_domain,
+    )
+except ImportError:  # pragma: no cover
+    from m2m.client_credentials import client_id, client_secret, auth0_domain, db_domain
 # client_id = "gu5lUudQsZGbonUCqFXMPGtZHdwOHRxF"
 # client_secret = "a9BsmEA58qiHcs6KWDyBHWjYX5Yq2sZqNwBrf4uyDHEbJmv16ifi944t2r-svNEZ"
 # auth0_domain = "dunedb-prod.us.auth0.com"

@@ -62,9 +62,17 @@ def listen_for_trigger_and_classify(
         noise = record_noise_sample(working_cfg)
         noise_profile = compute_noise_profile(noise, working_cfg)
         audio = acquire_audio(working_cfg, noise_profile.rms)
+        if audio is None:
+            empty = np.empty(0, dtype=np.float32)
+            empty_matrix = np.empty((0, 0), dtype=np.float32)
+            return float("nan"), float("nan"), empty, empty, empty_matrix
         filtered_audio, *_ = subtract_noise(audio, noise_profile, working_cfg)
     else:
         audio = acquire_audio(working_cfg, 0.0)
+        if audio is None:
+            empty = np.empty(0, dtype=np.float32)
+            empty_matrix = np.empty((0, 0), dtype=np.float32)
+            return float("nan"), float("nan"), empty, empty, empty_matrix
         filtered_audio = audio
 
     activation_result = get_crepe_activations(

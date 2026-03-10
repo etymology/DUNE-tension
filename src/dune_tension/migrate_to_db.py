@@ -4,8 +4,12 @@ from glob import glob
 
 import pandas as pd
 
-from results import TensionResult, EXPECTED_COLUMNS
-from data_cache import get_dataframe, update_dataframe
+try:  # pragma: no cover - fallback for legacy test stubs
+    from dune_tension.results import TensionResult, EXPECTED_COLUMNS
+    from dune_tension.data_cache import get_dataframe, update_dataframe
+except ImportError:  # pragma: no cover
+    from results import TensionResult, EXPECTED_COLUMNS
+    from data_cache import get_dataframe, update_dataframe
 
 
 def parse_time(value: str) -> datetime:

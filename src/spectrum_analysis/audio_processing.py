@@ -373,7 +373,11 @@ def record_noise_sample(cfg: "PitchCompareConfig") -> np.ndarray:
     return np.squeeze(noise).astype(np.float32)
 
 
-def _acquire_audio_snr(cfg: "PitchCompareConfig", noise_rms: float, timeout: float) -> np.ndarray:
+def _acquire_audio_snr(
+    cfg: "PitchCompareConfig",
+    noise_rms: float,
+    timeout: float | None = None,
+) -> np.ndarray | None:
     _, hop = determine_window_and_hop(cfg)
     source = MicSource(cfg.sample_rate, hop)
     source.start()
@@ -387,12 +391,10 @@ def _acquire_audio_snr(cfg: "PitchCompareConfig", noise_rms: float, timeout: flo
     max_samples = int(cfg.max_record_seconds * cfg.sample_rate)
     collected_samples = 0
     start_time = time.time()
-    # set the start time as the current time
-    start_time = time.time()
-    timeout += start_time
+    deadline = None if timeout is None else start_time + max(float(timeout), 0.0)
     try:
         while collected_samples < max_samples:
-            if time.time() >= timeout and not recording_started:
+            if deadline is not None and time.time() >= deadline and not recording_started:
                 print("[INFO] Timeout reached while waiting for audio event.")
                 break
             chunk = source.read()
@@ -429,7 +431,11 @@ def _acquire_audio_snr(cfg: "PitchCompareConfig", noise_rms: float, timeout: flo
     return np.concatenate(collected).astype(np.float32)
 
 
-def acquire_audio(cfg: "PitchCompareConfig", noise_rms: float, timeout: float) -> np.ndarray:
+def acquire_audio(
+    cfg: "PitchCompareConfig",
+    noise_rms: float,
+    timeout: float | None = None,
+) -> np.ndarray | None:
     """Record audio using the configured trigger or load from file."""
 
     if cfg.input_mode == "file":

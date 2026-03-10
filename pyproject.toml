@@ -18,3 +18,9 @@ dependencies = [
     "sounddevice>=0.5.2",
     "tensorflow>=2.19.0",
 ]
+
+[project.scripts]
+dune-tension-gui = "dune_tension.main:main"
+dune-tension-periodic-plots = "dune_tension.periodic_save_plots:main"
+dune-spectrum-compare = "spectrum_analysis.compare_pitch_cli:main"
+dune-spectrum-scroller = "spectrum_analysis.cli:main"

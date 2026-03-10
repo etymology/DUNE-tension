@@ -1,4 +1,7 @@
-from m2m.common import ConnectToAPI, EditAction
+try:  # pragma: no cover - fallback for local script execution
+    from dune_tension.m2m.common import ConnectToAPI, EditAction
+except ImportError:  # pragma: no cover
+    from m2m.common import ConnectToAPI, EditAction
 
 # from tensiometer import Tensiometer
 import pandas as pd

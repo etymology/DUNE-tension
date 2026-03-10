@@ -6,39 +6,32 @@ import numpy as np
 import pandas as pd
 from random import gauss, choice
 
-try:
-    from tension_calculation import wire_equation, tension_plausible
-except ImportError:  # fallback for older stubs
-    pass
 from spectrum_analysis.pitch_compare_config import PitchCompareConfig
-from tensiometer_functions import (
-    make_config,
-    measure_list,
-    get_xy_from_file,
-    check_stop_event,
-)
-from geometry import zone_lookup, length_lookup
-from audioProcessing import get_samplerate, get_noise_threshold
 from spectrum_analysis.crepe_analysis import estimate_pitch_from_audio
 from spectrum_analysis.audio_processing import acquire_audio
 
 try:
-    from plc_io import is_web_server_active, increment, set_speed, reset_plc
-except Exception:  # pragma: no cover - fallback for older stubs
-    from plc_io import is_web_server_active, increment
-
-    def set_speed(*_args, **_kwargs):
-        pass
-
-    def reset_plc(*_args, **_kwargs):
-        pass
-
-
-from data_cache import (
-    get_dataframe,
-    update_dataframe,
-)
-from results import TensionResult, EXPECTED_COLUMNS
+    from dune_tension.geometry import zone_lookup, length_lookup
+    from dune_tension.tension_calculation import wire_equation, tension_plausible
+    from dune_tension.tensiometer_functions import (
+        make_config,
+        measure_list,
+        get_xy_from_file,
+        check_stop_event,
+    )
+    from dune_tension.results import TensionResult
+    from dune_tension.services import AudioCaptureService, MotionService, ResultRepository
+except ImportError:  # pragma: no cover - fallback for legacy test stubs
+    from geometry import zone_lookup, length_lookup
+    from tension_calculation import wire_equation, tension_plausible
+    from tensiometer_functions import (
+        make_config,
+        measure_list,
+        get_xy_from_file,
+        check_stop_event,
+    )
+    from results import TensionResult
+    from dune_tension.services import AudioCaptureService, MotionService, ResultRepository
 
 
 class Tensiometer:
@@ -78,29 +71,18 @@ class Tensiometer:
         )
         self.stop_event = stop_event or threading.Event()
         self.snr = snr
-        self.noise_threshold = get_noise_threshold()
-        try:
-            web_ok = is_web_server_active()
-        except Exception:
-            web_ok = False
+        self.motion = MotionService.build(spoof_movement=spoof_movement)
+        self.audio = AudioCaptureService.build(spoof=spoof)
+        self.repository = ResultRepository(self.config.data_path)
+        self.noise_threshold = self.audio.noise_threshold
+        self.samplerate = self.audio.samplerate
+        self.record_audio_func = self.audio.record_audio
 
-        if not spoof_movement and web_ok:
-            from plc_io import get_xy, goto_xy
-        else:
-            from plc_io import (
-                spoof_get_xy as get_xy,
-                spoof_goto_xy as goto_xy,
-            )
+        self.get_current_xy_position = self.motion.get_xy
+        self.goto_xy_func = self.motion.goto_xy
+        self.wiggle_func = self.motion.increment
 
-            print(
-                "Web server is not active or spoof_movement enabled. Using dummy functions."
-            )
-        self.get_current_xy_position = get_xy
-        self.goto_xy_func = goto_xy
-        self.wiggle_func = increment
-
-        self.focus_wiggle_func = focus_wiggle or (lambda delta: None)
-
+        self.focus_wiggle_func = focus_wiggle or (lambda _delta: None)
         self.strum_func = strum or (lambda: None)
 
         self.a_taped = bool(a_taped)
@@ -109,23 +91,6 @@ class Tensiometer:
         # State tracking for winder wiggle thread
         self._wiggle_event: threading.Event | None = None
         self._wiggle_thread: threading.Thread | None = None
-
-        self.samplerate = get_samplerate()
-        if self.samplerate is None or spoof:
-            print("Using spoofed audio sample for testing.")
-            from audioProcessing import spoof_audio_sample
-
-            self.samplerate = 44100  # Default samplerate for spoofing
-            self.record_audio_func = lambda duration, sample_rate: (
-                spoof_audio_sample("audio"),
-                0.0,
-            )
-        else:
-            from audioProcessing import record_audio_filtered
-
-        self.record_audio_func = lambda duration, sample_rate: record_audio_filtered(
-            duration, sample_rate=sample_rate, normalize=True
-        )
 
     def _is_current_side_taped(self) -> bool:
         side = self.config.side.upper()
@@ -161,13 +126,13 @@ class Tensiometer:
         """Stop the background winder wiggle thread."""
         if not self._wiggle_event:
             return
-        set_speed()
+        self.motion.set_speed()
         self._wiggle_event.clear()
         if self._wiggle_thread:
             self._wiggle_thread.join(timeout=0.1)
         self._wiggle_event = None
         self._wiggle_thread = None
-        reset_plc()
+        self.motion.reset_plc()
 
     def _plot_audio(self, audio_sample) -> None:
         """Save a plot of the recorded audio sample to a temporary file."""
@@ -275,7 +240,7 @@ class Tensiometer:
         start_time: float,
         wire_y: float,
         wire_x: float,
-    ) -> list[TensionResult]:
+    ) -> list[TensionResult] | None:
         expected_frequency = wire_equation(length=length)["frequency"]
         measuring_timeout = self.config.measuring_duration
         passing_wires = []
@@ -288,11 +253,13 @@ class Tensiometer:
         )
         def wiggle() -> None:
             if choice([True, False]):
-                x_wiggle_target = gauss(wire_x, min(length * 1000 / 20,10))
+                x_wiggle_target = gauss(wire_x, min(length * 1000 / 20, 10))
                 if self.config.dx != 0:
-                    y_target = gauss(wire_y, 1)-(x_wiggle_target-wire_x)/self.config.dx*self.config.dy
+                    y_target = gauss(wire_y, 1) - (
+                        (x_wiggle_target - wire_x) / self.config.dx * self.config.dy
+                    )
                 else:
-                    y_target = gauss(wire_y, 1)   
+                    y_target = gauss(wire_y, 1)
                 print("wiggling to", x_wiggle_target, y_target)
                 self.goto_xy_func(x_wiggle_target, y_target)
             else:
@@ -301,7 +268,7 @@ class Tensiometer:
 
         while (time.time() - start_time) < measuring_timeout:
             if check_stop_event(self.stop_event, "tension measurement interrupted!"):
-                return None, wire_y
+                return None
             x, y = self.get_current_xy_position()
 
             # trigger a valve pulse using pulse from valve_trigger.py
@@ -309,7 +276,9 @@ class Tensiometer:
             # record audio with harmonic comb
 
             audio_sample = acquire_audio(
-                cfg=audio_acquisition_config, noise_rms=get_noise_threshold()/3, timeout=0.1
+                cfg=audio_acquisition_config,
+                noise_rms=self.noise_threshold / 3,
+                timeout=0.1,
             )
 
             if audio_sample is not None:
@@ -409,14 +378,15 @@ class Tensiometer:
     def goto_collect_wire_data(
         self, wire_number: int, wire_x: float, wire_y: float
     ) -> Optional[TensionResult]:
-        reset_plc()
+        self.motion.reset_plc()
         length = length_lookup(
             self.config.layer,
             wire_number,
             zone_lookup(wire_x),
             taped=self._is_current_side_taped(),
         )
-        assert length != np.float64("nan"), "Length lookup returned NaN"
+        if np.isnan(length):
+            raise ValueError("Length lookup returned NaN")
 
         if check_stop_event(self.stop_event):
             return
@@ -449,7 +419,7 @@ class Tensiometer:
             )
 
         finally:
-            reset_plc()
+            self.motion.reset_plc()
 
         if wires_results is None:
             return
@@ -468,16 +438,8 @@ class Tensiometer:
         )
         result.ttf = ttf
         result.time = datetime.now()
-        reset_plc()
-
-        df = get_dataframe(self.config.data_path)
-        row = {col: getattr(result, col, None) for col in EXPECTED_COLUMNS}
-        if isinstance(row.get("time"), datetime):
-            row["time"] = row["time"].isoformat()
-        if isinstance(row.get("wires"), list):
-            row["wires"] = str(row["wires"])
-        df.loc[len(df)] = row
-        update_dataframe(self.config.data_path, df)
+        self.motion.reset_plc()
+        self.repository.append_result(result)
 
         return result
 

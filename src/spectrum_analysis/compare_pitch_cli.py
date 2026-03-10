@@ -5,16 +5,8 @@ from __future__ import annotations
 import argparse
 import dataclasses
 import datetime as _dt
-import sys
 from pathlib import Path
 from typing import Any, Iterable, List, Optional, Tuple
-
-
-if __package__ in {None, ""}:
-    PROJECT_ROOT = Path(__file__).resolve().parents[2]
-    SRC_ROOT = PROJECT_ROOT / "src"
-    if SRC_ROOT.exists():
-        sys.path.insert(0, str(SRC_ROOT))
 
 import matplotlib.pyplot as plt
 from matplotlib.axes import Axes
@@ -542,6 +534,8 @@ def _run_comparison(cfg: PitchCompareConfig, output_dir: Path) -> None:
 
     if is_file_input or cfg.noise_duration <= 0.0:
         audio = acquire_audio(cfg, 0.0)
+        if audio is None:
+            raise RuntimeError("No audio captured for comparison.")
         filtered_audio = audio
         freqs, times, power = compute_spectrogram(filtered_audio, cfg)
     else:
@@ -566,6 +560,8 @@ def _run_comparison(cfg: PitchCompareConfig, output_dir: Path) -> None:
             save_noise_profile(noise_profile, cache_path, cfg.sample_rate)
 
         audio = acquire_audio(cfg, noise_profile.rms)
+        if audio is None:
+            raise RuntimeError("No audio captured for comparison.")
         filtered_audio, freqs, times, power = subtract_noise(audio, noise_profile, cfg)
 
         audio_path = save_audio(timestamp, filtered_audio, cfg, output_dir)
