@@ -2,7 +2,6 @@
 import http.client
 import json
 import socket
-import sys
 
 # Local Python imports and variables
 try:  # pragma: no cover - fallback for legacy script execution
@@ -18,6 +17,23 @@ except ImportError:  # pragma: no cover
 # client_secret = "a9BsmEA58qiHcs6KWDyBHWjYX5Yq2sZqNwBrf4uyDHEbJmv16ifi944t2r-svNEZ"
 # auth0_domain = "dunedb-prod.us.auth0.com"
 # db_domain = "apa.dunedb.org:443"
+
+
+class M2MError(RuntimeError):
+    """Raised when the M2M client cannot complete an API operation."""
+
+
+def _parse_token_response(payload: str) -> tuple[str, str]:
+    try:
+        data = json.loads(payload)
+    except json.JSONDecodeError as exc:
+        raise M2MError("ConnectToAPI() - ERROR: invalid token response payload") from exc
+
+    access_token = str(data.get("access_token") or "")
+    token_type = str(data.get("token_type") or "")
+    if not access_token or not token_type:
+        raise M2MError("ConnectToAPI() - ERROR: token response missing required fields")
+    return access_token, token_type
 
 
 #############################################
@@ -58,11 +74,7 @@ def ConnectToAPI():
         response = connection.getresponse()
         data = response.read().decode("utf-8")
 
-        # Split the decoded response by double quotation marks, and then extract and set the access token and token type strings
-        # The information in the response will always be in the same order, so we can use hardcoded indices to get the token and token type
-        data_splits = data.split('"')
-        print(data_splits)
-        access_token, token_type = data_splits[3], data_splits[13]
+        access_token, token_type = _parse_token_response(data)
     except http.client.HTTPException as e:
         print(f" ConnectToAPI() [POST /oauth/token] - HTTP EXCEPTION: {e} \n")
     except socket.timeout as s:
@@ -79,15 +91,15 @@ def ConnectToAPI():
     # If the access token string is not empty, set up and return a connection to the database API, as well as the headers defined above
     # Otherwise, exit out now since there's no point in continuing (although even if the token is fine here, further checks will be performed by the API middleware)
     # Note that locally hosted APIs will need to use the non-SSL HTTP client (HTTP), whereas the staging and production instances will need the SSL one (HTTPS)
-    if access_token != "":
-        if db_domain == "localhost:12313":
-            connection = http.client.HTTPConnection(db_domain, timeout=10)
-        else:
-            connection = http.client.HTTPSConnection(db_domain, timeout=60)
+    if access_token == "":
+        raise M2MError("ConnectToAPI() - ERROR: could not get a valid access token")
 
-        return connection, headers
+    if db_domain == "localhost:12313":
+        connection = http.client.HTTPConnection(db_domain, timeout=10)
     else:
-        sys.exit(" ConnectToAPI() - ERROR: could not get a valid access token! \n")
+        connection = http.client.HTTPSConnection(db_domain, timeout=60)
+
+    return connection, headers
 
 
 #########################################
@@ -203,8 +215,8 @@ def GetComponent(componentUUID, connection, headers, version=0):
 
         # If the provided UUID doesn't correspond to an existing component record, print an error and exit the function immediately
         if component is None:
-            sys.exit(
-                f" GetComponent() - ERROR: there is no component record with component UUID = {componentUUID} \n"
+            raise M2MError(
+                f"GetComponent() - ERROR: no component record with UUID={componentUUID}"
             )
 
         # Return the Python dictionary containing the component record
@@ -236,8 +248,8 @@ def EditComponent(
 
         # If the provided UUID doesn't correspond to an existing component record, print an error and exit the function immediately
         if component is None:
-            sys.exit(
-                f" EditComponent() - ERROR: there is no component record with component UUID = {componentUUID} \n"
+            raise M2MError(
+                f"EditComponent() - ERROR: no component record with UUID={componentUUID}"
             )
 
         # For each component information field to be edited, assign the new value
@@ -375,8 +387,8 @@ def GetAction(actionID, connection, headers, version=0):
 
         # If the provided ID doesn't correspond to an existing action record, print an error and exit the function immediately
         if action is None:
-            sys.exit(
-                f" GetAction() - ERROR: there is no action record with action ID = {actionID} \n"
+            raise M2MError(
+                f"GetAction() - ERROR: no action record with ID={actionID}"
             )
 
         # Return the Python dictionary containing the action record
@@ -402,8 +414,8 @@ def EditAction(actionID, actionData_fields, actionData_values, connection, heade
 
         # If the provided ID doesn't correspond to an existing action record, print an error and exit the function immediately
         if action is None:
-            sys.exit(
-                f" EditAction() - ERROR: there is no action record with action ID = {actionID} \n"
+            raise M2MError(
+                f"EditAction() - ERROR: no action record with ID={actionID}"
             )
 
         # For each action information field to be edited, assign the new value

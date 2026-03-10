@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import ast
+from dataclasses import dataclass
 from datetime import datetime
 import os
 import re
+import threading
 from threading import Thread
 from typing import Any
 
@@ -24,39 +27,101 @@ from dune_tension.gui.context import GUIContext
 from dune_tension.gui.state import save_state
 
 
-def create_tensiometer(ctx: GUIContext) -> Tensiometer:
-    """Instantiate a :class:`Tensiometer` from GUI selections."""
+@dataclass(frozen=True)
+class WorkerInputs:
+    apa_name: str
+    layer: str
+    side: str
+    flipped: bool
+    a_taped: bool
+    b_taped: bool
+    samples: int
+    confidence: float
+    record_duration: float
+    measuring_duration: float
+    plot_audio: bool
+    wire_number: str
+    wire_list: str
+    condition: str
+    times_sigma: str
+    set_tension: str
+    clear_range: str
+    xy_text: str
+
+
+def _show_input_error(ctx: GUIContext, message: str) -> None:
+    messagebox.showerror("Input Error", message)
+
+
+def _capture_worker_inputs(ctx: GUIContext) -> WorkerInputs:
+    """Capture all widget values on the Tk thread before background work."""
+
+    if threading.current_thread() is not threading.main_thread():
+        raise RuntimeError("_capture_worker_inputs must run on the main Tk thread.")
 
     w = ctx.widgets
     try:
         samples = int(w.entry_samples.get())
         if samples < 1:
-            raise ValueError("Samples per wire must be ≥ 1")
+            raise ValueError("Samples per wire must be \u2265 1")
     except ValueError as exc:
-        messagebox.showerror("Input Error", str(exc))
+        _show_input_error(ctx, str(exc))
         raise
 
     try:
         confidence = float(w.entry_confidence.get())
     except ValueError as exc:
-        messagebox.showerror("Input Error", str(exc))
+        _show_input_error(ctx, str(exc))
         raise
 
     try:
         record_duration = float(w.entry_record_duration.get())
         measuring_duration = float(w.entry_measuring_duration.get())
     except ValueError as exc:
-        messagebox.showerror("Input Error", str(exc))
+        _show_input_error(ctx, str(exc))
         raise
 
-    spoof_audio = bool(os.environ.get("SPOOF_AUDIO"))
-    return Tensiometer(
+    return WorkerInputs(
         apa_name=w.entry_apa.get(),
         layer=w.layer_var.get(),
         side=w.side_var.get(),
-        flipped=w.flipped_var.get(),
-        a_taped=w.a_taped_var.get(),
-        b_taped=w.b_taped_var.get(),
+        flipped=bool(w.flipped_var.get()),
+        a_taped=bool(w.a_taped_var.get()),
+        b_taped=bool(w.b_taped_var.get()),
+        samples=samples,
+        confidence=confidence,
+        record_duration=record_duration,
+        measuring_duration=measuring_duration,
+        plot_audio=bool(w.plot_audio_var.get()),
+        wire_number=w.entry_wire.get(),
+        wire_list=w.entry_wire_list.get(),
+        condition=w.entry_condition.get(),
+        times_sigma=w.entry_times_sigma.get(),
+        set_tension=w.entry_set_tension.get(),
+        clear_range=w.entry_clear_range.get(),
+        xy_text=w.entry_xy.get(),
+    )
+
+
+def create_tensiometer(ctx: GUIContext, inputs: WorkerInputs) -> Tensiometer:
+    """Instantiate a :class:`Tensiometer` from captured UI inputs."""
+
+    try:
+        samples = int(inputs.samples)
+        confidence = float(inputs.confidence)
+        record_duration = float(inputs.record_duration)
+        measuring_duration = float(inputs.measuring_duration)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"Invalid measurement inputs: {exc}") from exc
+
+    spoof_audio = bool(os.environ.get("SPOOF_AUDIO"))
+    return Tensiometer(
+        apa_name=inputs.apa_name,
+        layer=inputs.layer,
+        side=inputs.side,
+        flipped=inputs.flipped,
+        a_taped=inputs.a_taped,
+        b_taped=inputs.b_taped,
         spoof=spoof_audio,
         spoof_movement=bool(os.environ.get("SPOOF_PLC")),
         stop_event=ctx.stop_event,
@@ -64,7 +129,7 @@ def create_tensiometer(ctx: GUIContext) -> Tensiometer:
         confidence_threshold=confidence,
         record_duration=record_duration,
         measuring_duration=measuring_duration,
-        plot_audio=w.plot_audio_var.get(),
+        plot_audio=inputs.plot_audio,
         strum=ctx.strum,
         focus_wiggle=ctx.servo_controller.nudge_focus,
     )
@@ -74,10 +139,17 @@ def _run_in_thread(func):
     """Decorator to execute ``func`` in a daemon thread."""
 
     def wrapper(ctx: GUIContext, *args: Any, **kwargs: Any) -> None:
+        try:
+            inputs = _capture_worker_inputs(ctx)
+        except ValueError:
+            return
+
+        save_state(ctx)
+
         def run() -> None:
             ctx.stop_event.clear()
             try:
-                func(ctx, *args, **kwargs)
+                func(ctx, inputs, *args, **kwargs)
             finally:
                 ctx.stop_event.clear()
 
@@ -87,14 +159,13 @@ def _run_in_thread(func):
 
 
 @_run_in_thread
-def measure_calibrate(ctx: GUIContext) -> None:
+def measure_calibrate(ctx: GUIContext, inputs: WorkerInputs) -> None:
     """Measure and calibrate a single wire."""
 
     tensiometer: Tensiometer | None = None
     try:
-        tensiometer = create_tensiometer(ctx)
-        wire_number = int(ctx.widgets.entry_wire.get())
-        save_state(ctx)
+        tensiometer = create_tensiometer(ctx, inputs)
+        wire_number = int(inputs.wire_number)
         tensiometer.measure_calibrate(wire_number)
         print("Done calibrating wire", wire_number)
     finally:
@@ -102,13 +173,12 @@ def measure_calibrate(ctx: GUIContext) -> None:
 
 
 @_run_in_thread
-def measure_auto(ctx: GUIContext) -> None:
+def measure_auto(ctx: GUIContext, inputs: WorkerInputs) -> None:
     """Automatically measure the full APA."""
     print("Starting automatic measurement of full APA")
     tensiometer: Tensiometer | None = None
     try:
-        tensiometer = create_tensiometer(ctx)
-        save_state(ctx)
+        tensiometer = create_tensiometer(ctx, inputs)
         tensiometer.measure_auto()
     finally:
         _cleanup_after_measurement(ctx, tensiometer)
@@ -141,17 +211,16 @@ def _parse_ranges(text: str) -> list[tuple[int, int]]:
 
 
 @_run_in_thread
-def measure_list_button(ctx: GUIContext) -> None:
+def measure_list_button(ctx: GUIContext, inputs: WorkerInputs) -> None:
     """Measure a comma separated list of wire ranges."""
 
     tensiometer: Tensiometer | None = None
     try:
-        tensiometer = create_tensiometer(ctx)
-        ranges = _parse_ranges(ctx.widgets.entry_wire_list.get())
+        tensiometer = create_tensiometer(ctx, inputs)
+        ranges = _parse_ranges(inputs.wire_list)
         wire_list: list[int] = []
         for start, end in ranges:
             wire_list.extend(range(start, end + 1))
-        save_state(ctx)
         print(f"Measuring wires: {wire_list}")
         tensiometer.measure_list(wire_list, preserve_order=False)
     finally:
@@ -159,7 +228,7 @@ def measure_list_button(ctx: GUIContext) -> None:
 
 
 @_run_in_thread
-def calibrate_background_noise(ctx: GUIContext) -> None:
+def calibrate_background_noise(ctx: GUIContext, _inputs: WorkerInputs) -> None:
     """Record background noise for filtering future recordings."""
 
     try:
@@ -179,12 +248,18 @@ def calibrate_background_noise(ctx: GUIContext) -> None:
 
 
 @_run_in_thread
-def measure_condition(ctx: GUIContext) -> None:
+def measure_condition(ctx: GUIContext, inputs: WorkerInputs) -> None:
     """Measure wires whose tension satisfies the configured expression."""
 
     def _get_wires(config, expr: str) -> list[int]:
         from dune_tension.data_cache import get_dataframe  # local import for testing
         import pandas as pd
+
+        try:
+            predicate = _compile_tension_condition(expr)
+        except ValueError as exc:
+            print(f"Invalid expression '{expr}': {exc}")
+            return []
 
         df = get_dataframe(config.data_path)
         mask = (
@@ -202,7 +277,7 @@ def measure_condition(ctx: GUIContext) -> None:
         wires: list[int] = []
         for _, row in subset.iterrows():
             try:
-                if eval(expr, {"t": float(row["tension"])}):
+                if predicate(float(row["tension"])):
                     wires.append(int(row["wire_number"]))
             except Exception as exc:
                 print(f"Invalid expression '{expr}': {exc}")
@@ -210,14 +285,13 @@ def measure_condition(ctx: GUIContext) -> None:
         return sorted(set(wires))
 
     tensiometer: Tensiometer | None = None
-    expr = ctx.widgets.entry_condition.get().strip()
+    expr = inputs.condition.strip()
     if not expr:
         print("No condition specified")
         return
 
     try:
-        tensiometer = create_tensiometer(ctx)
-        save_state(ctx)
+        tensiometer = create_tensiometer(ctx, inputs)
         wires = _get_wires(tensiometer.config, expr)
         if not wires:
             print(f"No wires satisfy: {expr}")
@@ -239,6 +313,57 @@ def _parse_pairs(text: str) -> list[tuple[int, float]]:
             continue
         pairs.append((wire, tension))
     return pairs
+
+
+def _compile_tension_condition(expr: str):
+    """Compile a safe condition expression using only variable ``t``."""
+
+    allowed_nodes = (
+        ast.Expression,
+        ast.BoolOp,
+        ast.BinOp,
+        ast.UnaryOp,
+        ast.Compare,
+        ast.Name,
+        ast.Load,
+        ast.Constant,
+        ast.And,
+        ast.Or,
+        ast.Not,
+        ast.Add,
+        ast.Sub,
+        ast.Mult,
+        ast.Div,
+        ast.Pow,
+        ast.Mod,
+        ast.USub,
+        ast.UAdd,
+        ast.Eq,
+        ast.NotEq,
+        ast.Lt,
+        ast.LtE,
+        ast.Gt,
+        ast.GtE,
+    )
+
+    try:
+        tree = ast.parse(expr, mode="eval")
+    except SyntaxError as exc:
+        raise ValueError(f"invalid syntax: {exc.msg}") from exc
+
+    for node in ast.walk(tree):
+        if not isinstance(node, allowed_nodes):
+            raise ValueError(f"disallowed expression node: {type(node).__name__}")
+        if isinstance(node, ast.Name) and node.id != "t":
+            raise ValueError("only variable 't' is allowed")
+
+    code = compile(tree, "<tension-condition>", "eval")
+
+    def predicate(tension: float) -> bool:
+        result = eval(code, {"__builtins__": {}}, {"t": float(tension)})
+        return bool(result)
+
+    return predicate
 
 
 def clear_range(ctx: GUIContext) -> None:
@@ -264,7 +389,7 @@ def measure_outliers(ctx: GUIContext) -> None:
     except ValueError:
         times_sigma = 2.0
 
-    outliers = set(
+    outliers = sorted(
         find_outliers(
             cfg.data_path,
             cfg.apa_name,
@@ -279,7 +404,11 @@ def measure_outliers(ctx: GUIContext) -> None:
     tensiometer: Tensiometer | None = None
 
     try:
-        tensiometer = create_tensiometer(ctx)
+        try:
+            inputs = _capture_worker_inputs(ctx)
+        except ValueError:
+            return
+        tensiometer = create_tensiometer(ctx, inputs)
         save_state(ctx)
         print(f"Measuring wires: {outliers}")
         tensiometer.measure_list(outliers, preserve_order=False)
@@ -325,12 +454,9 @@ def set_manual_tension(ctx: GUIContext) -> None:
                     "tension_pass": 1,
                     "x": 0.0,
                     "y": 0.0,
-                    "wires": [],
-                    "ttf": 0.0,
                     "time": datetime.now().isoformat(),
-                    "zone": 0,
+                    "zone": 1,
                     "wire_length": 0.0,
-                    "t_sigma": 0.0,
                 }
             )
             df.loc[len(df)] = row
@@ -374,10 +500,10 @@ def monitor_tension_logs(ctx: GUIContext) -> None:
 
 
 @_run_in_thread
-def refresh_tension_logs(ctx: GUIContext) -> None:
+def refresh_tension_logs(ctx: GUIContext, inputs: WorkerInputs) -> None:
     """Force an update of the tension logs regardless of file changes."""
 
-    cfg = _make_config_from_widgets(ctx)
+    cfg = _make_config_from_inputs(inputs)
 
     try:
         from dune_tension.summaries import update_tension_logs
@@ -478,6 +604,18 @@ def _make_config_from_widgets(ctx: GUIContext):
         samples_per_wire=samples,
         confidence_threshold=conf,
         plot_audio=w.plot_audio_var.get(),
+    )
+
+
+def _make_config_from_inputs(inputs: WorkerInputs):
+    return make_config(
+        apa_name=inputs.apa_name,
+        layer=inputs.layer,
+        side=inputs.side,
+        flipped=inputs.flipped,
+        samples_per_wire=inputs.samples,
+        confidence_threshold=inputs.confidence,
+        plot_audio=inputs.plot_audio,
     )
 
 

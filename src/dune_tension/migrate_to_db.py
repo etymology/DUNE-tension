@@ -1,4 +1,5 @@
 import os
+import ast
 from datetime import datetime
 from glob import glob
 
@@ -29,7 +30,10 @@ def parse_wires(val: str) -> list[float]:
     if not isinstance(val, str) or val == "" or val == "nan":
         return []
     try:
-        return [float(x) for x in eval(val)]
+        parsed = ast.literal_eval(val)
+        if isinstance(parsed, (list, tuple)):
+            return [float(x) for x in parsed]
+        return [float(parsed)]
     except Exception:
         try:
             return [float(val)]
@@ -59,9 +63,8 @@ def migrate_csvs(
             # permissive and ``on_bad_lines='skip'`` will drop unreadable lines.
             df = pd.read_csv(csv_path, engine="python", on_bad_lines="skip")
 
-        # Some legacy CSV files are missing newer columns such as ``wires`` or
-        # ``ttf``. Ensure all expected keys exist so row.get() works uniformly
-        # below.  Use sensible defaults when a column is absent.
+        # Some legacy CSV files are missing newer columns. Ensure row.get()
+        # works uniformly below.
         missing_defaults = {
             "side": "",
             "wire_number": 0,
@@ -69,8 +72,6 @@ def migrate_csvs(
             "confidence": 0.0,
             "x": 0.0,
             "y": 0.0,
-            "wires": "",
-            "ttf": 0.0,
             "time": "",
         }
         for col, default in missing_defaults.items():
@@ -78,13 +79,6 @@ def migrate_csvs(
                 df[col] = default
         for _, row in df.iterrows():
             time_val = parse_time(str(row.get("time", "")))
-            wires = parse_wires(row.get("wires", ""))
-            # ``ttf`` might be missing or contain garbage from malformed CSV rows
-            ttf_val = row.get("ttf", 0.0)
-            try:
-                ttf = float(ttf_val)
-            except Exception:
-                ttf = 0.0
 
             tr = TensionResult(
                 apa_name=apa_name,
@@ -95,13 +89,10 @@ def migrate_csvs(
                 confidence=float(row.get("confidence", 0.0)),
                 x=float(row.get("x", 0.0)),
                 y=float(row.get("y", 0.0)),
-                wires=wires,
-                ttf=ttf,
                 time=time_val,
             )
             item = {col: getattr(tr, col) for col in EXPECTED_COLUMNS}
             item["time"] = item["time"].isoformat()
-            item["wires"] = str(item["wires"])
             rows.append(item)
 
     if not rows:

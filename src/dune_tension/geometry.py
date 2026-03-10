@@ -2,6 +2,8 @@
 # geometry constants
 from __future__ import annotations
 
+from functools import lru_cache
+
 X_MIN: int = 1050
 X_MAX: int = 7030
 Y_MIN: int = 325
@@ -23,13 +25,32 @@ COMB_SPACING: float = (X_MIN - X_MAX) / 5
 
 
 def zone_lookup(x: float) -> int:
+    """Return zone index in ``[1, 5]`` for coordinate ``x``.
+
+    Zones are defined by the five segments between comb boundaries:
+    ``[X_MIN, 2230)``, ``[2230, 3420)``, ``[3420, 4590)``, ``[4590, 5770)``,
+    and ``[5770, X_MAX]``.
+    Coordinates outside ``[X_MIN, X_MAX]`` are clamped to the nearest edge.
     """
-    Determine the zone based on the x-coordinate.
-    """
-    for i, pos in enumerate(comb_positions):
-        if pos > x:
-            return i
-    return 0
+
+    boundaries = comb_positions
+    clamped_x = min(max(float(x), boundaries[0]), boundaries[-1])
+
+    for idx in range(1, len(boundaries) - 1):
+        if clamped_x < boundaries[idx]:
+            return idx
+    return len(boundaries) - 1
+
+
+@lru_cache(maxsize=2)
+def _load_wire_length_lut(layer: str):
+    import pandas as pd
+
+    file_path = f"wire_lengths/{layer}_LUT.csv"
+    try:
+        return pd.read_csv(file_path, index_col=0)
+    except FileNotFoundError as exc:
+        raise FileNotFoundError(f"File {file_path} not found") from exc
 
 
 def refine_position(
@@ -86,10 +107,6 @@ def refine_position(
 def length_lookup(
     layer: str, wire_number: int, zone: int, taped: bool = False
 ) -> float:
-    import pandas as pd
-
-    file_path = f"wire_lengths/{layer}_LUT.csv"
-
     if layer not in ["U", "V", "X", "G"]:
         raise ValueError("Invalid layer. Must be 'U', 'V', 'X', or 'G'")
     if layer == "G":
@@ -97,11 +114,7 @@ def length_lookup(
     if layer == "X":
         return X_LENGTH
 
-    # Load the specified layer spreadsheet
-    try:
-        spreadsheet = pd.read_csv(file_path, index_col=0)
-    except FileNotFoundError:
-        raise FileNotFoundError(f"File {file_path} not found")
+    spreadsheet = _load_wire_length_lut(layer)
 
     if wire_number < 1 or wire_number > 1151:
         raise ValueError("Wire number must be between 1 and 1151")
