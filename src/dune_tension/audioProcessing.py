@@ -8,6 +8,8 @@ import numpy as np
 # ``matplotlib`` module from failing.  ``MPLBACKEND`` is respected by matplotlib
 # if set before importing ``pyplot``.
 import os
+from pathlib import Path
+import shutil
 
 os.environ.setdefault("MPLBACKEND", "Agg")
 import matplotlib.pyplot as plt
@@ -17,7 +19,6 @@ try:  # pragma: no cover - fallback for legacy test stubs
 except ImportError:  # pragma: no cover
     from tension_calculation import tension_pass, wire_equation
 import sounddevice as sd
-import os
 import random
 import math
 
@@ -305,8 +306,17 @@ def record_audio(duration, sample_rate, plot=False, normalize=True):
         except Exception:
             pass
 
-
-_NOISE_FILTER_PATH = os.path.join(os.path.dirname(__file__), "noise_filter.npz")
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+_RUNTIME_NOISE_DIR = Path(
+    os.environ.get("DUNE_TENSION_NOISE_DIR", _REPO_ROOT / "data" / "noise_filters")
+)
+_NOISE_FILTER_PATH = Path(
+    os.environ.get(
+        "DUNE_TENSION_NOISE_FILTER_PATH",
+        _RUNTIME_NOISE_DIR / "noise_filter.npz",
+    )
+)
+_LEGACY_NOISE_FILTER_PATH = Path(__file__).resolve().with_name("noise_filter.npz")
 _noise_filter: dict | None = None
 _noise_threshold: float = 0.0
 
@@ -314,17 +324,34 @@ _noise_threshold: float = 0.0
 def _load_noise_filter() -> None:
     """Load the saved noise filter if available."""
     global _noise_filter, _noise_threshold
-    if _noise_filter is None and os.path.exists(_NOISE_FILTER_PATH):
+    if _noise_filter is not None:
+        return
+
+    for path in (_NOISE_FILTER_PATH, _LEGACY_NOISE_FILTER_PATH):
+        if not path.exists():
+            continue
         try:
-            data = np.load(_NOISE_FILTER_PATH)
+            data = np.load(path)
             _noise_filter = {
                 "sample_rate": int(data["sample_rate"]),
                 "magnitude": data["magnitude"],
             }
             if "threshold" in data:
                 _noise_threshold = float(data["threshold"])
+
+            if (
+                path == _LEGACY_NOISE_FILTER_PATH
+                and _NOISE_FILTER_PATH != _LEGACY_NOISE_FILTER_PATH
+                and not _NOISE_FILTER_PATH.exists()
+            ):
+                try:
+                    _NOISE_FILTER_PATH.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(path, _NOISE_FILTER_PATH)
+                except Exception:
+                    pass
+            return
         except Exception as exc:  # pragma: no cover - loading is optional
-            print(f"Failed to load noise filter: {exc}")
+            print(f"Failed to load noise filter from {path}: {exc}")
             _noise_filter = None
 
 
@@ -350,6 +377,7 @@ def calibrate_background_noise(sample_rate: int, duration: float = 1.0) -> None:
             np.abs(noise_sample)
         )  # Set threshold to twice the mean amplitude
         try:
+            _NOISE_FILTER_PATH.parent.mkdir(parents=True, exist_ok=True)
             np.savez(
                 _NOISE_FILTER_PATH,
                 sample_rate=sample_rate,

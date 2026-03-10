@@ -40,35 +40,54 @@ def _compute_tensions(
     missing_wires: Dict[str, List[int]] = {"A": [], "B": []}
 
     expected = get_expected_range(config.layer)
+    expected_set = set(expected)
     for side in ["A", "B"]:
-        side_df = samples[samples["side"] == side]
-        measured_wire_tensions: Dict[int, float] = {}
-        for wire in expected:
-            wire_df = side_df[side_df["wire_number"] == wire]
-            if len(wire_df) < config.samples_per_wire:
-                continue
-            # take the latest tension result from the wire_df by sorting wire_df["time"]
-            latest_tension_result = wire_df.sort_values("time").iloc[-1]
-            measured_wire_tensions[wire] = latest_tension_result.tension
-            line_data.append(
-                pd.DataFrame(
-                    {
-                        "wire_number": [wire],
-                        "tension": [latest_tension_result.tension],
-                        "side_label": f"Side {side}",
-                    }
-                )
-            )
-            histogram_data.append(
-                pd.DataFrame(
-                    {
-                        "tension": [latest_tension_result.tension],
-                        "side_label": f"Side {side}",
-                    }
-                )
-            )
+        side_df = samples[samples["side"] == side].copy()
+        if side_df.empty:
+            tension_series[side] = {}
+            missing_wires[side] = sorted(expected_set)
+            continue
+
+        side_df["wire_number"] = pd.to_numeric(side_df["wire_number"], errors="coerce")
+        side_df["tension"] = pd.to_numeric(side_df["tension"], errors="coerce")
+        side_df = side_df.dropna(subset=["wire_number", "tension"])
+        if side_df.empty:
+            tension_series[side] = {}
+            missing_wires[side] = sorted(expected_set)
+            continue
+
+        side_df["wire_number"] = side_df["wire_number"].astype(int)
+        side_df = side_df[side_df["wire_number"].isin(expected_set)]
+        if side_df.empty:
+            tension_series[side] = {}
+            missing_wires[side] = sorted(expected_set)
+            continue
+
+        counts = side_df.groupby("wire_number").size()
+        valid_wires = counts[counts >= config.samples_per_wire].index
+        if len(valid_wires) == 0:
+            tension_series[side] = {}
+            missing_wires[side] = sorted(expected_set)
+            continue
+
+        latest = (
+            side_df[side_df["wire_number"].isin(valid_wires)]
+            .sort_values("time")
+            .drop_duplicates(subset="wire_number", keep="last")
+            .sort_values("wire_number")
+        )
+
+        measured_wire_tensions = (
+            latest.set_index("wire_number")["tension"].astype(float).to_dict()
+        )
         tension_series[side] = measured_wire_tensions
-        missing_wires[side] = sorted(set(expected) - set(measured_wire_tensions.keys()))
+        missing_wires[side] = sorted(expected_set - set(measured_wire_tensions))
+
+        side_label = f"Side {side}"
+        line_data.append(
+            latest[["wire_number", "tension"]].assign(side_label=side_label)
+        )
+        histogram_data.append(latest[["tension"]].assign(side_label=side_label))
     return tension_series, line_data, histogram_data, missing_wires
 
 

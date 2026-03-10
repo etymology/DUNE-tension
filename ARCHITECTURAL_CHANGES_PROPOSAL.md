@@ -5,7 +5,7 @@ Scope: audit of `src/` and key runtime entrypoints for unusual implementations, 
 ## Implementation Status (2026-03-10)
 - P0 (items 1-5): Implemented.
 - P1 (items 6-10): Implemented.
-- P2 (items 11-12): Pending.
+- P2 (items 11-12): Implemented.
 
 ## 1. Normalize package boundaries and imports (P0)
 - Status: Implemented.
@@ -79,17 +79,16 @@ Scope: audit of `src/` and key runtime entrypoints for unusual implementations, 
   - Removed non-model fields from manual tension row creation in [`src/dune_tension/gui/actions.py`](src/dune_tension/gui/actions.py).
 
 ## 11. Reduce algorithmic inefficiencies in summarization and planning (P2)
-- Status: Pending.
-- Planned:
-  - Replace per-wire filtering loops with grouped operations in [`src/dune_tension/summaries.py`](src/dune_tension/summaries.py).
-  - Remove duplicate coordinate lookup calls in [`src/dune_tension/tensiometer_functions.py`](src/dune_tension/tensiometer_functions.py).
+- Status: Implemented.
+- Delivered:
+  - Replaced per-wire nested filtering with grouped/vectorized operations in [`src/dune_tension/summaries.py`](src/dune_tension/summaries.py).
+  - Removed duplicate coordinate lookup calls in [`src/dune_tension/tensiometer_functions.py`](src/dune_tension/tensiometer_functions.py).
 
 ## 12. Move runtime/generated artifacts out of package source (P2)
-- Status: Pending.
-- Planned:
-  - Relocate mutable runtime artifacts out of `src/dune_tension/`.
-  - Remove legacy placeholder root entrypoint and tighten runtime packaging boundaries.
+- Status: Implemented.
+- Delivered:
+  - Moved default noise filter runtime path to `data/noise_filters/` with legacy fallback/migration in [`src/dune_tension/audioProcessing.py`](src/dune_tension/audioProcessing.py).
+  - Replaced placeholder root entrypoint with package launcher in [`main.py`](main.py).
 
 ## Next Execution Order
-1. Execute P2 item 11.
-2. Execute P2 item 12.
+1. No remaining proposal items in this document.

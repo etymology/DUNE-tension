@@ -199,11 +199,12 @@ def measure_list(
         profiler.enable()
 
     print("Loading wire coordinates...")
-    triplets = [
-        (w, *get_xy_from_file_func(config, w))
-        for w in wire_list
-        if get_xy_from_file_func(config, w) is not None
-    ]
+    triplets: list[tuple[int, float, float]] = []
+    for wire_number in wire_list:
+        xy = get_xy_from_file_func(config, wire_number)
+        if xy is None:
+            continue
+        triplets.append((wire_number, *xy))
 
     if not triplets:
         print("No valid wires with known coordinates.")
