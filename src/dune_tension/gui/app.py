@@ -24,8 +24,10 @@ from dune_tension.gui.actions import (
     update_focus_command_indicator,
 )
 from dune_tension.gui.context import GUIContext, GUIWidgets, create_context
+from dune_tension.gui.live_plots import LivePlotManager
 from dune_tension.gui.logging_panel import configure_gui_logging
 from dune_tension.gui.state import load_state
+from dune_tension.tensiometer_functions import make_config
 
 
 def run_app(state_file: str = "gui_state.json", root: tk.Misc | None = None) -> None:
@@ -41,7 +43,16 @@ def run_app(state_file: str = "gui_state.json", root: tk.Misc | None = None) -> 
 
     focus_command_var = tk.StringVar(master=root, value="4000")
     estimated_time_var = tk.StringVar(master=root, value="Not running")
-    widgets, focus_canvas, focus_dot, buttons, pad_buttons, log_text = _create_widgets(
+    (
+        widgets,
+        focus_canvas,
+        focus_dot,
+        buttons,
+        pad_buttons,
+        log_text,
+        summary_plot_frame,
+        waveform_plot_frame,
+    ) = _create_widgets(
         root, focus_command_var, estimated_time_var
     )
     log_binding = configure_gui_logging(root, log_text)
@@ -55,10 +66,24 @@ def run_app(state_file: str = "gui_state.json", root: tk.Misc | None = None) -> 
     ctx.focus_command_canvas = focus_canvas
     ctx.focus_command_dot = focus_dot
     ctx.log_binding = log_binding
+    ctx.live_plot_manager = LivePlotManager(
+        root,
+        summary_plot_frame,
+        waveform_plot_frame,
+    )
 
     _configure_commands(ctx, buttons, pad_buttons)
 
     load_state(ctx)
+    if ctx.live_plot_manager is not None:
+        ctx.live_plot_manager.request_summary_refresh(
+            make_config(
+                apa_name=ctx.widgets.entry_apa.get(),
+                layer=ctx.widgets.layer_var.get(),
+                side=ctx.widgets.side_var.get(),
+                flipped=bool(ctx.widgets.flipped_var.get()),
+            )
+        )
     _initialise_servo(ctx)
 
     ctx.root.protocol("WM_DELETE_WINDOW", lambda: handle_close(ctx))
@@ -92,6 +117,8 @@ def _create_widgets(
     dict[str, tk.Button],
     list[tuple[tk.Button, int, int]],
     Any | None,
+    tk.Misc,
+    tk.Misc,
 ]:
     """Build and layout the GUI widgets."""
 
@@ -102,12 +129,42 @@ def _create_widgets(
     if hasattr(main_frame, "rowconfigure"):
         main_frame.rowconfigure(0, weight=1)
 
-    log_frame = tk.LabelFrame(root, text="Log")
-    log_frame.grid(row=0, column=1, padx=(5, 10), pady=10, sticky="nsew")
+    side_frame = tk.Frame(root)
+    side_frame.grid(row=0, column=1, padx=(5, 10), pady=10, sticky="nsew")
+    if hasattr(side_frame, "columnconfigure"):
+        side_frame.columnconfigure(0, weight=1)
+    if hasattr(side_frame, "rowconfigure"):
+        side_frame.rowconfigure(0, weight=1)
+        side_frame.rowconfigure(1, weight=1)
+
+    log_frame = tk.LabelFrame(side_frame, text="Log")
+    log_frame.grid(row=0, column=0, sticky="nsew")
     if hasattr(log_frame, "columnconfigure"):
         log_frame.columnconfigure(0, weight=1)
     if hasattr(log_frame, "rowconfigure"):
         log_frame.rowconfigure(0, weight=1)
+
+    live_plots_frame = tk.LabelFrame(side_frame, text="Live Plots")
+    live_plots_frame.grid(row=1, column=0, sticky="nsew", pady=(10, 0))
+    if hasattr(live_plots_frame, "columnconfigure"):
+        live_plots_frame.columnconfigure(0, weight=1)
+    if hasattr(live_plots_frame, "rowconfigure"):
+        live_plots_frame.rowconfigure(0, weight=3)
+        live_plots_frame.rowconfigure(1, weight=2)
+
+    summary_plot_frame = tk.Frame(live_plots_frame)
+    summary_plot_frame.grid(row=0, column=0, sticky="nsew")
+    if hasattr(summary_plot_frame, "columnconfigure"):
+        summary_plot_frame.columnconfigure(0, weight=1)
+    if hasattr(summary_plot_frame, "rowconfigure"):
+        summary_plot_frame.rowconfigure(0, weight=1)
+
+    waveform_plot_frame = tk.Frame(live_plots_frame)
+    waveform_plot_frame.grid(row=1, column=0, sticky="nsew", pady=(8, 0))
+    if hasattr(waveform_plot_frame, "columnconfigure"):
+        waveform_plot_frame.columnconfigure(0, weight=1)
+    if hasattr(waveform_plot_frame, "rowconfigure"):
+        waveform_plot_frame.rowconfigure(0, weight=1)
 
     log_text: Any | None = None
     if hasattr(tk, "Text"):
@@ -332,6 +389,8 @@ def _create_widgets(
         buttons,
         pad_buttons,
         log_text,
+        summary_plot_frame,
+        waveform_plot_frame,
     )
 
 

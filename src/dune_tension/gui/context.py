@@ -84,6 +84,7 @@ class GUIContext:
     measurement_lock: Any = field(default_factory=threading.Lock)
     log_binding: Any | None = None
     strum: Callable[[], None] = field(default=lambda: None)
+    live_plot_manager: Any | None = None
 
 
 LOGGER = logging.getLogger(__name__)

@@ -47,6 +47,24 @@ def _set_estimated_time(ctx: GUIContext, value: str) -> None:
         return
 
 
+def _publish_live_waveform(
+    ctx: GUIContext,
+    audio_sample: Any,
+    samplerate: int,
+) -> None:
+    manager = getattr(ctx, "live_plot_manager", None)
+    if manager is None:
+        return
+    manager.publish_waveform(audio_sample, samplerate)
+
+
+def _request_live_summary_refresh(ctx: GUIContext, config: Any) -> None:
+    manager = getattr(ctx, "live_plot_manager", None)
+    if manager is None:
+        return
+    manager.request_summary_refresh(config)
+
+
 @dataclass(frozen=True)
 class WorkerInputs:
     apa_name: str
@@ -155,6 +173,15 @@ def create_tensiometer(ctx: GUIContext, inputs: WorkerInputs) -> "Tensiometer":
         strum=ctx.strum,
         focus_wiggle=ctx.servo_controller.nudge_focus,
         estimated_time_callback=lambda value: _set_estimated_time(ctx, value),
+        audio_sample_callback=lambda audio_sample, samplerate: _publish_live_waveform(
+            ctx,
+            audio_sample,
+            samplerate,
+        ),
+        summary_refresh_callback=lambda config: _request_live_summary_refresh(
+            ctx,
+            config,
+        ),
     )
 
 
@@ -436,6 +463,7 @@ def clear_range(ctx: GUIContext) -> None:
     for start, end in ranges:
         clear_wire_range(cfg.data_path, cfg.apa_name, cfg.layer, cfg.side, start, end)
     LOGGER.info("Cleared ranges: %s", ctx.widgets.entry_clear_range.get())
+    _request_live_summary_refresh(ctx, cfg)
 
 
 def erase_outliers(ctx: GUIContext) -> None:
@@ -469,6 +497,7 @@ def erase_outliers(ctx: GUIContext) -> None:
             outliers,
         )
         LOGGER.info("Erased outlier wires: %s", outliers)
+        _request_live_summary_refresh(ctx, cfg)
     else:
         LOGGER.info("No outlier wires found")
 
@@ -514,6 +543,7 @@ def set_manual_tension(ctx: GUIContext) -> None:
             df.loc[len(df)] = row
     update_dataframe(cfg.data_path, df)
     LOGGER.info("Updated tensions: %s", pairs)
+    _request_live_summary_refresh(ctx, cfg)
 
 
 def interrupt(ctx: GUIContext) -> None:
@@ -541,6 +571,7 @@ def monitor_tension_logs(ctx: GUIContext) -> None:
                 from dune_tension.summaries import update_tension_logs
 
                 update_tension_logs(cfg)
+                _request_live_summary_refresh(ctx, cfg)
                 LOGGER.info(
                     "Updated tension logs for %s layer %s",
                     cfg.apa_name,
@@ -566,6 +597,7 @@ def refresh_tension_logs(ctx: GUIContext, inputs: WorkerInputs) -> None:
         from dune_tension.summaries import update_tension_logs
 
         update_tension_logs(cfg)
+        _request_live_summary_refresh(ctx, cfg)
         try:
             ctx.monitor_last_path = cfg.data_path
             ctx.monitor_last_mtime = os.path.getmtime(cfg.data_path)

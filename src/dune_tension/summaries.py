@@ -1,10 +1,10 @@
 import os
 from typing import Dict, List
 
-import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import seaborn as sns
+from matplotlib.figure import Figure
 
 try:  # pragma: no cover - fallback for legacy test stubs
     from dune_tension.data_cache import get_dataframe
@@ -147,28 +147,65 @@ def save_plot(
     output_dir: str,
 ) -> None:
     os.makedirs(output_dir, exist_ok=True)
-    if not line_data:
+    figure = build_summary_plot_figure(
+        line_data,
+        histogram_data,
+        apa_name,
+        layer,
+    )
+    if figure is None:
         return
+    figure.savefig(
+        os.path.join(output_dir, f"tension_plot_{apa_name}_{layer}.png"),
+        dpi=300,
+    )
+
+
+def build_summary_plot_figure(
+    line_data: List[pd.DataFrame],
+    histogram_data: List[pd.DataFrame],
+    apa_name: str,
+    layer: str,
+    *,
+    figsize: tuple[float, float] = (14, 5),
+) -> Figure | None:
+    """Build the summary plot figure used by both saved images and the live GUI."""
+
+    if not line_data or not histogram_data:
+        return None
+
     line_df = pd.concat(line_data)
     hist_df = pd.concat(histogram_data)
 
-    plt.figure(figsize=(14, 5))
+    figure = Figure(figsize=figsize)
+    scatter_axis = figure.add_subplot(1, 2, 1)
+    hist_axis = figure.add_subplot(1, 2, 2)
 
-    plt.subplot(1, 2, 1)
     for side_label, group in line_df.groupby("side_label"):
-        plt.scatter(
-            group["wire_number"], group["tension"], label=side_label, alpha=0.5, s=10
+        scatter_axis.scatter(
+            group["wire_number"],
+            group["tension"],
+            label=side_label,
+            alpha=0.5,
+            s=10,
         )
         sorted_group = group.sort_values("wire_number")
-        ma = sorted_group["tension"].rolling(window=15, center=True).mean()
-        plt.plot(sorted_group["wire_number"], ma, alpha=0.4, linewidth=2)
-    plt.title(f"{apa_name} - Tension Scatter Plot with Trendline - Layer {layer}")
-    plt.xlabel("Wire Number")
-    plt.ylabel("Tension")
-    plt.grid(True, linestyle=":", linewidth=0.5, color="gray")
-    plt.legend()
+        moving_average = sorted_group["tension"].rolling(window=15, center=True).mean()
+        scatter_axis.plot(
+            sorted_group["wire_number"],
+            moving_average,
+            alpha=0.4,
+            linewidth=2,
+        )
 
-    plt.subplot(1, 2, 2)
+    scatter_axis.set_title(
+        f"{apa_name} - Tension Scatter Plot with Trendline - Layer {layer}"
+    )
+    scatter_axis.set_xlabel("Wire Number")
+    scatter_axis.set_ylabel("Tension")
+    scatter_axis.grid(True, linestyle=":", linewidth=0.5, color="gray")
+    scatter_axis.legend()
+
     sns.histplot(
         data=hist_df,
         x="tension",
@@ -176,17 +213,33 @@ def save_plot(
         element="step",
         stat="count",
         common_norm=False,
+        ax=hist_axis,
     )
-    plt.title(f"{apa_name} - Tension Histogram - Layer {layer}")
-    plt.xlabel("Tension")
-    plt.ylabel("Count")
-    plt.grid(True, linestyle=":", linewidth=0.5, color="gray")
+    hist_axis.set_title(f"{apa_name} - Tension Histogram - Layer {layer}")
+    hist_axis.set_xlabel("Tension")
+    hist_axis.set_ylabel("Count")
+    hist_axis.grid(True, linestyle=":", linewidth=0.5, color="gray")
 
-    plt.tight_layout()
-    plt.savefig(
-        os.path.join(output_dir, f"tension_plot_{apa_name}_{layer}.png"), dpi=300
+    figure.tight_layout()
+    return figure
+
+
+def build_summary_plot_figure_for_config(
+    config: TensiometerConfig,
+    *,
+    figsize: tuple[float, float] = (14, 5),
+) -> Figure | None:
+    """Build the current summary figure for ``config`` from persisted results."""
+
+    measurements = _load_summary_measurements(config)
+    _, line_data, histogram_data, _ = _compute_tensions(config, measurements)
+    return build_summary_plot_figure(
+        line_data,
+        histogram_data,
+        config.apa_name,
+        config.layer,
+        figsize=figsize,
     )
-    plt.close()
 
 
 def write_missing_wires(

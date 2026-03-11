@@ -123,6 +123,41 @@ def test_compute_tensions_prefers_latest_plausible_measurement(
     assert len(histogram_data) == 2
 
 
+def test_build_summary_plot_figure_creates_two_panel_figure() -> None:
+    line_data = [
+        pd.DataFrame(
+            {
+                "wire_number": [1, 2, 3],
+                "tension": [5.0, 5.2, 5.1],
+                "side_label": ["Side A", "Side A", "Side A"],
+            }
+        ),
+        pd.DataFrame(
+            {
+                "wire_number": [1, 2, 3],
+                "tension": [5.4, 5.5, 5.6],
+                "side_label": ["Side B", "Side B", "Side B"],
+            }
+        ),
+    ]
+    histogram_data = [
+        pd.DataFrame({"tension": [5.0, 5.2, 5.1], "side_label": ["Side A"] * 3}),
+        pd.DataFrame({"tension": [5.4, 5.5, 5.6], "side_label": ["Side B"] * 3}),
+    ]
+
+    figure = summaries.build_summary_plot_figure(
+        line_data,
+        histogram_data,
+        "APA",
+        "X",
+    )
+
+    assert figure is not None
+    assert len(figure.axes) == 2
+    assert figure.axes[0].get_title() == "APA - Tension Scatter Plot with Trendline - Layer X"
+    assert figure.axes[1].get_title() == "APA - Tension Histogram - Layer X"
+
+
 def test_get_tension_series_uses_summary_results_over_raw_samples(
     tmp_path, monkeypatch
 ) -> None:
