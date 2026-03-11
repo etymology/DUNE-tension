@@ -13,3 +13,5 @@ src/dune_tension.egg-info/
 data/2025*
 rust/harmonic_comb/target/*
 src/data/2025*
+gui_state.json
+data/noise_filters/noise_filter.npz
