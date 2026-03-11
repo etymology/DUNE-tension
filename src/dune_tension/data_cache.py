@@ -3,7 +3,7 @@ from __future__ import annotations
 import sqlite3
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterable
 
 import pandas as pd
 
@@ -20,10 +20,33 @@ def _table_columns_sql() -> str:
     return ", ".join(f"{col} TEXT" for col in EXPECTED_COLUMNS)
 
 
+def _get_table_columns(conn: sqlite3.Connection, table: str) -> list[str]:
+    rows = conn.execute(f"PRAGMA table_info({table})").fetchall()
+    return [str(row[1]) for row in rows]
+
+
+def _normalize_dataframe_columns(df: pd.DataFrame) -> pd.DataFrame:
+    normalized = df.copy()
+    for col in EXPECTED_COLUMNS:
+        if col not in normalized.columns:
+            normalized[col] = None
+    return normalized.loc[:, EXPECTED_COLUMNS]
+
+
+def _ensure_table_schema(conn: sqlite3.Connection, table: str) -> None:
+    if not _table_exists(conn, table):
+        conn.execute(f"CREATE TABLE {table} ({_table_columns_sql()})")
+        return
+
+    existing_columns = set(_get_table_columns(conn, table))
+    for col in EXPECTED_COLUMNS:
+        if col not in existing_columns:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} TEXT")
+
+
 def _ensure_tables(conn: sqlite3.Connection) -> None:
-    columns_sql = _table_columns_sql()
-    conn.execute(f"CREATE TABLE IF NOT EXISTS {TABLE_TENSION_DATA} ({columns_sql})")
-    conn.execute(f"CREATE TABLE IF NOT EXISTS {TABLE_TENSION_SAMPLES} ({columns_sql})")
+    _ensure_table_schema(conn, TABLE_TENSION_DATA)
+    _ensure_table_schema(conn, TABLE_TENSION_SAMPLES)
     conn.commit()
 
 
@@ -37,7 +60,8 @@ def _table_exists(conn: sqlite3.Connection, table: str) -> bool:
 def _read_table(conn: sqlite3.Connection, table: str) -> pd.DataFrame:
     if not _table_exists(conn, table):
         return pd.DataFrame(columns=EXPECTED_COLUMNS)
-    return pd.read_sql_query(f"SELECT * FROM {table}", conn)
+    df = pd.read_sql_query(f"SELECT * FROM {table}", conn)
+    return _normalize_dataframe_columns(df)
 
 
 def _cache_key(file_path: str, table: str) -> str:
@@ -103,11 +127,12 @@ def get_dataframe(file_path: str) -> pd.DataFrame:
 def update_dataframe(file_path: str, df: pd.DataFrame) -> None:
     """Replace ``tension_data`` with ``df`` and refresh cache."""
 
+    normalized_df = _normalize_dataframe_columns(df)
     key = _cache_key(file_path, TABLE_TENSION_DATA)
-    _dataframe_cache[key] = df.copy()
+    _dataframe_cache[key] = normalized_df.copy()
     with sqlite3.connect(file_path) as conn:
         _ensure_tables(conn)
-        df.to_sql(TABLE_TENSION_DATA, conn, if_exists="replace", index=False)
+        normalized_df.to_sql(TABLE_TENSION_DATA, conn, if_exists="replace", index=False)
 
 
 def append_dataframe_row(file_path: str, row: dict[str, Any]) -> None:
@@ -135,17 +160,64 @@ def get_results_dataframe(file_path: str) -> pd.DataFrame:
 def update_results_dataframe(file_path: str, df: pd.DataFrame) -> None:
     """Replace ``tension_samples`` with ``df`` and refresh cache."""
 
+    normalized_df = _normalize_dataframe_columns(df)
     key = _cache_key(file_path, TABLE_TENSION_SAMPLES)
-    _dataframe_cache[key] = df.copy()
+    _dataframe_cache[key] = normalized_df.copy()
     with sqlite3.connect(file_path) as conn:
         _ensure_tables(conn)
-        df.to_sql(TABLE_TENSION_SAMPLES, conn, if_exists="replace", index=False)
+        normalized_df.to_sql(TABLE_TENSION_SAMPLES, conn, if_exists="replace", index=False)
 
 
 def append_results_row(file_path: str, row: dict[str, Any]) -> None:
     """Append one row to ``tension_samples`` without rewriting the full table."""
 
     _append_row(file_path, TABLE_TENSION_SAMPLES, row)
+
+
+def _drop_wire_numbers(
+    df: pd.DataFrame,
+    apa_name: str,
+    layer: str,
+    side: str,
+    wire_numbers: Iterable[int],
+) -> pd.DataFrame:
+    """Return ``df`` with the selected wires removed for one APA/layer/side."""
+
+    numbers = {int(wire) for wire in wire_numbers}
+    if df.empty or not numbers:
+        return df.reset_index(drop=True)
+
+    wire_series = pd.to_numeric(df["wire_number"], errors="coerce")
+    mask = ~(
+        (df["apa_name"] == apa_name)
+        & (df["layer"] == layer)
+        & (df["side"] == side)
+        & wire_series.isin(numbers)
+    )
+    return df[mask].reset_index(drop=True)
+
+
+def clear_wire_numbers(
+    file_path: str,
+    apa_name: str,
+    layer: str,
+    side: str,
+    wire_numbers: Iterable[int],
+) -> None:
+    """Remove all rows matching ``wire_numbers`` from both DB tables."""
+
+    numbers = sorted({int(wire) for wire in wire_numbers})
+    if not numbers:
+        return
+
+    df = get_dataframe(file_path)
+    update_dataframe(file_path, _drop_wire_numbers(df, apa_name, layer, side, numbers))
+
+    samples_df = _get_table_dataframe(file_path, TABLE_TENSION_SAMPLES)
+    update_results_dataframe(
+        file_path,
+        _drop_wire_numbers(samples_df, apa_name, layer, side, numbers),
+    )
 
 
 def clear_wire_range(
@@ -158,23 +230,7 @@ def clear_wire_range(
 ) -> None:
     """Remove all rows matching the given wire range from both DB tables."""
 
-    df = get_dataframe(file_path)
-    mask = ~(
-        (df["apa_name"] == apa_name)
-        & (df["layer"] == layer)
-        & (df["side"] == side)
-        & (df["wire_number"].astype(int).between(start, end))
-    )
-    update_dataframe(file_path, df[mask].reset_index(drop=True))
-
-    samples_df = get_results_dataframe(file_path)
-    mask_s = ~(
-        (samples_df["apa_name"] == apa_name)
-        & (samples_df["layer"] == layer)
-        & (samples_df["side"] == side)
-        & (samples_df["wire_number"].astype(int).between(start, end))
-    )
-    update_results_dataframe(file_path, samples_df[mask_s].reset_index(drop=True))
+    clear_wire_numbers(file_path, apa_name, layer, side, range(start, end + 1))
 
 
 def find_outliers(

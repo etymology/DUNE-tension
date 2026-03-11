@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import logging
 from typing import Any, Callable
 
 try:  # pragma: no cover - fallback for legacy test stubs
@@ -16,6 +17,8 @@ try:  # pragma: no cover - fallback for legacy test stubs
     from dune_tension.results import EXPECTED_COLUMNS, TensionResult
 except Exception:  # pragma: no cover
     from results import EXPECTED_COLUMNS, TensionResult  # type: ignore
+
+LOGGER = logging.getLogger(__name__)
 
 
 def _import_plc_module() -> Any:
@@ -66,7 +69,7 @@ class MotionService:
             active_get_xy = get_xy
             active_goto_xy = goto_xy
         else:
-            print(
+            LOGGER.warning(
                 "Web server is not active or spoof_movement enabled. Using dummy functions."
             )
             active_get_xy = spoof_get_xy
@@ -100,7 +103,7 @@ class AudioCaptureService:
         noise_threshold = float(get_noise_threshold())
 
         if samplerate is None or spoof or record_audio_filtered is None:
-            print("Using spoofed audio sample for testing.")
+            LOGGER.info("Using spoofed audio sample for testing.")
             samplerate = 44100
             if spoof_audio_sample is None:
                 record_audio = lambda _duration, _sample_rate: ([], 0.0)
@@ -129,7 +132,10 @@ class ResultRepository:
     def __init__(self, data_path: str) -> None:
         self.data_path = data_path
 
+    def append_sample(self, result: TensionResult) -> None:
+        row = {col: getattr(result, col, None) for col in EXPECTED_COLUMNS}
+        append_results_row(self.data_path, row)
+
     def append_result(self, result: TensionResult) -> None:
         row = {col: getattr(result, col, None) for col in EXPECTED_COLUMNS}
         append_dataframe_row(self.data_path, row)
-        append_results_row(self.data_path, row)

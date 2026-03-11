@@ -44,13 +44,13 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
         "--samples-per-wire",
         type=int,
         default=3,
-        help="Minimum number of samples per wire required to plot (default: 3)",
+        help="Legacy compatibility setting retained in config serialization (default: 3)",
     )
     parser.add_argument(
         "--confidence-threshold",
         type=float,
         default=0.7,
-        help="Minimum confidence for a measurement to be included (default: 0.7)",
+        help="Confidence target used for early measurement stopping (default: 0.7)",
     )
     parser.add_argument(
         "--data-path",

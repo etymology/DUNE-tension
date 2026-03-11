@@ -5,6 +5,7 @@ from __future__ import annotations
 import ast
 from dataclasses import dataclass
 from datetime import datetime
+import logging
 import os
 import re
 import threading
@@ -15,6 +16,7 @@ import sounddevice as sd  # type: ignore
 from tkinter import messagebox
 
 from dune_tension.data_cache import (
+    clear_wire_numbers,
     clear_wire_range,
     find_outliers,
     get_dataframe,
@@ -25,6 +27,23 @@ from dune_tension.tensiometer import Tensiometer
 from dune_tension.tensiometer_functions import make_config
 from dune_tension.gui.context import GUIContext
 from dune_tension.gui.state import save_state
+
+LOGGER = logging.getLogger(__name__)
+
+
+def _set_estimated_time(ctx: GUIContext, value: str) -> None:
+    """Update the ETA label on the Tk thread."""
+
+    def apply() -> None:
+        ctx.estimated_time_var.set(value)
+
+    try:
+        if threading.current_thread() is threading.main_thread():
+            apply()
+            return
+        ctx.root.after(0, apply)
+    except Exception:
+        return
 
 
 @dataclass(frozen=True)
@@ -132,33 +151,75 @@ def create_tensiometer(ctx: GUIContext, inputs: WorkerInputs) -> Tensiometer:
         plot_audio=inputs.plot_audio,
         strum=ctx.strum,
         focus_wiggle=ctx.servo_controller.nudge_focus,
+        estimated_time_callback=lambda value: _set_estimated_time(ctx, value),
     )
 
 
-def _run_in_thread(func):
+def _begin_measurement(ctx: GUIContext, name: str) -> bool:
+    """Mark a measurement as active, returning ``False`` if one is already running."""
+
+    with ctx.measurement_lock:
+        if ctx.measurement_active:
+            active_name = ctx.active_measurement_name or "another measurement"
+            LOGGER.warning(
+                "Ignoring %s request because %s is already running.",
+                name,
+                active_name,
+            )
+            return False
+        ctx.measurement_active = True
+        ctx.active_measurement_name = name
+        return True
+
+
+def _end_measurement(ctx: GUIContext) -> None:
+    """Clear the active measurement marker."""
+
+    with ctx.measurement_lock:
+        ctx.measurement_active = False
+        ctx.active_measurement_name = ""
+
+
+def _run_in_thread(func=None, *, measurement: bool = False):
     """Decorator to execute ``func`` in a daemon thread."""
 
-    def wrapper(ctx: GUIContext, *args: Any, **kwargs: Any) -> None:
-        try:
-            inputs = _capture_worker_inputs(ctx)
-        except ValueError:
-            return
-
-        save_state(ctx)
-
-        def run() -> None:
-            ctx.stop_event.clear()
+    def decorator(func):
+        def wrapper(ctx: GUIContext, *args: Any, **kwargs: Any) -> None:
             try:
-                func(ctx, inputs, *args, **kwargs)
-            finally:
+                inputs = _capture_worker_inputs(ctx)
+            except ValueError:
+                return
+
+            save_state(ctx)
+
+            measurement_name = func.__name__.replace("_", " ")
+            if measurement and not _begin_measurement(ctx, measurement_name):
+                return
+
+            def run() -> None:
                 ctx.stop_event.clear()
+                try:
+                    func(ctx, inputs, *args, **kwargs)
+                finally:
+                    ctx.stop_event.clear()
+                    if measurement:
+                        _end_measurement(ctx)
 
-        Thread(target=run, daemon=True).start()
+            try:
+                Thread(target=run, daemon=True).start()
+            except Exception:
+                if measurement:
+                    _end_measurement(ctx)
+                raise
 
-    return wrapper
+        return wrapper
+
+    if func is None:
+        return decorator
+    return decorator(func)
 
 
-@_run_in_thread
+@_run_in_thread(measurement=True)
 def measure_calibrate(ctx: GUIContext, inputs: WorkerInputs) -> None:
     """Measure and calibrate a single wire."""
 
@@ -167,21 +228,27 @@ def measure_calibrate(ctx: GUIContext, inputs: WorkerInputs) -> None:
         tensiometer = create_tensiometer(ctx, inputs)
         wire_number = int(inputs.wire_number)
         tensiometer.measure_calibrate(wire_number)
-        print("Done calibrating wire", wire_number)
+        LOGGER.info("Done calibrating wire %s", wire_number)
     finally:
         _cleanup_after_measurement(ctx, tensiometer)
 
 
-@_run_in_thread
+@_run_in_thread(measurement=True)
 def measure_auto(ctx: GUIContext, inputs: WorkerInputs) -> None:
     """Automatically measure the full APA."""
-    print("Starting automatic measurement of full APA")
+    LOGGER.info("Starting automatic measurement of full APA")
     tensiometer: Tensiometer | None = None
     try:
+        _set_estimated_time(ctx, "--")
         tensiometer = create_tensiometer(ctx, inputs)
         tensiometer.measure_auto()
+        if ctx.stop_event.is_set():
+            _set_estimated_time(ctx, "Interrupted")
+    except Exception:
+        _set_estimated_time(ctx, "Not running")
+        raise
     finally:
-        _cleanup_after_measurement(ctx, tensiometer)
+        _cleanup_after_measurement(ctx, tensiometer, reset_estimated_time=False)
 
 
 def _parse_ranges(text: str) -> list[tuple[int, int]]:
@@ -210,7 +277,7 @@ def _parse_ranges(text: str) -> list[tuple[int, int]]:
     return ranges
 
 
-@_run_in_thread
+@_run_in_thread(measurement=True)
 def measure_list_button(ctx: GUIContext, inputs: WorkerInputs) -> None:
     """Measure a comma separated list of wire ranges."""
 
@@ -221,7 +288,7 @@ def measure_list_button(ctx: GUIContext, inputs: WorkerInputs) -> None:
         wire_list: list[int] = []
         for start, end in ranges:
             wire_list.extend(range(start, end + 1))
-        print(f"Measuring wires: {wire_list}")
+        LOGGER.info("Measuring wires: %s", wire_list)
         tensiometer.measure_list(wire_list, preserve_order=False)
     finally:
         _cleanup_after_measurement(ctx, tensiometer)
@@ -239,64 +306,54 @@ def calibrate_background_noise(ctx: GUIContext, _inputs: WorkerInputs) -> None:
 
         samplerate = get_samplerate()
         if samplerate is None:
-            print("Unable to access audio device")
+            LOGGER.warning("Unable to access audio device")
             return
         calibrate_background_noise(int(samplerate))
-        print("Background noise calibrated")
+        LOGGER.info("Background noise calibrated")
     finally:
         ctx.stop_event.clear()
 
 
-@_run_in_thread
+@_run_in_thread(measurement=True)
 def measure_condition(ctx: GUIContext, inputs: WorkerInputs) -> None:
     """Measure wires whose tension satisfies the configured expression."""
 
     def _get_wires(config, expr: str) -> list[int]:
-        from dune_tension.data_cache import get_dataframe  # local import for testing
-        import pandas as pd
+        from dune_tension.summaries import get_tension_series
 
         try:
             predicate = _compile_tension_condition(expr)
         except ValueError as exc:
-            print(f"Invalid expression '{expr}': {exc}")
+            LOGGER.warning("Invalid expression %r: %s", expr, exc)
             return []
 
-        df = get_dataframe(config.data_path)
-        mask = (
-            (df["apa_name"] == config.apa_name)
-            & (df["layer"] == config.layer)
-            & (df["side"] == config.side)
-        )
-        subset = df[mask].copy()
-        subset["wire_number"] = pd.to_numeric(subset["wire_number"], errors="coerce")
-        subset["tension"] = pd.to_numeric(subset["tension"], errors="coerce")
-        subset = subset.dropna(subset=["wire_number", "tension"])
-        subset = subset.sort_values("time").drop_duplicates(
-            subset="wire_number", keep="last"
-        )
         wires: list[int] = []
-        for _, row in subset.iterrows():
+        tension_series = get_tension_series(config)
+        for wire_number, tension in sorted(
+            tension_series.get(str(config.side).upper(), {}).items()
+        ):
             try:
-                if predicate(float(row["tension"])):
-                    wires.append(int(row["wire_number"]))
+                if predicate(float(tension)):
+                    wires.append(int(wire_number))
             except Exception as exc:
-                print(f"Invalid expression '{expr}': {exc}")
+                LOGGER.warning("Invalid expression %r: %s", expr, exc)
                 return []
-        return sorted(set(wires))
+        return wires
 
     tensiometer: Tensiometer | None = None
     expr = inputs.condition.strip()
     if not expr:
-        print("No condition specified")
+        LOGGER.warning("No condition specified")
         return
 
     try:
-        tensiometer = create_tensiometer(ctx, inputs)
-        wires = _get_wires(tensiometer.config, expr)
+        config = _make_config_from_inputs(inputs)
+        wires = _get_wires(config, expr)
         if not wires:
-            print(f"No wires satisfy: {expr}")
+            LOGGER.info("No wires satisfy: %s", expr)
             return
-        print(f"Measuring wires {wires} matching '{expr}'")
+        tensiometer = create_tensiometer(ctx, inputs)
+        LOGGER.info("Measuring wires %s matching %r", wires, expr)
         tensiometer.measure_list(wires, preserve_order=False)
     finally:
         _cleanup_after_measurement(ctx, tensiometer)
@@ -369,16 +426,16 @@ def _compile_tension_condition(expr: str):
 def clear_range(ctx: GUIContext) -> None:
     ranges = _parse_ranges(ctx.widgets.entry_clear_range.get())
     if not ranges:
-        print("No valid range specified")
+        LOGGER.warning("No valid range specified")
         return
 
     cfg = _make_config_from_widgets(ctx)
     for start, end in ranges:
         clear_wire_range(cfg.data_path, cfg.apa_name, cfg.layer, cfg.side, start, end)
-    print(f"Cleared ranges: {ctx.widgets.entry_clear_range.get()}")
+    LOGGER.info("Cleared ranges: %s", ctx.widgets.entry_clear_range.get())
 
 
-def measure_outliers(ctx: GUIContext) -> None:
+def erase_outliers(ctx: GUIContext) -> None:
     cfg = _make_config_from_widgets(ctx)
     try:
         conf = float(ctx.widgets.entry_confidence.get())
@@ -399,32 +456,24 @@ def measure_outliers(ctx: GUIContext) -> None:
             confidence_threshold=conf,
         )
     )
-    # measure the list of outliers
-
-    tensiometer: Tensiometer | None = None
-
-    try:
-        try:
-            inputs = _capture_worker_inputs(ctx)
-        except ValueError:
-            return
-        tensiometer = create_tensiometer(ctx, inputs)
-        save_state(ctx)
-        print(f"Measuring wires: {outliers}")
-        tensiometer.measure_list(outliers, preserve_order=False)
-    finally:
-        _cleanup_after_measurement(ctx, tensiometer)
 
     if outliers:
-        print(f"Cleared outlier wires: {outliers}")
+        clear_wire_numbers(
+            cfg.data_path,
+            cfg.apa_name,
+            cfg.layer,
+            cfg.side,
+            outliers,
+        )
+        LOGGER.info("Erased outlier wires: %s", outliers)
     else:
-        print("No outlier wires found")
+        LOGGER.info("No outlier wires found")
 
 
 def set_manual_tension(ctx: GUIContext) -> None:
     pairs = _parse_pairs(ctx.widgets.entry_set_tension.get())
     if not pairs:
-        print("No valid tension pairs specified")
+        LOGGER.warning("No valid tension pairs specified")
         return
 
     cfg = _make_config_from_widgets(ctx)
@@ -461,12 +510,13 @@ def set_manual_tension(ctx: GUIContext) -> None:
             )
             df.loc[len(df)] = row
     update_dataframe(cfg.data_path, df)
-    print(f"Updated tensions: {pairs}")
+    LOGGER.info("Updated tensions: %s", pairs)
 
 
 def interrupt(ctx: GUIContext) -> None:
     ctx.stop_event.set()
     ctx.servo_controller.stop_loop()
+    _set_estimated_time(ctx, "Interrupted")
 
 
 def monitor_tension_logs(ctx: GUIContext) -> None:
@@ -488,9 +538,13 @@ def monitor_tension_logs(ctx: GUIContext) -> None:
                 from dune_tension.summaries import update_tension_logs
 
                 update_tension_logs(cfg)
-                print(f"Updated tension logs for {cfg.apa_name} layer {cfg.layer}")
+                LOGGER.info(
+                    "Updated tension logs for %s layer %s",
+                    cfg.apa_name,
+                    cfg.layer,
+                )
             except Exception as exc:
-                print(f"Failed to update logs: {exc}")
+                LOGGER.warning("Failed to update logs: %s", exc)
 
         if ctx.monitor_thread is None or not ctx.monitor_thread.is_alive():
             ctx.monitor_thread = Thread(target=run, daemon=True)
@@ -514,9 +568,13 @@ def refresh_tension_logs(ctx: GUIContext, inputs: WorkerInputs) -> None:
             ctx.monitor_last_mtime = os.path.getmtime(cfg.data_path)
         except OSError:
             ctx.monitor_last_mtime = None
-        print(f"Manually refreshed tension logs for {cfg.apa_name} layer {cfg.layer}")
+        LOGGER.info(
+            "Manually refreshed tension logs for %s layer %s",
+            cfg.apa_name,
+            cfg.layer,
+        )
     except Exception as exc:
-        print(f"Failed to refresh logs: {exc}")
+        LOGGER.warning("Failed to refresh logs: %s", exc)
 
 
 def manual_goto(ctx: GUIContext) -> None:
@@ -526,7 +584,7 @@ def manual_goto(ctx: GUIContext) -> None:
         x_val = float(x_str.strip())
         y_val = float(y_str.strip())
     except ValueError:
-        print(f"Invalid coordinates: {text}")
+        LOGGER.warning("Invalid coordinates: %s", text)
         return
     ctx.goto_xy(x_val, y_val)
 
@@ -570,6 +628,11 @@ def update_focus_command_indicator(ctx: GUIContext, value: int) -> None:
 def handle_close(ctx: GUIContext) -> None:
     ctx.stop_event.set()
     ctx.servo_controller.stop_loop()
+    if ctx.log_binding is not None:
+        try:
+            ctx.log_binding.close()
+        except Exception:
+            pass
     if ctx.valve_controller is not None:
         try:
             ctx.valve_controller.close()
@@ -620,7 +683,10 @@ def _make_config_from_inputs(inputs: WorkerInputs):
 
 
 def _cleanup_after_measurement(
-    ctx: GUIContext, tensiometer: Tensiometer | None
+    ctx: GUIContext,
+    tensiometer: Tensiometer | None,
+    *,
+    reset_estimated_time: bool = True,
 ) -> None:
     if tensiometer is not None:
         try:
@@ -633,4 +699,6 @@ def _cleanup_after_measurement(
         reset_plc()
     except Exception:
         pass
+    if reset_estimated_time:
+        _set_estimated_time(ctx, "Not running")
     ctx.stop_event.clear()

@@ -7,10 +7,12 @@ import pandas as pd
 import seaborn as sns
 
 try:  # pragma: no cover - fallback for legacy test stubs
-    from dune_tension.data_cache import get_results_dataframe
+    from dune_tension.data_cache import get_dataframe
+    from dune_tension.tension_calculation import tension_plausible
     from dune_tension.tensiometer_functions import TensiometerConfig
 except ImportError:  # pragma: no cover
-    from data_cache import get_results_dataframe
+    from data_cache import get_dataframe
+    from tension_calculation import tension_plausible
     from tensiometer_functions import TensiometerConfig
 
 
@@ -25,8 +27,46 @@ def get_expected_range(layer: str) -> range:
     return ranges.get(layer, range(0))
 
 
+def _select_summary_rows(
+    config: TensiometerConfig, measurements: pd.DataFrame
+) -> Dict[str, pd.DataFrame]:
+    """Return the latest plausible measurement per wire for each side."""
+
+    selected_rows: Dict[str, pd.DataFrame] = {
+        "A": measurements.iloc[0:0].copy(),
+        "B": measurements.iloc[0:0].copy(),
+    }
+    expected_set = set(get_expected_range(config.layer))
+
+    for side in ["A", "B"]:
+        side_df = measurements[measurements["side"] == side].copy()
+        if side_df.empty:
+            continue
+
+        side_df["wire_number"] = pd.to_numeric(side_df["wire_number"], errors="coerce")
+        side_df["tension"] = pd.to_numeric(side_df["tension"], errors="coerce")
+        side_df["time"] = pd.to_datetime(side_df["time"], errors="coerce")
+        side_df = side_df.dropna(subset=["wire_number", "tension"])
+        if side_df.empty:
+            continue
+
+        side_df["wire_number"] = side_df["wire_number"].astype(int)
+        side_df = side_df[side_df["wire_number"].isin(expected_set)]
+        side_df = side_df[side_df["tension"].apply(tension_plausible)]
+        if side_df.empty:
+            continue
+
+        selected_rows[side] = (
+            side_df.sort_values("time")
+            .drop_duplicates(subset="wire_number", keep="last")
+            .sort_values("wire_number")
+        )
+
+    return selected_rows
+
+
 def _compute_tensions(
-    config: TensiometerConfig, samples: pd.DataFrame
+    config: TensiometerConfig, measurements: pd.DataFrame
 ) -> tuple[
     Dict[str, Dict[int, float]],
     List[pd.DataFrame],
@@ -41,54 +81,46 @@ def _compute_tensions(
 
     expected = get_expected_range(config.layer)
     expected_set = set(expected)
+    selected_rows = _select_summary_rows(config, measurements)
+
     for side in ["A", "B"]:
-        side_df = samples[samples["side"] == side].copy()
-        if side_df.empty:
+        selected = selected_rows[side]
+        if selected.empty:
             tension_series[side] = {}
             missing_wires[side] = sorted(expected_set)
             continue
-
-        side_df["wire_number"] = pd.to_numeric(side_df["wire_number"], errors="coerce")
-        side_df["tension"] = pd.to_numeric(side_df["tension"], errors="coerce")
-        side_df = side_df.dropna(subset=["wire_number", "tension"])
-        if side_df.empty:
-            tension_series[side] = {}
-            missing_wires[side] = sorted(expected_set)
-            continue
-
-        side_df["wire_number"] = side_df["wire_number"].astype(int)
-        side_df = side_df[side_df["wire_number"].isin(expected_set)]
-        if side_df.empty:
-            tension_series[side] = {}
-            missing_wires[side] = sorted(expected_set)
-            continue
-
-        counts = side_df.groupby("wire_number").size()
-        valid_wires = counts[counts >= config.samples_per_wire].index
-        if len(valid_wires) == 0:
-            tension_series[side] = {}
-            missing_wires[side] = sorted(expected_set)
-            continue
-
-        latest = (
-            side_df[side_df["wire_number"].isin(valid_wires)]
-            .sort_values("time")
-            .drop_duplicates(subset="wire_number", keep="last")
-            .sort_values("wire_number")
-        )
 
         measured_wire_tensions = (
-            latest.set_index("wire_number")["tension"].astype(float).to_dict()
+            selected.set_index("wire_number")["tension"].astype(float).to_dict()
         )
         tension_series[side] = measured_wire_tensions
         missing_wires[side] = sorted(expected_set - set(measured_wire_tensions))
 
         side_label = f"Side {side}"
         line_data.append(
-            latest[["wire_number", "tension"]].assign(side_label=side_label)
+            selected[["wire_number", "tension"]].assign(side_label=side_label)
         )
-        histogram_data.append(latest[["tension"]].assign(side_label=side_label))
+        histogram_data.append(selected[["tension"]].assign(side_label=side_label))
     return tension_series, line_data, histogram_data, missing_wires
+
+
+def _load_summary_measurements(config: TensiometerConfig) -> pd.DataFrame:
+    """Return summary measurements for one APA/layer."""
+
+    measurements = get_dataframe(config.data_path)
+    mask = (
+        (measurements["apa_name"] == config.apa_name)
+        & (measurements["layer"] == config.layer)
+    )
+    return measurements.loc[mask].copy()
+
+
+def get_tension_series(config: TensiometerConfig) -> Dict[str, Dict[int, float]]:
+    """Return the per-wire tension series used for summaries and condition scans."""
+
+    measurements = _load_summary_measurements(config)
+    tension_series, _, _, _ = _compute_tensions(config, measurements)
+    return tension_series
 
 
 def write_summary_csv(tension_series: Dict[str, Dict[int, float]], path: str) -> None:
@@ -202,19 +234,10 @@ def _order_missing_wires(missing: List[int], measured: List[int]) -> List[int]:
 
 def update_tension_logs(config: TensiometerConfig) -> Dict[str, str]:
     """Generate summary CSV, plot and missing wire log for ``config``."""
-    samples = get_results_dataframe(config.data_path)
-    mask = (
-        (samples["apa_name"] == config.apa_name)
-        & (samples["layer"] == config.layer)
-        & (samples["confidence"].astype(float) >= config.confidence_threshold)
-    )
-    df = samples[mask].copy()
-    df["wire_number"] = pd.to_numeric(df["wire_number"], errors="coerce")
-    df = df.dropna(subset=["wire_number", "frequency"])
-    df["wire_number"] = df["wire_number"].astype(int)
+    measurements = _load_summary_measurements(config)
 
     tension_series, line_data, histogram_data, missing_wires = _compute_tensions(
-        config, df
+        config, measurements
     )
 
     output_dir = "data/tension_plots"
@@ -239,21 +262,8 @@ def update_tension_logs(config: TensiometerConfig) -> Dict[str, str]:
 def get_missing_wires(config: TensiometerConfig) -> Dict[str, List[int]]:
     """Return missing wire numbers for each side for ``config``."""
 
-    samples = get_results_dataframe(config.data_path)
+    measurements = _load_summary_measurements(config)
 
-    confidence = pd.to_numeric(samples["confidence"], errors="coerce")
-    mask = (
-        (samples["apa_name"] == config.apa_name)
-        & (samples["layer"] == config.layer)
-        & (confidence >= config.confidence_threshold)
-    )
-
-    df = samples.loc[mask].copy()
-    df["wire_number"] = pd.to_numeric(df["wire_number"], errors="coerce")
-    df["frequency"] = pd.to_numeric(df["frequency"], errors="coerce")
-    df = df.dropna(subset=["wire_number", "frequency"])
-    df["wire_number"] = df["wire_number"].astype(int)
-
-    _, _, _, missing_wires = _compute_tensions(config, df)
+    _, _, _, missing_wires = _compute_tensions(config, measurements)
 
     return missing_wires

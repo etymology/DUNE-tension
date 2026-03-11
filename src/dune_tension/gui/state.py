@@ -4,10 +4,13 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 import json
+import logging
 import tkinter as tk
 from typing import Any
 
 from dune_tension.gui.context import GUIContext
+
+LOGGER = logging.getLogger(__name__)
 
 
 @dataclass(slots=True)
@@ -86,7 +89,7 @@ def load_state(ctx: GUIContext) -> None:
     except FileNotFoundError:
         return
     except json.JSONDecodeError as exc:  # pragma: no cover - corrupt state file
-        print(f"Failed to load {ctx.state_file}: {exc}")
+        LOGGER.warning("Failed to load %s: %s", ctx.state_file, exc)
         return
 
     w = ctx.widgets

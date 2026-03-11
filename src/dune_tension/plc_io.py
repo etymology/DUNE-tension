@@ -1,12 +1,15 @@
 import requests
 import threading
 import time
+import logging
 from random import gauss
 
 try:  # pragma: no cover - fallback for legacy test stubs
     from dune_tension.geometry import comb_positions
 except ImportError:  # pragma: no cover
     from geometry import comb_positions
+
+LOGGER = logging.getLogger(__name__)
 
 # Global lock to ensure exclusive PLC communication
 PLC_LOCK = threading.RLock()
@@ -168,8 +171,10 @@ def goto_xy(
 
     with PLC_LOCK:
         if not (1000 < x_target < 7174 and 0 <= y_target < 2680):
-            print(
-                f"Motion target {x_target},{y_target} out of bounds. Please enter a valid position."
+            LOGGER.warning(
+                "Motion target %s,%s out of bounds. Please enter a valid position.",
+                x_target,
+                y_target,
             )
             return False
 
@@ -239,7 +244,7 @@ def wiggle(step):
         try:
             y_wiggle = gauss(0, step)
             increment(0, y_wiggle)
-            print(f"Wiggling by {y_wiggle} mm")
+            LOGGER.info("Wiggling by %s mm", y_wiggle)
         finally:
             reset_plc()
 
@@ -253,13 +258,16 @@ def set_speed(speed: float = 300) -> bool:
     This function writes the desired speed to the PLC server.
     """
     if not (0 <= speed <= 1000):
-        print(f"Speed {speed} out of bounds. Please enter a value between 0 and 100.")
+        LOGGER.warning(
+            "Speed %s out of bounds. Please enter a value between 0 and 100.",
+            speed,
+        )
         return False
 
     with PLC_LOCK:
         response = write_tag("XY_SPEED", speed)
     if "error" in response:
-        print(f"Failed to set speed: {response['error']}")
+        LOGGER.warning("Failed to set speed: %s", response["error"])
         return False
 
     # print(f"Speed set to {speed}")
@@ -273,7 +281,7 @@ def is_web_server_active():
     try:
         return 200 <= requests.get(TENSION_SERVER_URL, timeout=3).status_code < 500
     except requests.RequestException as e:
-        print(f"An error occurred while checking the server: {e}")
+        LOGGER.warning("An error occurred while checking the server: %s", e)
         return False
 
 
@@ -298,9 +306,9 @@ def spoof_goto_xy(x_target: float, y_target: float, **_: object) -> bool:
     """
     # Reuse bounds check from :func:`goto_xy` for consistency
     if x_target < 0 or x_target > 7174 or y_target < 0 or y_target > 2680:
-        print(f"[spoof] Motion target {x_target},{y_target} out of bounds.")
+        LOGGER.warning("[spoof] Motion target %s,%s out of bounds.", x_target, y_target)
 
-    print(f"[spoof] Moving to {x_target},{y_target}")
+    LOGGER.info("[spoof] Moving to %s,%s", x_target, y_target)
     _SPOOF_XY[0] = x_target
     _SPOOF_XY[1] = y_target
     return True
@@ -308,5 +316,5 @@ def spoof_goto_xy(x_target: float, y_target: float, **_: object) -> bool:
 
 def spoof_wiggle(step: float) -> bool:
     """Pretend to wiggle the winder."""
-    print(f"[spoof] Wiggling by ±{step} mm")
+    LOGGER.info("[spoof] Wiggling by ±%s mm", step)
     return True

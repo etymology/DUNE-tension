@@ -8,8 +8,8 @@ import tkinter as tk
 
 from dune_tension.gui.actions import (
     calibrate_background_noise,
-    measure_outliers,
     clear_range,
+    erase_outliers,
     handle_close,
     interrupt,
     manual_goto,
@@ -24,6 +24,7 @@ from dune_tension.gui.actions import (
     update_focus_command_indicator,
 )
 from dune_tension.gui.context import GUIContext, GUIWidgets, create_context
+from dune_tension.gui.logging_panel import configure_gui_logging
 from dune_tension.gui.state import load_state
 
 
@@ -34,19 +35,26 @@ def run_app(state_file: str = "gui_state.json", root: tk.Misc | None = None) -> 
     root.title("Tensiometer GUI")
     if hasattr(root, "columnconfigure"):
         root.columnconfigure(0, weight=1)
+        root.columnconfigure(1, weight=1)
+    if hasattr(root, "rowconfigure"):
+        root.rowconfigure(0, weight=1)
 
     focus_command_var = tk.StringVar(master=root, value="4000")
-    widgets, focus_canvas, focus_dot, buttons, pad_buttons = _create_widgets(
-        root, focus_command_var
+    estimated_time_var = tk.StringVar(master=root, value="Not running")
+    widgets, focus_canvas, focus_dot, buttons, pad_buttons, log_text = _create_widgets(
+        root, focus_command_var, estimated_time_var
     )
+    log_binding = configure_gui_logging(root, log_text)
     ctx = create_context(
         root,
         widgets,
         state_file,
         focus_command_var=focus_command_var,
+        estimated_time_var=estimated_time_var,
     )
     ctx.focus_command_canvas = focus_canvas
     ctx.focus_command_dot = focus_dot
+    ctx.log_binding = log_binding
 
     _configure_commands(ctx, buttons, pad_buttons)
 
@@ -74,18 +82,44 @@ def _initialise_servo(ctx: GUIContext) -> None:
 
 
 def _create_widgets(
-    root: tk.Misc, focus_command_var: tk.StringVar
+    root: tk.Misc,
+    focus_command_var: tk.StringVar,
+    estimated_time_var: tk.StringVar,
 ) -> tuple[
     GUIWidgets,
     tk.Canvas | None,
     Any | None,
     dict[str, tk.Button],
     list[tuple[tk.Button, int, int]],
+    Any | None,
 ]:
     """Build and layout the GUI widgets."""
 
-    bottom_frame = tk.Frame(root)
-    bottom_frame.grid(row=0, column=0, padx=10, pady=10, sticky="nsew")
+    main_frame = tk.Frame(root)
+    main_frame.grid(row=0, column=0, padx=(10, 5), pady=10, sticky="nsew")
+    if hasattr(main_frame, "columnconfigure"):
+        main_frame.columnconfigure(0, weight=1)
+    if hasattr(main_frame, "rowconfigure"):
+        main_frame.rowconfigure(0, weight=1)
+
+    log_frame = tk.LabelFrame(root, text="Log")
+    log_frame.grid(row=0, column=1, padx=(5, 10), pady=10, sticky="nsew")
+    if hasattr(log_frame, "columnconfigure"):
+        log_frame.columnconfigure(0, weight=1)
+    if hasattr(log_frame, "rowconfigure"):
+        log_frame.rowconfigure(0, weight=1)
+
+    log_text: Any | None = None
+    if hasattr(tk, "Text"):
+        log_text = tk.Text(log_frame, wrap="word", state="disabled", width=56)
+        log_text.grid(row=0, column=0, sticky="nsew")
+        if hasattr(tk, "Scrollbar"):
+            scrollbar = tk.Scrollbar(log_frame, orient="vertical", command=log_text.yview)
+            scrollbar.grid(row=0, column=1, sticky="ns")
+            log_text.configure(yscrollcommand=scrollbar.set)
+
+    bottom_frame = tk.Frame(main_frame)
+    bottom_frame.grid(row=0, column=0, sticky="nsew")
     if hasattr(bottom_frame, "columnconfigure"):
         bottom_frame.columnconfigure(0, weight=1)
 
@@ -177,6 +211,10 @@ def _create_widgets(
     btn_measure_auto.grid(row=4, column=0)
     btn_interrupt = tk.Button(measure_frame, text="Interrupt")
     btn_interrupt.grid(row=4, column=1)
+    tk.Label(measure_frame, text="ETA:").grid(row=11, column=0, sticky="e")
+    tk.Label(measure_frame, textvariable=estimated_time_var).grid(
+        row=11, column=1, sticky="w"
+    )
 
     tk.Label(measure_frame, text="Clear Range:").grid(row=5, column=0, sticky="e")
     entry_clear_range = tk.Entry(measure_frame)
@@ -196,8 +234,8 @@ def _create_widgets(
     entry_times_sigma = tk.Entry(measure_frame)
     entry_times_sigma.grid(row=7, column=1)
     entry_times_sigma.insert(0, "2.0")
-    btn_remeasure_outliers = tk.Button(measure_frame, text="Remeasure Outliers")
-    btn_remeasure_outliers.grid(row=7, column=2)
+    btn_erase_outliers = tk.Button(measure_frame, text="Erase Outliers")
+    btn_erase_outliers.grid(row=7, column=2)
 
     tk.Label(measure_frame, text="Set Tensions:").grid(row=8, column=0, sticky="e")
     entry_set_tension = tk.Entry(measure_frame)
@@ -280,14 +318,21 @@ def _create_widgets(
         "interrupt": btn_interrupt,
         "clear_range": btn_clear_range,
         "measure_condition": btn_measure_condition,
-        "remeasure_outliers": btn_remeasure_outliers,
+        "erase_outliers": btn_erase_outliers,
         "set_tension": btn_set_tension,
         "calibrate_noise": btn_calibrate_noise,
         "manual_go": btn_manual_go,
         "refresh_plots": btn_refresh_plots,
     }
 
-    return widgets, focus_command_canvas, focus_command_dot, buttons, pad_buttons
+    return (
+        widgets,
+        focus_command_canvas,
+        focus_command_dot,
+        buttons,
+        pad_buttons,
+        log_text,
+    )
 
 
 def _configure_commands(
@@ -303,7 +348,7 @@ def _configure_commands(
     buttons["interrupt"].configure(command=lambda: interrupt(ctx))
     buttons["clear_range"].configure(command=lambda: clear_range(ctx))
     buttons["measure_condition"].configure(command=lambda: measure_condition(ctx))
-    buttons["remeasure_outliers"].configure(command=lambda: measure_outliers(ctx))
+    buttons["erase_outliers"].configure(command=lambda: erase_outliers(ctx))
     buttons["set_tension"].configure(command=lambda: set_manual_tension(ctx))
     buttons["calibrate_noise"].configure(
         command=lambda: calibrate_background_noise(ctx)

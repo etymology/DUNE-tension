@@ -1,4 +1,5 @@
 from dataclasses import dataclass, field
+import logging
 from typing import Optional, Callable
 import math
 from typing import List, Tuple
@@ -9,13 +10,15 @@ try:  # pragma: no cover - fallback for legacy test stubs
 except ImportError:  # pragma: no cover
     from data_cache import get_dataframe
 
+LOGGER = logging.getLogger(__name__)
+
 
 def check_stop_event(
     stop_event: Event, message: str = "Measurement interrupted."
 ) -> bool:
     """Print a message and return True if the stop event is set."""
     if stop_event is not None and stop_event.is_set():
-        print(message)
+        LOGGER.info(message)
         return True
     return False
 
@@ -109,7 +112,7 @@ def get_xy_from_file(
     )
     if config.flipped and config.layer in ["X", "G"]:
         wire_number = config.wire_max - wire_number
-        print(f"Flipped wire number: {wire_number}")
+        LOGGER.info("Flipped wire number: %s", wire_number)
     df_side = (
         df[df["side"].str.upper() == virtual_side]
         .sort_values("time")
@@ -119,7 +122,11 @@ def get_xy_from_file(
     )
 
     if df_side.empty:
-        print(f"No data found for side {config.side} in layer {config.layer}.")
+        LOGGER.warning(
+            "No data found for side %s in layer %s.",
+            config.side,
+            config.layer,
+        )
         return None
 
     wire_numbers = df_side["wire_number"].values
@@ -198,7 +205,7 @@ def measure_list(
         profiler = cProfile.Profile()
         profiler.enable()
 
-    print("Loading wire coordinates...")
+    LOGGER.info("Loading wire coordinates...")
     triplets: list[tuple[int, float, float]] = []
     for wire_number in wire_list:
         xy = get_xy_from_file_func(config, wire_number)
@@ -207,28 +214,28 @@ def measure_list(
         triplets.append((wire_number, *xy))
 
     if not triplets:
-        print("No valid wires with known coordinates.")
+        LOGGER.warning("No valid wires with known coordinates.")
         if profile:
             profiler.disable()
         return
 
-    print("getting current position...")
+    LOGGER.info("Getting current position...")
     start_xy = get_current_xy_func()
     if not preserve_order:
-        print("reordering...")
+        LOGGER.info("Reordering wires...")
         ordered_triplets = greedy_order_triplets(start_xy, triplets)
     else:
-        print("preserving order...")
+        LOGGER.info("Preserving requested wire order...")
         ordered_triplets = triplets
 
     for wire, x, y in ordered_triplets:
-        print(f"Measuring wire {wire} at {x},{y}")
+        LOGGER.info("Measuring wire %s at %s,%s", wire, x, y)
         if check_stop_event(stop_event):
             if profile:
                 profiler.disable()
                 s = io.StringIO()
                 pstats.Stats(profiler, stream=s).sort_stats("cumulative").print_stats()
-                print(s.getvalue())
+                LOGGER.info("Profiling stats:\n%s", s.getvalue())
             return
         collect_func(wire, x, y)
 
@@ -236,6 +243,6 @@ def measure_list(
         profiler.disable()
         s = io.StringIO()
         pstats.Stats(profiler, stream=s).sort_stats("cumulative").print_stats()
-        print(s.getvalue())
+        LOGGER.info("Profiling stats:\n%s", s.getvalue())
 
-    print("Done measuring wires", wire_list)
+    LOGGER.info("Done measuring wires %s", wire_list)

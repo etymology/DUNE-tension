@@ -1,10 +1,13 @@
 import serial
+import logging
 from sys import version_info
 import platform
 import time
 from threading import Event, Thread, RLock
 from typing import Callable
 from random import gauss
+
+LOGGER = logging.getLogger(__name__)
 
 PY2 = version_info[0] == 2  # Running Python 2.x?
 
@@ -60,10 +63,11 @@ class Controller:
         try:
             self.usb = serial.Serial(ttyStr)
             self.faulted = False
-            print(f"Connected to Micro Maestro on {ttyStr}")
+            LOGGER.info("Connected to Micro Maestro on %s", ttyStr)
         except serial.SerialException:
-            print(
-                f"Couldn't find Micro Maestro on {ttyStr}! Check the connection or port."
+            LOGGER.warning(
+                "Couldn't find Micro Maestro on %s. Check the connection or port.",
+                ttyStr,
             )
             self.faulted = True
 
@@ -321,7 +325,7 @@ class ServoController:
     def wiggle_focus(self, sigma: float = 20.0) -> None:
         """Randomly adjust the focus servo around the current position."""
         wiggle_amount = int(gauss(0, sigma))
-        print(f"Wiggling focus by {wiggle_amount} quarter-microseconds")
+        LOGGER.info("Wiggling focus by %s quarter-microseconds", wiggle_amount)
         self.focus_position += wiggle_amount
         low = self.servo.getMin(1) or 0
         high = self.servo.getMax(1) or 0
@@ -342,7 +346,7 @@ class ServoController:
 if __name__ == "__main__":
     import serial.tools.list_ports
 
-    print([port.description for port in serial.tools.list_ports.comports()])
+    LOGGER.info("%s", [port.description for port in serial.tools.list_ports.comports()])
 
     servo = Controller()
     servo.setRange(0, 4000, 8000)

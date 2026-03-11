@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import logging
 import os
 from dataclasses import dataclass, field
+import threading
 from threading import Event, Thread
 from typing import Any, Callable
 import tkinter as tk
@@ -71,12 +73,20 @@ class GUIContext:
     get_xy: Callable[[], tuple[float, float]]
     goto_xy: Callable[[float, float], bool]
     focus_command_var: tk.StringVar
+    estimated_time_var: tk.StringVar
     focus_command_canvas: tk.Canvas | None = None
     focus_command_dot: Any | None = None
     monitor_last_path: str = ""
     monitor_last_mtime: float | None = None
     monitor_thread: Thread | None = None
+    measurement_active: bool = False
+    active_measurement_name: str = ""
+    measurement_lock: Any = field(default_factory=threading.Lock)
+    log_binding: Any | None = None
     strum: Callable[[], None] = field(default=lambda: None)
+
+
+LOGGER = logging.getLogger(__name__)
 
 
 def _create_servo_controller() -> ServoController:
@@ -96,7 +106,7 @@ def _create_valve_controller() -> ValveController | None:
     try:
         return ValveController()
     except (DeviceNotFoundError, RuntimeError) as exc:
-        print(f"Warning: Unable to initialise valve controller: {exc}")
+        LOGGER.warning("Unable to initialise valve controller: %s", exc)
         return None
 
 
@@ -114,7 +124,7 @@ def _make_strum_callback(controller: ValveController | None) -> Callable[[], Non
         try:
             controller.pulse(0.002)
         except Exception as exc:
-            print(f"Warning: Valve pulse failed: {exc}")
+            LOGGER.warning("Valve pulse failed: %s", exc)
 
     return _strum
 
@@ -135,6 +145,7 @@ def create_context(
     state_file: str,
     *,
     focus_command_var: tk.StringVar | None = None,
+    estimated_time_var: tk.StringVar | None = None,
 ) -> GUIContext:
     """Create and return a :class:`GUIContext` for the GUI."""
 
@@ -145,6 +156,8 @@ def create_context(
     get_xy, goto_xy = _resolve_plc_functions()
     if focus_command_var is None:
         focus_command_var = tk.StringVar(master=root, value="4000")
+    if estimated_time_var is None:
+        estimated_time_var = tk.StringVar(master=root, value="Not running")
 
     return GUIContext(
         root=root,
@@ -156,5 +169,6 @@ def create_context(
         get_xy=get_xy,
         goto_xy=goto_xy,
         focus_command_var=focus_command_var,
+        estimated_time_var=estimated_time_var,
         strum=strum,
     )

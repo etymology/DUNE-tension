@@ -1,5 +1,6 @@
 import threading
 from datetime import datetime, timedelta
+import logging
 from typing import Optional, Callable
 import time
 import numpy as np
@@ -7,7 +8,7 @@ import pandas as pd
 from random import gauss, choice
 
 from spectrum_analysis.pitch_compare_config import PitchCompareConfig
-from spectrum_analysis.crepe_analysis import estimate_pitch_from_audio
+from spectrum_analysis.pesto_analysis import estimate_pitch_from_audio
 from spectrum_analysis.audio_processing import acquire_audio
 
 try:
@@ -33,6 +34,8 @@ except ImportError:  # pragma: no cover - fallback for legacy test stubs
     from results import TensionResult
     from dune_tension.services import AudioCaptureService, MotionService, ResultRepository
 
+LOGGER = logging.getLogger(__name__)
+
 
 class Tensiometer:
     def __init__(
@@ -55,6 +58,7 @@ class Tensiometer:
         spoof_movement: bool = False,
         strum: Optional[Callable[[], None]] = None,
         focus_wiggle: Optional[Callable[[float], None]] = None,
+        estimated_time_callback: Optional[Callable[[str], None]] = None,
     ) -> None:
         self.config = make_config(
             apa_name=apa_name,
@@ -84,6 +88,7 @@ class Tensiometer:
 
         self.focus_wiggle_func = focus_wiggle or (lambda _delta: None)
         self.strum_func = strum or (lambda: None)
+        self.estimated_time_callback = estimated_time_callback or (lambda _value: None)
 
         self.a_taped = bool(a_taped)
         self.b_taped = bool(b_taped)
@@ -91,6 +96,13 @@ class Tensiometer:
         # State tracking for winder wiggle thread
         self._wiggle_event: threading.Event | None = None
         self._wiggle_thread: threading.Thread | None = None
+
+    @staticmethod
+    def _sample_sort_key(result: TensionResult) -> tuple[float, datetime]:
+        return (
+            float(result.confidence),
+            result.time if result.time is not None else datetime.min,
+        )
 
     def _is_current_side_taped(self) -> bool:
         side = self.config.side.upper()
@@ -139,7 +151,7 @@ class Tensiometer:
         try:
             import matplotlib.pyplot as plt  # Local import to avoid optional dep
         except Exception as exc:  # pragma: no cover - plotting is optional
-            print(f"Failed to import matplotlib for plotting: {exc}")
+            LOGGER.warning("Failed to import matplotlib for plotting: %s", exc)
             return
 
         try:
@@ -154,16 +166,17 @@ class Tensiometer:
             plt.tight_layout()
             with NamedTemporaryFile(suffix=".png", delete=False) as tmp:
                 plt.savefig(tmp.name)
-                print(f"Audio plot saved to {tmp.name}")
+                LOGGER.info("Audio plot saved to %s", tmp.name)
             plt.close()
         except Exception as exc:  # pragma: no cover - plotting is optional
-            print(f"Failed to plot audio sample: {exc}")
+            LOGGER.warning("Failed to plot audio sample: %s", exc)
 
     def measure_calibrate(self, wire_number: int) -> Optional[TensionResult]:
         xy = self.get_current_xy_position()
         if xy is None:
-            print(
-                f"No position data found for wire {wire_number}. Using current position."
+            LOGGER.warning(
+                "No position data found for wire %s. Using current position.",
+                wire_number,
             )
             (
                 x,
@@ -186,34 +199,43 @@ class Tensiometer:
         wires_to_measure = wires_dict.get(self.config.side, [])
 
         if not wires_to_measure:
-            print("All wires are already measured.")
+            self.estimated_time_callback("0:00:00")
+            LOGGER.info("All wires are already measured.")
             return
 
-        print("Measuring missing wires...")
-        print(f"Missing wires: {wires_to_measure}")
+        LOGGER.info("Measuring missing wires...")
+        LOGGER.info("Missing wires: %s", wires_to_measure)
         start_time = time.time()
         measured_count = 0
+        did_report_zero = False
         for wire_number in wires_to_measure:
             if check_stop_event(self.stop_event):
                 return
 
             xy = get_xy_from_file(self.config, wire_number)
             if xy is None:
-                print(f"No position data found for wire {wire_number}")
+                LOGGER.warning("No position data found for wire %s", wire_number)
             else:
                 x, y = xy
                 self.goto_xy_func(x, y)
-                print(f"Measuring wire {wire_number} at position {x},{y}")
+                LOGGER.info(
+                    "Measuring wire %s at position %s,%s",
+                    wire_number,
+                    x,
+                    y,
+                )
                 self.goto_collect_wire_data(wire_number=wire_number, wire_x=x, wire_y=y)
                 measured_count += 1
                 elapsed = time.time() - start_time
                 avg_time = elapsed / measured_count
                 remaining = len(wires_to_measure) - measured_count
                 est_remaining = avg_time * remaining
-                print(
-                    f"Estimated time remaining: {timedelta(seconds=int(est_remaining))}"
-                )
-        print("Done measuring all wires")
+                eta_text = str(timedelta(seconds=int(est_remaining)))
+                self.estimated_time_callback(eta_text)
+                did_report_zero = eta_text == "0:00:00"
+        if not did_report_zero:
+            self.estimated_time_callback("0:00:00")
+        LOGGER.info("Done measuring all wires")
 
     def measure_list(
         self, wire_list: list[int], preserve_order: bool, profile: bool = False
@@ -243,7 +265,7 @@ class Tensiometer:
     ) -> list[TensionResult] | None:
         expected_frequency = wire_equation(length=length)["frequency"]
         measuring_timeout = self.config.measuring_duration
-        passing_wires = []
+        candidate_wires: list[TensionResult] = []
         audio_acquisition_config = PitchCompareConfig(
             sample_rate=self.samplerate,
             max_record_seconds=self.config.record_duration,
@@ -251,19 +273,20 @@ class Tensiometer:
             snr_threshold_db=self.snr,
             trigger_mode="snr",
         )
+
         def wiggle() -> None:
             if choice([True, False]):
                 x_wiggle_target = gauss(wire_x, min(length * 1000 / 20, 10))
                 if self.config.dx != 0:
-                    y_target = gauss(wire_y, 1) - (
+                    y_target = gauss(wire_y, 0.5) - (
                         (x_wiggle_target - wire_x) / self.config.dx * self.config.dy
                     )
                 else:
-                    y_target = gauss(wire_y, 1)
-                print("wiggling to", x_wiggle_target, y_target)
+                    y_target = gauss(wire_y, 0.5)
+                LOGGER.info("Wiggling to %s,%s", x_wiggle_target, y_target)
                 self.goto_xy_func(x_wiggle_target, y_target)
             else:
-                print("wiggling focus")
+                LOGGER.info("Wiggling focus")
                 self.focus_wiggle_func(gauss(0, 50))
 
         while (time.time() - start_time) < measuring_timeout:
@@ -288,8 +311,12 @@ class Tensiometer:
                     self.samplerate,
                     expected_frequency,
                 )
-                print(
-                    f"sample of wire {wire_number}: Measured frequency {frequency:.2f} Hz {wire_equation(length=length,frequency=frequency)} with confidence {confidence:.2f}"
+                LOGGER.info(
+                    "Sample of wire %s: measured frequency %.2f Hz %s with confidence %.2f",
+                    wire_number,
+                    frequency,
+                    wire_equation(length=length, frequency=frequency),
+                    confidence,
                 )
                 wire_result = TensionResult(
                     apa_name=self.config.apa_name,
@@ -303,42 +330,22 @@ class Tensiometer:
                     y=y,
                     time=datetime.now(),
                 )
+                self.repository.append_sample(wire_result)
 
-                # if the confidence is good, log the sample
-                if (
-                    wire_result.confidence >= self.config.confidence_threshold
-                    and tension_plausible(wire_result.tension)
-                ):
-                    passing_wires.append(wire_result)
+                if tension_plausible(wire_result.tension):
+                    candidate_wires.append(wire_result)
+                    if wire_result.confidence >= self.config.confidence_threshold:
+                        break
                 else:
-                    # double_frequency_wire_result = TensionResult(
-                    #     apa_name=self.config.apa_name,
-                    #     layer=self.config.layer,
-                    #     side=self.config.side,
-                    #     taped=self._is_current_side_taped(),
-                    #     wire_number=wire_number,
-                    #     frequency=frequency * 2,
-                    #     confidence=confidence,
-                    #     x=x,
-                    #     y=y,
-                    #     time=datetime.now(),
-                    # )
-                    # if double_frequency_wire_result.confidence >= self.config.confidence_threshold and tension_plausible(
-                    #     double_frequency_wire_result.tension
-                    # ):
-                    #     print(
-                    #         f"sample of wire {wire_number}: Accepting double-frequency {double_frequency_wire_result.frequency:.2f} Hz with confidence {double_frequency_wire_result.confidence:.2f}"
-                    #     )
-                    #     passing_wires.append(double_frequency_wire_result)
-                    # else:
                     wiggle()
-                if len(passing_wires) >= self.config.samples_per_wire:
-                    break
+                    continue
+
+                wiggle()
 
             else:
-                print(f"sample of wire {wire_number}: No audio detected.")
+                LOGGER.info("Sample of wire %s: no audio detected.", wire_number)
                 wiggle()
-        return passing_wires
+        return candidate_wires
 
     def _merge_results(
         self,
@@ -349,31 +356,7 @@ class Tensiometer:
     ) -> TensionResult:
         if passing_wires == []:
             return None
-        if self.config.samples_per_wire == 1:
-            return passing_wires[0]
-        elif len(passing_wires) > 0:
-            frequency = np.average([d.frequency for d in passing_wires])
-            confidence = np.sum([d.confidence for d in passing_wires])
-            x = round(np.average([d.x for d in passing_wires]), 1)
-            y = round(np.average([d.y for d in passing_wires]), 1)
-        else:
-            frequency = 0.0
-            confidence = 0.0
-            x = wire_x
-            y = wire_y
-
-        return TensionResult(
-            apa_name=self.config.apa_name,
-            layer=self.config.layer,
-            side=self.config.side,
-            taped=self._is_current_side_taped(),
-            wire_number=wire_number,
-            frequency=frequency,
-            confidence=confidence,
-            x=x,
-            y=y,
-            time=datetime.now(),
-        )
+        return max(passing_wires, key=self._sample_sort_key)
 
     def goto_collect_wire_data(
         self, wire_number: int, wire_x: float, wire_y: float
@@ -395,7 +378,12 @@ class Tensiometer:
         if check_stop_event(self.stop_event):
             return
         if not succeed:
-            print(f"Failed to move to wire {wire_number} position {wire_x},{wire_y}.")
+            LOGGER.warning(
+                "Failed to move to wire %s position %s,%s.",
+                wire_number,
+                wire_x,
+                wire_y,
+            )
             return TensionResult(
                 apa_name=self.config.apa_name,
                 layer=self.config.layer,
@@ -427,14 +415,21 @@ class Tensiometer:
         result = self._merge_results(wires_results, wire_number, wire_x, wire_y)
 
         if result is None:
-            print(f"measurement failed for wire number {wire_number}.")
+            LOGGER.warning("Measurement failed for wire number %s.", wire_number)
             return result
         if not result.tension_pass:
-            print(f"Tension failed for wire number {wire_number}.")
+            LOGGER.warning("Tension failed for wire number %s.", wire_number)
         ttf = time.time() - start_time
-        print(
-            f"result: Wire number {wire_number} has length {length * 1000:.1f}mm tension {result.tension:.1f}N frequency {result.frequency:.1f}Hz with confidence {result.confidence:.2f}.\n at {result.x},{result.y}\n"
-            f"Took {ttf} seconds to finish."
+        LOGGER.info(
+            "Result: wire %s length %.1f mm tension %.1f N frequency %.1f Hz confidence %.2f at %s,%s. Took %.2f seconds.",
+            wire_number,
+            length * 1000,
+            result.tension,
+            result.frequency,
+            result.confidence,
+            result.x,
+            result.y,
+            ttf,
         )
         result.ttf = ttf
         result.time = datetime.now()

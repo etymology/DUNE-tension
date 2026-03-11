@@ -166,6 +166,7 @@ tf_stub.get_xy_from_file = lambda cfg, num: (0.0, 0.0)
 tf_stub.check_stop_event = lambda evt, msg="": False
 sys.modules["tensiometer_functions"] = tf_stub
 
+import dune_tension.tensiometer as tensiometer_module  # noqa: E402
 from dune_tension.tensiometer import Tensiometer, TensionResult  # noqa: E402
 
 
@@ -183,6 +184,7 @@ def test_generate_result_single_sample():
         wires=[2.0],
     )
     result = t._merge_results([sample], wire_number=1, wire_x=1.5, wire_y=2.5)
+    assert result is sample
     assert result.tension == 0.5
     assert result.frequency == 5.0
     assert result.tension_pass
@@ -190,7 +192,7 @@ def test_generate_result_single_sample():
     assert result.x == 1.0
     assert result.y == 2.0
     assert result.zone == 1
-    assert result.wires == [0.5]
+    assert result.wires == [2.0]
     assert result.t_sigma == 0.0
 
 
@@ -232,15 +234,80 @@ def test_generate_result_multi_sample():
         ),
     ]
     result = t._merge_results(wires, wire_number=1, wire_x=2.0, wire_y=3.0)
-    assert result.frequency == 3.0  # max frequency via stub
-    assert result.tension == pytest.approx(0.3)  # frequency * 0.1 via stub
+    assert result is wires[-1]
+    assert result.frequency == 3.0
+    assert result.tension == pytest.approx(0.3)
     assert result.tension_pass
-    assert result.confidence == pytest.approx(_avg([0.5, 0.6, 0.7]))
-    assert result.t_sigma == pytest.approx(_std([0.1, 0.2, 0.3]))
-    assert result.x == pytest.approx(_avg([0.0, 0.2, 0.4]), rel=1e-7)
-    assert result.y == pytest.approx(_avg([0.0, 0.2, 0.4]), rel=1e-7)
-    for got, exp in zip(result.wires, [0.1, 0.2, 0.3]):
-        assert got == pytest.approx(exp)
+    assert result.confidence == pytest.approx(0.7)
+    assert result.t_sigma == pytest.approx(_std([1.8]))
+    assert result.x == pytest.approx(0.4, rel=1e-7)
+    assert result.y == pytest.approx(0.4, rel=1e-7)
+    assert result.wires == [1.8]
+
+
+def test_collect_samples_stops_when_confidence_threshold_is_met(monkeypatch):
+    appended_samples = []
+
+    monkeypatch.setattr(tensiometer_module, "acquire_audio", lambda **_kwargs: [1.0])
+    monkeypatch.setattr(
+        tensiometer_module,
+        "estimate_pitch_from_audio",
+        lambda *_args: (5.0, 0.95),
+    )
+
+    t = Tensiometer(
+        apa_name="APA",
+        layer="X",
+        side="A",
+        samples_per_wire=5,
+        confidence_threshold=0.9,
+        measuring_duration=1.0,
+    )
+    t.repository.append_sample = lambda result: appended_samples.append(result)
+    t.get_current_xy_position = lambda: (1.0, 2.0)
+    t.strum_func = lambda: None
+    t.focus_wiggle_func = lambda _delta: None
+    t.goto_xy_func = lambda *_args, **_kwargs: True
+
+    samples = t._collect_samples(
+        wire_number=1,
+        length=1.0,
+        start_time=time.time(),
+        wire_y=2.0,
+        wire_x=1.0,
+    )
+
+    assert len(appended_samples) == 1
+    assert len(samples) == 1
+    assert samples[0].confidence == pytest.approx(0.95)
+
+
+def test_measure_auto_reports_estimated_time(monkeypatch):
+    eta_updates = []
+    summaries_stub = types.ModuleType("dune_tension.summaries")
+    summaries_stub.get_missing_wires = lambda _cfg: {"A": [1, 2]}
+    monkeypatch.setitem(sys.modules, "dune_tension.summaries", summaries_stub)
+    monkeypatch.setattr(
+        tensiometer_module,
+        "get_xy_from_file",
+        lambda _cfg, wire: (wire, 0.0),
+    )
+
+    times = iter([100.0, 110.0, 120.0])
+    monkeypatch.setattr(tensiometer_module.time, "time", lambda: next(times))
+
+    t = Tensiometer(
+        apa_name="APA",
+        layer="X",
+        side="A",
+        estimated_time_callback=eta_updates.append,
+    )
+    t.goto_xy_func = lambda *_args, **_kwargs: True
+    t.goto_collect_wire_data = lambda **_kwargs: None
+
+    t.measure_auto()
+
+    assert eta_updates == ["0:00:10", "0:00:00"]
 
 
 def test_load_tension_summary(tmp_path):
