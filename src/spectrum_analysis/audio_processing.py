@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import logging
 import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional
@@ -28,6 +29,8 @@ from spectrum_analysis.comb_trigger import record_with_harmonic_comb
 
 if TYPE_CHECKING:  # pragma: no cover - only for type checking
     from spectrum_analysis.pitch_compare_config import PitchCompareConfig
+
+LOGGER = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -365,7 +368,7 @@ def record_noise_sample(cfg: "PitchCompareConfig") -> np.ndarray:
             "sounddevice is required for microphone recording but is not available."
         )
 
-    print(f"[INFO] Recording {cfg.noise_duration:.1f}s of background noise...")
+    LOGGER.info("Recording %.1fs of background noise...", cfg.noise_duration)
     noise = sd.rec(
         duration_samples, samplerate=cfg.sample_rate, channels=1, dtype="float32"
     )
@@ -381,7 +384,7 @@ def _acquire_audio_snr(
     _, hop = determine_window_and_hop(cfg)
     source = MicSource(cfg.sample_rate, hop)
     source.start()
-    print("[INFO] Listening for audio events (RMS trigger)...")
+    LOGGER.info("Listening for audio events (RMS trigger)...")
     snr_threshold = 10 ** (cfg.snr_threshold_db / 20.0)
     collected: list[np.ndarray] = []
     above = False
@@ -395,7 +398,7 @@ def _acquire_audio_snr(
     try:
         while collected_samples < max_samples:
             if deadline is not None and time.time() >= deadline and not recording_started:
-                print("[INFO] Timeout reached while waiting for audio event.")
+                LOGGER.info("Timeout reached while waiting for audio event.")
                 break
             chunk = source.read()
             if chunk.size == 0:
@@ -406,7 +409,7 @@ def _acquire_audio_snr(
 
             if ratio >= snr_threshold:
                 if not recording_started:
-                    print("[INFO] Recording started.")
+                    LOGGER.info("Recording started.")
                     recording_started = True
                 above = True
                 idle_samples = 0
@@ -417,10 +420,10 @@ def _acquire_audio_snr(
                 collected.append(chunk)
                 collected_samples += len(chunk)
                 if idle_samples >= idle_limit:
-                    print("[INFO] Recording stopped (signal below threshold).")
+                    LOGGER.info("Recording stopped (signal below threshold).")
                     break
         else:
-            print("[WARN] Max recording length reached.")
+            LOGGER.warning("Max recording length reached.")
     finally:
         source.stop()
 
@@ -453,7 +456,7 @@ def acquire_audio(
 
     expected_f0 = cfg.expected_f0
     if expected_f0 is None or not np.isfinite(expected_f0) or expected_f0 <= 0.0:
-        print("[WARN] expected_f0 missing; falling back to RMS trigger.")
+        LOGGER.warning("expected_f0 missing; falling back to RMS trigger.")
         return _acquire_audio_snr(cfg, noise_rms, timeout)
 
     try:
@@ -464,5 +467,5 @@ def acquire_audio(
             comb_cfg=cfg.comb_trigger,
         )
     except ValueError:
-        print("[WARN] Invalid frequency band; falling back to RMS trigger.")
-        return _acquire_audio_snr(cfg, noise_rms,timeout)
+        LOGGER.warning("Invalid frequency band; falling back to RMS trigger.")
+        return _acquire_audio_snr(cfg, noise_rms, timeout)

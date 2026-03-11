@@ -5,11 +5,14 @@ from __future__ import annotations
 from collections import deque
 from dataclasses import dataclass
 from datetime import time
+import logging
 
 import numpy as np
 
 from spectrum_analysis.audio_sources import MicSource, sd
 import time
+
+LOGGER = logging.getLogger(__name__)
 
 @dataclass
 class HarmonicCombConfig:
@@ -151,7 +154,7 @@ def record_with_harmonic_comb(
 
     source = MicSource(sample_rate, hop)
     source.start()
-    print("[INFO] Listening for audio events (harmonic comb trigger)...")
+    LOGGER.info("Listening for audio events (harmonic comb trigger)...")
 
     collected: list[np.ndarray] = []
     max_samples = int(max_record_seconds * sample_rate)
@@ -220,7 +223,7 @@ def record_with_harmonic_comb(
                             collected_samples += pre_audio.size
                         recent_chunks.clear()
                         recent_samples = 0
-                        print("[INFO] Recording started (harmonic comb trigger).")
+                        LOGGER.info("Recording started (harmonic comb trigger).")
                         if collected_samples >= max_samples:
                             stop_recording = True
                             break
@@ -230,7 +233,7 @@ def record_with_harmonic_comb(
                         if off_counter >= off_frames:
                             triggered = False
                             stop_recording = True
-                            print("[INFO] Recording stopped (comb trigger released).")
+                            LOGGER.info("Recording stopped (comb trigger released).")
                             break
                     else:
                         off_counter = 0
@@ -240,21 +243,21 @@ def record_with_harmonic_comb(
                 collected_samples += len(chunk)
 
             if collected_samples >= max_samples:
-                print("[WARN] Max recording length reached.")
+                LOGGER.warning("Max recording length reached.")
                 break
             if time.time() > start_time + timeout_seconds:
-                print("[WARN] Recording timed out.")
+                LOGGER.warning("Recording timed out.")
                 break
 
             if stop_recording:
                 break
         else:
-            print("[WARN] Max recording length reached.")
+            LOGGER.warning("Max recording length reached.")
     finally:
         source.stop()
 
     if not collected:
-        print("[WARN] No audio captured above the comb trigger thresholds.")
+        LOGGER.warning("No audio captured above the comb trigger thresholds.")
         return None
 
     return np.concatenate(collected).astype(np.float32)

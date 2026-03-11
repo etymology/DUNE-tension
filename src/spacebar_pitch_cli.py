@@ -11,7 +11,7 @@ from dataclasses import asdict
 from typing import Iterable
 
 from spectrum_analysis.comb_trigger import HarmonicCombConfig, record_with_harmonic_comb
-from spectrum_analysis.crepe_analysis import estimate_pitch_from_audio
+from spectrum_analysis.pesto_analysis import estimate_pitch_from_audio
 from valve_trigger import DeviceNotFoundError, ValveController
 
 

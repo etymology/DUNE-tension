@@ -10,10 +10,14 @@ import numpy as np
 import os
 from pathlib import Path
 import shutil
+import logging
 
 os.environ.setdefault("MPLBACKEND", "Agg")
 import matplotlib.pyplot as plt
-import crepe
+try:  # pragma: no cover - optional dependency
+    import crepe  # type: ignore
+except Exception:  # pragma: no cover - dependency may be absent
+    crepe = None  # type: ignore
 try:  # pragma: no cover - fallback for legacy test stubs
     from dune_tension.tension_calculation import tension_pass, wire_equation
 except ImportError:  # pragma: no cover
@@ -32,6 +36,7 @@ except Exception:  # pragma: no cover - optional
 
 # Lazily initialized default pesto model
 _PESTO_MODEL = None
+LOGGER = logging.getLogger(__name__)
 
 
 def load_audio_data(file_name):
@@ -39,10 +44,10 @@ def load_audio_data(file_name):
     try:
         with np.load(file_name) as data:
             audio_data = data["audio_data"]
-        print(f"Audio data loaded from {file_name}")
+        LOGGER.info("Audio data loaded from %s", file_name)
         return audio_data
     except Exception as e:
-        print(f"An error occurred while loading audio data: {e}")
+        LOGGER.warning("An error occurred while loading audio data: %s", e)
         return None
 
 
@@ -187,6 +192,9 @@ def get_pitch_crepe(
     audio_data: np.ndarray, samplerate, model_capacity="tiny"
 ) -> tuple[float, float]:
     """Extract the pitch and confidence from the audio data using CREPE."""
+    if crepe is None:
+        raise RuntimeError("crepe is not installed")
+
     _, frequencies, confidence, _ = crepe.predict(
         audio_data,
         samplerate,
@@ -203,7 +211,7 @@ def get_pitch_crepe(
         max_confidence = confidence[max_conf_idx]
     else:
         # Handle the case where no confidence values are available
-        print("No confidence values available.")
+        LOGGER.warning("No confidence values available.")
         max_frequency = 0.0
         max_confidence = 0.0
 
@@ -298,7 +306,7 @@ def record_audio(duration, sample_rate, plot=False, normalize=True):
 
         return audio_data, amplitude
     except Exception as e:
-        print(f"An error occurred while recording audio: {e}")
+        LOGGER.warning("An error occurred while recording audio: %s", e)
         return None, 0.0
     finally:
         try:
@@ -351,7 +359,7 @@ def _load_noise_filter() -> None:
                     pass
             return
         except Exception as exc:  # pragma: no cover - loading is optional
-            print(f"Failed to load noise filter from {path}: {exc}")
+            LOGGER.warning("Failed to load noise filter from %s: %s", path, exc)
             _noise_filter = None
 
 
@@ -384,9 +392,9 @@ def calibrate_background_noise(sample_rate: int, duration: float = 1.0) -> None:
                 magnitude=noise_mag,
                 threshold=_noise_threshold,
             )
-            print(f"Saved noise filter to {_NOISE_FILTER_PATH}")
+            LOGGER.info("Saved noise filter to %s", _NOISE_FILTER_PATH)
         except Exception as exc:  # pragma: no cover - saving is optional
-            print(f"Failed to save noise filter: {exc}")
+            LOGGER.warning("Failed to save noise filter: %s", exc)
 
 
 def record_audio_filtered(duration, sample_rate, plot=False, normalize=True):
@@ -427,7 +435,7 @@ def record_audio_filtered(duration, sample_rate, plot=False, normalize=True):
 
 
 def analyze_sample(audio_sample, sample_rate, wire_length):
-    frequency, confidence = get_pitch_crepe(audio_sample, sample_rate)
+    frequency, confidence = get_pitch_pesto(audio_sample, sample_rate)
     tension = wire_equation(length=wire_length, frequency=frequency)["tension"]
     tension_ok = tension_pass(tension, wire_length)
     if not tension_ok:
@@ -448,17 +456,19 @@ def get_samplerate():
         )
         if sound_device_index is not None:
             sample_rate = device_info[sound_device_index]["default_samplerate"]
-            print(device_info)
-            print(
-                f"Using (hw:{sound_device_index},0),{device_info[sound_device_index]['name']}"
+            LOGGER.debug("Available audio devices: %s", device_info)
+            LOGGER.info(
+                "Using (hw:%s,0),%s",
+                sound_device_index,
+                device_info[sound_device_index]["name"],
             )
         else:
-            print("Couldn't find USB PnP Sound Device.")
-            print(device_info)
+            LOGGER.warning("Couldn't find USB PnP Sound Device.")
+            LOGGER.debug("Available audio devices: %s", device_info)
             return None
         return sample_rate
     except Exception as e:
-        print(f"Failed to initialize audio devices: {e}")
+        LOGGER.error("Failed to initialize audio devices: %s", e)
         exit(1)
 
 

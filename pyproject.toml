@@ -15,7 +15,6 @@ dependencies = [
     "scipy>=1.15.3",
     "seaborn>=0.13.2",
     "sounddevice>=0.5.2",
-    "tensorflow>=2.19.0",
 ]
 
 [project.scripts]
