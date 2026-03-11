@@ -154,3 +154,61 @@ def test_goto_collect_wire_data_invokes_summary_refresh_callback(monkeypatch) ->
     assert measured is result
     assert saved_results == [result]
     assert refreshes == [tensiometer.config]
+
+
+def test_measure_wire_in_run_predicts_and_records_focus_position(monkeypatch) -> None:
+    commanded: list[int] = []
+    current_focus = {"value": 4600}
+
+    _patch_result_physics(monkeypatch)
+    monkeypatch.setattr(
+        tensiometer_module.MotionService,
+        "build",
+        lambda spoof_movement=False: _stub_motion_service(),
+    )
+    monkeypatch.setattr(
+        tensiometer_module.AudioCaptureService,
+        "build",
+        lambda spoof=False: _stub_audio_service(),
+    )
+
+    tensiometer = Tensiometer(
+        apa_name="APA",
+        layer="X",
+        side="A",
+        focus_position_getter=lambda: current_focus["value"],
+        focus_position_setter=lambda target: commanded.append(target)
+        or current_focus.__setitem__("value", target),
+    )
+    tensiometer.goto_collect_wire_data = lambda **_kwargs: TensionResult(
+        apa_name="APA",
+        layer="X",
+        side="A",
+        wire_number=_kwargs["wire_number"],
+        frequency=80.0,
+        confidence=0.95,
+        x=_kwargs["wire_x"],
+        y=_kwargs["wire_y"],
+    )
+
+    tensiometer._start_measurement_run()
+    try:
+        first = tensiometer._measure_wire_in_run(wire_number=10, wire_x=1.0, wire_y=2.0)
+        current_focus["value"] = 4700
+        second = tensiometer._measure_wire_in_run(
+            wire_number=20,
+            wire_x=1.0,
+            wire_y=2.0,
+        )
+        current_focus["value"] = 4800
+        third = tensiometer._measure_wire_in_run(wire_number=30, wire_x=1.0, wire_y=2.0)
+    finally:
+        tensiometer._finish_measurement_run()
+
+    assert first is not None
+    assert second is not None
+    assert third is not None
+    assert commanded == [4600, 4600, 4800]
+    assert first.servo_position == 4600
+    assert second.servo_position == 4700
+    assert third.servo_position == 4800

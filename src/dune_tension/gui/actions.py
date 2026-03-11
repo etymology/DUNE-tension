@@ -173,6 +173,10 @@ def create_tensiometer(ctx: GUIContext, inputs: WorkerInputs) -> "Tensiometer":
         plot_audio=inputs.plot_audio,
         strum=ctx.strum,
         focus_wiggle=ctx.servo_controller.nudge_focus,
+        focus_position_getter=lambda: int(ctx.servo_controller.focus_position),
+        focus_position_setter=lambda target: ctx.servo_controller.focus_target(
+            int(target)
+        ),
         estimated_time_callback=lambda value: _set_estimated_time(ctx, value),
         audio_sample_callback=lambda audio_sample, samplerate, analysis: _publish_live_waveform(
             ctx,

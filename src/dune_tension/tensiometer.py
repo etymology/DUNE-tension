@@ -112,6 +112,8 @@ class Tensiometer:
         spoof_movement: bool = False,
         strum: Optional[Callable[[], None]] = None,
         focus_wiggle: Optional[Callable[[float], None]] = None,
+        focus_position_getter: Optional[Callable[[], int | None]] = None,
+        focus_position_setter: Optional[Callable[[int], None]] = None,
         estimated_time_callback: Optional[Callable[[str], None]] = None,
         audio_sample_callback: Optional[Callable[[Any, int, Any | None], None]] = None,
         summary_refresh_callback: Optional[Callable[[Any], None]] = None,
@@ -143,6 +145,8 @@ class Tensiometer:
         self.wiggle_func = self.motion.increment
 
         self.focus_wiggle_func = focus_wiggle or (lambda _delta: None)
+        self.focus_position_getter = focus_position_getter or (lambda: None)
+        self.focus_position_setter = focus_position_setter or (lambda _target: None)
         self.strum_func = strum or (lambda: None)
         self.estimated_time_callback = estimated_time_callback or (lambda _value: None)
         self.has_audio_sample_callback = audio_sample_callback is not None
@@ -157,6 +161,8 @@ class Tensiometer:
         # State tracking for winder wiggle thread
         self._wiggle_event: threading.Event | None = None
         self._wiggle_thread: threading.Thread | None = None
+        self._run_servo_measurements: list[tuple[int, int]] = []
+        self._run_servo_reference: int | None = None
 
     @staticmethod
     def _sample_sort_key(result: TensionResult) -> tuple[float, datetime]:
@@ -207,6 +213,106 @@ class Tensiometer:
         self._wiggle_event = None
         self._wiggle_thread = None
         self.motion.reset_plc()
+
+    def _get_focus_position(self) -> int | None:
+        try:
+            position = self.focus_position_getter()
+        except Exception as exc:
+            LOGGER.debug("Failed to read focus servo position: %s", exc)
+            return None
+        if position is None:
+            return None
+        try:
+            return int(position)
+        except (TypeError, ValueError):
+            return None
+
+    def _set_focus_position(self, target: int) -> None:
+        try:
+            self.focus_position_setter(int(target))
+        except Exception as exc:
+            LOGGER.debug("Failed to command focus servo to %s: %s", target, exc)
+
+    def _start_measurement_run(self) -> None:
+        self._run_servo_measurements = []
+        self._run_servo_reference = self._get_focus_position()
+        LOGGER.info(
+            "Starting measurement run with focus servo reference position %s",
+            self._run_servo_reference,
+        )
+
+    def _finish_measurement_run(self) -> None:
+        self._run_servo_measurements = []
+        self._run_servo_reference = None
+
+    def _fit_focus_position(self) -> tuple[float, float] | None:
+        if not self._run_servo_measurements:
+            if self._run_servo_reference is None:
+                return None
+            return 0.0, float(self._run_servo_reference)
+
+        if len(self._run_servo_measurements) == 1:
+            return 0.0, float(self._run_servo_measurements[0][1])
+
+        wire_numbers = [float(wire) for wire, _pos in self._run_servo_measurements]
+        positions = [float(pos) for _wire, pos in self._run_servo_measurements]
+        x_mean = sum(wire_numbers) / len(wire_numbers)
+        y_mean = sum(positions) / len(positions)
+        variance = sum((wire - x_mean) ** 2 for wire in wire_numbers)
+        if variance == 0:
+            return 0.0, y_mean
+        covariance = sum(
+            (wire - x_mean) * (position - y_mean)
+            for wire, position in zip(wire_numbers, positions)
+        )
+        slope = covariance / variance
+        intercept = y_mean - slope * x_mean
+        return slope, intercept
+
+    def _predict_focus_position(self, wire_number: int) -> int | None:
+        fit = self._fit_focus_position()
+        if fit is None:
+            return None
+        slope, intercept = fit
+        predicted = int(round(intercept + slope * float(wire_number)))
+        LOGGER.info(
+            "Predicted focus servo position %s for wire %s using slope %.3f",
+            predicted,
+            wire_number,
+            slope,
+        )
+        return predicted
+
+    def _record_focus_position(self, wire_number: int, servo_position: int | None) -> None:
+        if servo_position is None:
+            LOGGER.info("Wire %s finished with unknown focus servo position", wire_number)
+            return
+        self._run_servo_measurements.append((wire_number, servo_position))
+        LOGGER.info(
+            "Recorded focus servo position %s for wire %s",
+            servo_position,
+            wire_number,
+        )
+
+    def _measure_wire_in_run(
+        self,
+        wire_number: int,
+        wire_x: float,
+        wire_y: float,
+    ) -> Optional[TensionResult]:
+        predicted_position = self._predict_focus_position(wire_number)
+        if predicted_position is not None:
+            self._set_focus_position(predicted_position)
+        result = self.goto_collect_wire_data(
+            wire_number=wire_number,
+            wire_x=wire_x,
+            wire_y=wire_y,
+        )
+        observed_position = self._get_focus_position()
+        if result is not None:
+            result.servo_position = observed_position
+        self._record_focus_position(wire_number, observed_position)
+        return result
 
     def _plot_audio(self, audio_sample) -> None:
         """Save a plot of the recorded audio sample to a temporary file."""
@@ -270,32 +376,36 @@ class Tensiometer:
         start_time = time.time()
         measured_count = 0
         did_report_zero = False
-        for wire_number in wires_to_measure:
-            if check_stop_event(self.stop_event):
-                return
+        self._start_measurement_run()
+        try:
+            for wire_number in wires_to_measure:
+                if check_stop_event(self.stop_event):
+                    return
 
-            xy = get_xy_from_file(self.config, wire_number)
-            if xy is None:
-                LOGGER.warning("No position data found for wire %s", wire_number)
-            else:
-                x, y = xy
-                self.goto_xy_func(x, y)
-                LOGGER.info(
-                    "Measuring wire %s at position %s,%s",
-                    wire_number,
-                    x,
-                    y,
-                )
-                self.goto_collect_wire_data(wire_number=wire_number, wire_x=x, wire_y=y)
-                measured_count += 1
-                remaining = len(wires_to_measure) - measured_count
-                if remaining > 0:
-                    elapsed = time.time() - start_time
-                    avg_time = elapsed / measured_count
-                    est_remaining = avg_time * remaining
-                    eta_text = str(timedelta(seconds=int(est_remaining)))
-                    self.estimated_time_callback(eta_text)
-                    did_report_zero = eta_text == "0:00:00"
+                xy = get_xy_from_file(self.config, wire_number)
+                if xy is None:
+                    LOGGER.warning("No position data found for wire %s", wire_number)
+                else:
+                    x, y = xy
+                    self.goto_xy_func(x, y)
+                    LOGGER.info(
+                        "Measuring wire %s at position %s,%s",
+                        wire_number,
+                        x,
+                        y,
+                    )
+                    self._measure_wire_in_run(wire_number=wire_number, wire_x=x, wire_y=y)
+                    measured_count += 1
+                    remaining = len(wires_to_measure) - measured_count
+                    if remaining > 0:
+                        elapsed = time.time() - start_time
+                        avg_time = elapsed / measured_count
+                        est_remaining = avg_time * remaining
+                        eta_text = str(timedelta(seconds=int(est_remaining)))
+                        self.estimated_time_callback(eta_text)
+                        did_report_zero = eta_text == "0:00:00"
+        finally:
+            self._finish_measurement_run()
         if not did_report_zero:
             self.estimated_time_callback("0:00:00")
         LOGGER.info("Done measuring all wires")
@@ -303,20 +413,24 @@ class Tensiometer:
     def measure_list(
         self, wire_list: list[int], preserve_order: bool, profile: bool = False
     ) -> None:
-        measure_list(
-            config=self.config,
-            wire_list=wire_list,
-            get_xy_from_file_func=get_xy_from_file,
-            get_current_xy_func=self.get_current_xy_position,
-            collect_func=lambda w, x, y: self.goto_collect_wire_data(
-                wire_number=w,
-                wire_x=x,
-                wire_y=y,
-            ),
-            stop_event=self.stop_event,
-            preserve_order=preserve_order,
-            profile=profile,
-        )
+        self._start_measurement_run()
+        try:
+            measure_list(
+                config=self.config,
+                wire_list=wire_list,
+                get_xy_from_file_func=get_xy_from_file,
+                get_current_xy_func=self.get_current_xy_position,
+                collect_func=lambda w, x, y: self._measure_wire_in_run(
+                    wire_number=w,
+                    wire_x=x,
+                    wire_y=y,
+                ),
+                stop_event=self.stop_event,
+                preserve_order=preserve_order,
+                profile=profile,
+            )
+        finally:
+            self._finish_measurement_run()
 
     def _collect_samples(
         self,
@@ -356,6 +470,7 @@ class Tensiometer:
             if check_stop_event(self.stop_event, "tension measurement interrupted!"):
                 return None
             x, y = self.get_current_xy_position()
+            servo_position = self._get_focus_position()
 
             # trigger a valve pulse using pulse from valve_trigger.py
             self.strum_func()
@@ -405,6 +520,7 @@ class Tensiometer:
                     confidence=confidence,
                     x=x,
                     y=y,
+                    servo_position=servo_position,
                     time=datetime.now(),
                 )
                 self.repository.append_sample(wire_result)
@@ -471,6 +587,7 @@ class Tensiometer:
                 confidence=0.0,
                 x=wire_x,
                 y=wire_y,
+                servo_position=self._get_focus_position(),
                 time=datetime.now(),
             )
         start_time = time.time()
@@ -494,11 +611,12 @@ class Tensiometer:
         if result is None:
             LOGGER.warning("Measurement failed for wire number %s.", wire_number)
             return result
+        result.servo_position = self._get_focus_position()
         if not result.tension_pass:
             LOGGER.warning("Tension failed for wire number %s.", wire_number)
         ttf = time.time() - start_time
         LOGGER.info(
-            "Result: wire %s length %.1f mm tension %.1f N frequency %.1f Hz confidence %.2f at %s,%s. Took %.2f seconds.",
+            "Result: wire %s length %.1f mm tension %.1f N frequency %.1f Hz confidence %.2f at %s,%s with focus servo %s. Took %.2f seconds.",
             wire_number,
             length * 1000,
             result.tension,
@@ -506,6 +624,7 @@ class Tensiometer:
             result.confidence,
             result.x,
             result.y,
+            result.servo_position,
             ttf,
         )
         result.ttf = ttf
