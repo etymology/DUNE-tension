@@ -14,6 +14,7 @@ _RUNTIME_DEPS_LOADED = False
 _MODEL_CACHE: dict[tuple[str, float, int], Any] = {}
 DEFAULT_PESTO_MODEL_NAME = "mir-1k_g7"
 DEFAULT_PESTO_STEP_SIZE_MS = 5.0
+DEFAULT_PESTO_IDEAL_PITCH_HZ = 600.0
 LOGGER = logging.getLogger(__name__)
 
 
@@ -65,6 +66,42 @@ def _activation_frequency_axis(model: Any, num_bins: int) -> np.ndarray:
             np.arange(num_bins, dtype=np.float32) / (12.0 * bins_per_semitone),
         )
     ).astype(np.float32, copy=False)
+
+
+def _sr_augment_factor(expected_frequency: Optional[float]) -> float:
+    if expected_frequency is None:
+        return 1.0
+
+    try:
+        expected = float(expected_frequency)
+    except (TypeError, ValueError):
+        expected = float("nan")
+
+    if not np.isfinite(expected) or expected <= 0.0:
+        return 1.0
+
+    return DEFAULT_PESTO_IDEAL_PITCH_HZ / expected
+
+
+def _reverse_sr_augment(
+    activation: np.ndarray,
+    sr_augment_factor: float,
+    bins_per_semitone: int,
+) -> np.ndarray:
+    """Shift PESTO activations back onto the original pitch axis."""
+
+    num_bins = activation.shape[1]
+    bin_shift = int(round(-np.log2(sr_augment_factor) * 12.0 * bins_per_semitone))
+    if abs(bin_shift) >= num_bins:
+        return np.zeros_like(activation)
+    if bin_shift > 0:
+        return np.pad(activation, ((0, 0), (bin_shift, 0)), mode="constant")[:, :num_bins]
+    if bin_shift < 0:
+        return np.pad(activation, ((0, 0), (0, -bin_shift)), mode="constant")[
+            :,
+            -bin_shift:,
+        ]
+    return activation
 
 
 def _ensure_runtime_dependencies() -> bool:
@@ -148,11 +185,13 @@ def analyze_audio_with_pesto(
     if audio_array.size == 0:
         return _empty_analysis_result()
 
-    step_size_ms = _resolve_step_size_ms(int(sample_rate), int(audio_array.size))
+    sr_augment_factor = _sr_augment_factor(expected_frequency)
+    augmented_sample_rate = int(round(float(sample_rate) * sr_augment_factor))
+    step_size_ms = _resolve_step_size_ms(augmented_sample_rate, int(audio_array.size))
     model = _load_pesto_model_cached(
         DEFAULT_PESTO_MODEL_NAME,
         step_size_ms,
-        int(sample_rate),
+        augmented_sample_rate,
     )
     if model is None:
         LOGGER.warning("pesto model loader is unavailable; cannot estimate pitch.")
@@ -164,7 +203,7 @@ def analyze_audio_with_pesto(
         with torch.inference_mode():
             outputs = model(
                 audio_tensor,
-                sr=int(sample_rate),
+                sr=augmented_sample_rate,
                 convert_to_freq=True,
                 return_activations=bool(include_activations),
             )
@@ -184,6 +223,9 @@ def analyze_audio_with_pesto(
     frame_times = (
         np.arange(predicted_frequencies.size, dtype=np.float32) * (step_size_ms / 1000.0)
     )
+    if sr_augment_factor != 1.0:
+        predicted_frequencies = predicted_frequencies / float(sr_augment_factor)
+        frame_times = frame_times * float(sr_augment_factor)
 
     valid = np.isfinite(predicted_frequencies) & (predicted_frequencies > 0.0)
     valid &= np.isfinite(confidence_values) & (confidence_values > 0.0)
@@ -218,6 +260,13 @@ def analyze_audio_with_pesto(
         if activation_np.ndim == 3 and activation_np.shape[0] == 1:
             activation_np = activation_np[0]
         if activation_np.ndim == 2:
+            bins_per_semitone = max(int(getattr(model, "bins_per_semitone", 1)), 1)
+            if sr_augment_factor != 1.0:
+                activation_np = _reverse_sr_augment(
+                    activation_np,
+                    sr_augment_factor,
+                    bins_per_semitone,
+                )
             activation_map = activation_np.T.astype(np.float32, copy=False)
             activation_freq_axis = _activation_frequency_axis(
                 model,

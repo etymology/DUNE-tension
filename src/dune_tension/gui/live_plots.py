@@ -10,6 +10,7 @@ import numpy as np
 from matplotlib.figure import Figure
 
 from dune_tension.summaries import build_summary_plot_figure_for_config
+from spectrum_analysis.pitch_compare_config import PitchCompareConfig
 
 try:  # pragma: no cover - backend availability depends on the runtime environment
     from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
@@ -204,6 +205,7 @@ class LivePlotManager:
 
     @staticmethod
     def _populate_fft_axis(axis: Any, waveform: np.ndarray, samplerate: int) -> None:
+        cfg = PitchCompareConfig()
         if waveform.size == 0:
             axis.text(0.5, 0.5, "No FFT data.", ha="center", va="center", transform=axis.transAxes)
             axis.set_title("FFT")
@@ -221,10 +223,11 @@ class LivePlotManager:
         axis.set_ylabel("Magnitude (dB)")
         axis.grid(True, linestyle=":", linewidth=0.5, color="gray")
         if freqs.size:
-            axis.set_xlim(0.0, float(freqs[-1]))
+            axis.set_xlim(0.0, min(float(freqs[-1]), float(cfg.max_frequency)))
 
     @staticmethod
     def _populate_pesto_axis(axis: Any, analysis: Any | None) -> None:
+        cfg = PitchCompareConfig()
         activation_map = getattr(analysis, "activation_map", None)
         activation_freq_axis = getattr(analysis, "activation_freq_axis", None)
         frame_times = getattr(analysis, "frame_times", None)
@@ -255,24 +258,42 @@ class LivePlotManager:
         activation_map = np.asarray(activation_map, dtype=np.float32)
         activation_freq_axis = np.asarray(activation_freq_axis, dtype=np.float32)
         frame_times = np.asarray(frame_times, dtype=np.float32)
-        extent = [
-            float(frame_times[0]),
-            float(frame_times[-1]) if frame_times.size > 1 else float(frame_times[0] + 1e-3),
-            float(activation_freq_axis[0]),
-            float(activation_freq_axis[-1]),
-        ]
-        axis.imshow(
-            activation_map,
-            origin="lower",
-            aspect="auto",
-            extent=extent,
-            interpolation="nearest",
-            cmap="magma",
+        mask = (activation_freq_axis >= cfg.min_frequency) & (
+            activation_freq_axis <= cfg.max_frequency
+        )
+        if not np.any(mask):
+            axis.text(
+                0.5,
+                0.5,
+                "No activation bins within frequency range.",
+                ha="center",
+                va="center",
+                transform=axis.transAxes,
+            )
+            axis.set_ylim(cfg.min_frequency, cfg.max_frequency)
+            return
+
+        visible_freqs = activation_freq_axis[mask]
+        visible_activation = activation_map[mask, :]
+        visible_max_frequency = LivePlotManager._activation_coverage_max_frequency(
+            visible_freqs,
+            visible_activation,
+            coverage=0.99,
+            fallback_max=float(cfg.max_frequency),
+        )
+        axis.pcolormesh(
+            frame_times,
+            visible_freqs,
+            visible_activation,
+            shading="nearest",
+            cmap="viridis",
         )
         if predicted_frequencies is not None:
             predicted_frequencies = np.asarray(predicted_frequencies, dtype=np.float32).reshape(-1)
             if predicted_frequencies.size == frame_times.size:
                 valid = np.isfinite(predicted_frequencies) & (predicted_frequencies > 0.0)
+                valid &= predicted_frequencies >= float(cfg.min_frequency)
+                valid &= predicted_frequencies <= float(cfg.max_frequency)
                 if np.any(valid):
                     axis.plot(
                         frame_times[valid],
@@ -280,4 +301,31 @@ class LivePlotManager:
                         color="cyan",
                         linewidth=1.0,
                     )
+        axis.set_ylim(cfg.min_frequency, visible_max_frequency)
         axis.grid(False)
+
+    @staticmethod
+    def _activation_coverage_max_frequency(
+        frequencies: np.ndarray,
+        activation: np.ndarray,
+        *,
+        coverage: float,
+        fallback_max: float,
+    ) -> float:
+        if frequencies.size == 0 or activation.size == 0:
+            return float(fallback_max)
+
+        coverage = float(np.clip(coverage, 0.0, 1.0))
+        if coverage <= 0.0:
+            return float(frequencies[0])
+
+        positive_activation = np.where(activation > 0.0, activation, 0.0)
+        total_activation = float(positive_activation.sum())
+        if total_activation <= 0.0:
+            return float(min(fallback_max, float(frequencies[-1])))
+
+        cumulative = np.cumsum(positive_activation.sum(axis=1), dtype=np.float64)
+        target = coverage * total_activation
+        cutoff_index = int(np.searchsorted(cumulative, target, side="left"))
+        cutoff_index = min(max(cutoff_index, 0), frequencies.size - 1)
+        return float(min(fallback_max, float(frequencies[cutoff_index])))
