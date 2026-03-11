@@ -81,6 +81,16 @@ def estimate_pitch_from_audio(*args, **kwargs):
     return _estimate_pitch_from_audio(*args, **kwargs)
 
 
+def analyze_audio_with_pesto(*args, **kwargs):
+    """Lazily import the runtime PESTO diagnostics helper."""
+
+    from spectrum_analysis.pesto_analysis import (
+        analyze_audio_with_pesto as _analyze_audio_with_pesto,
+    )
+
+    return _analyze_audio_with_pesto(*args, **kwargs)
+
+
 class Tensiometer:
     def __init__(
         self,
@@ -103,7 +113,7 @@ class Tensiometer:
         strum: Optional[Callable[[], None]] = None,
         focus_wiggle: Optional[Callable[[float], None]] = None,
         estimated_time_callback: Optional[Callable[[str], None]] = None,
-        audio_sample_callback: Optional[Callable[[Any, int], None]] = None,
+        audio_sample_callback: Optional[Callable[[Any, int, Any | None], None]] = None,
         summary_refresh_callback: Optional[Callable[[Any], None]] = None,
     ) -> None:
         self.config = make_config(
@@ -135,8 +145,9 @@ class Tensiometer:
         self.focus_wiggle_func = focus_wiggle or (lambda _delta: None)
         self.strum_func = strum or (lambda: None)
         self.estimated_time_callback = estimated_time_callback or (lambda _value: None)
+        self.has_audio_sample_callback = audio_sample_callback is not None
         self.audio_sample_callback = (
-            audio_sample_callback or (lambda _sample, _samplerate: None)
+            audio_sample_callback or (lambda _sample, _samplerate, _analysis: None)
         )
         self.summary_refresh_callback = summary_refresh_callback or (lambda _config: None)
 
@@ -357,17 +368,26 @@ class Tensiometer:
             )
 
             if audio_sample is not None:
+                analysis = None
+                if self.has_audio_sample_callback:
+                    analysis = analyze_audio_with_pesto(
+                        audio_sample,
+                        self.samplerate,
+                        expected_frequency=expected_frequency,
+                        include_activations=True,
+                    )
+                    frequency, confidence = analysis.frequency, analysis.confidence
+                else:
+                    frequency, confidence = estimate_pitch_from_audio(
+                        audio_sample,
+                        self.samplerate,
+                        expected_frequency,
+                    )
                 try:
-                    self.audio_sample_callback(audio_sample, self.samplerate)
+                    self.audio_sample_callback(audio_sample, self.samplerate, analysis)
                 except Exception as exc:
                     LOGGER.debug("Audio sample callback failed: %s", exc)
 
-                # estimate pitch from audio sample
-                frequency, confidence = estimate_pitch_from_audio(
-                    audio_sample,
-                    self.samplerate,
-                    expected_frequency,
-                )
                 LOGGER.info(
                     "Sample of wire %s: measured frequency %.2f Hz %s with confidence %.2f",
                     wire_number,

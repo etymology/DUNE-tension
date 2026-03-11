@@ -102,3 +102,44 @@ def test_estimate_pitch_from_audio_returns_nan_without_pesto(monkeypatch):
 
     assert np.isnan(frequency)
     assert np.isnan(confidence)
+
+
+def test_analyze_audio_with_pesto_returns_activation_map(monkeypatch):
+    def fake_load_model(name, step_size, sampling_rate, streaming, max_batch_size):
+        class _FakeModel:
+            bins_per_semitone = 2
+            preprocessor = type("Preprocessor", (), {"hcqt_kwargs": {"fmin": 55.0}})()
+
+            def __call__(self, audio_tensor, sr, convert_to_freq, return_activations):
+                assert audio_tensor.value.shape == (1, 16)
+                assert sr == 16000
+                assert convert_to_freq is True
+                assert return_activations is True
+                return (
+                    _FakeTensor([[110.0, 120.0]]),
+                    _FakeTensor([[0.7, 0.9]]),
+                    _FakeTensor([[0.0, 0.0]]),
+                    _FakeTensor([[[0.1, 0.2, 0.3], [0.4, 0.5, 0.6]]]),
+                )
+
+        return _FakeModel()
+
+    monkeypatch.setattr(pesto_analysis, "torch", _FakeTorch)
+    monkeypatch.setattr(pesto_analysis, "load_model", fake_load_model)
+    monkeypatch.setattr(pesto_analysis, "_RUNTIME_DEPS_LOADED", True)
+    monkeypatch.setattr(pesto_analysis, "_MODEL_CACHE", {})
+    monkeypatch.setattr(pesto_analysis, "_resolve_step_size_ms", lambda *_args: 5.0)
+
+    result = pesto_analysis.analyze_audio_with_pesto(
+        np.zeros(16, dtype=np.float32),
+        sample_rate=16000,
+        include_activations=True,
+    )
+
+    assert np.isclose(result.frequency, 115.625)
+    assert np.isclose(result.confidence, 0.8)
+    assert result.activation_map is not None
+    assert result.activation_map.shape == (3, 2)
+    assert result.activation_freq_axis is not None
+    assert result.activation_freq_axis.shape == (3,)
+    assert np.all(np.diff(result.activation_freq_axis) > 0)

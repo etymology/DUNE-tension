@@ -45,8 +45,16 @@ def _patch_result_physics(monkeypatch) -> None:
 
 
 def test_collect_samples_invokes_audio_sample_callback(monkeypatch) -> None:
-    published: list[tuple[list[float], int]] = []
+    published: list[tuple[list[float], int, object | None]] = []
     audio_sample = np.array([0.1, -0.2, 0.3], dtype=float)
+    analysis = types.SimpleNamespace(
+        frequency=80.0,
+        confidence=0.95,
+        activation_map=np.ones((4, 3), dtype=np.float32),
+        activation_freq_axis=np.array([50.0, 60.0, 70.0, 80.0], dtype=np.float32),
+        frame_times=np.array([0.0, 0.005, 0.01], dtype=np.float32),
+        predicted_frequencies=np.array([78.0, 80.0, 79.0], dtype=np.float32),
+    )
 
     monkeypatch.setattr(
         tensiometer_module.MotionService,
@@ -61,15 +69,15 @@ def test_collect_samples_invokes_audio_sample_callback(monkeypatch) -> None:
     monkeypatch.setattr(tensiometer_module, "acquire_audio", lambda **_kwargs: audio_sample)
     monkeypatch.setattr(
         tensiometer_module,
-        "estimate_pitch_from_audio",
-        lambda *_args: (80.0, 0.95),
-    )
-    monkeypatch.setattr(
-        tensiometer_module,
         "wire_equation",
         lambda *, length, frequency=None: {"frequency": 80.0, "tension": 6.0},
     )
     monkeypatch.setattr(tensiometer_module, "tension_plausible", lambda _tension: True)
+    monkeypatch.setattr(
+        tensiometer_module,
+        "analyze_audio_with_pesto",
+        lambda *_args, **_kwargs: analysis,
+    )
     _patch_result_physics(monkeypatch)
 
     tensiometer = Tensiometer(
@@ -78,8 +86,8 @@ def test_collect_samples_invokes_audio_sample_callback(monkeypatch) -> None:
         side="A",
         confidence_threshold=0.9,
         measuring_duration=0.2,
-        audio_sample_callback=lambda sample, samplerate: published.append(
-            (sample.tolist(), samplerate)
+        audio_sample_callback=lambda sample, samplerate, payload: published.append(
+            (sample.tolist(), samplerate, payload)
         ),
     )
     tensiometer.repository.append_sample = lambda _result: None
@@ -96,7 +104,7 @@ def test_collect_samples_invokes_audio_sample_callback(monkeypatch) -> None:
 
     assert samples is not None
     assert len(samples) == 1
-    assert published == [([0.1, -0.2, 0.3], 8000)]
+    assert published == [([0.1, -0.2, 0.3], 8000, analysis)]
 
 
 def test_goto_collect_wire_data_invokes_summary_refresh_callback(monkeypatch) -> None:

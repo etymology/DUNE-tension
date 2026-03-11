@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 import logging
 from typing import Any, Optional, Tuple
 
@@ -16,6 +17,19 @@ DEFAULT_PESTO_STEP_SIZE_MS = 5.0
 LOGGER = logging.getLogger(__name__)
 
 
+@dataclass(frozen=True)
+class PestoAnalysisResult:
+    """Pitch estimate and optional activation diagnostics for one audio buffer."""
+
+    frequency: float
+    confidence: float
+    frame_times: np.ndarray
+    predicted_frequencies: np.ndarray
+    frame_confidences: np.ndarray
+    activation_map: np.ndarray | None = None
+    activation_freq_axis: np.ndarray | None = None
+
+
 def _to_numpy(value: Any) -> np.ndarray:
     if torch is not None and isinstance(value, torch.Tensor):  # type: ignore[union-attr]
         return value.detach().cpu().numpy()
@@ -24,6 +38,33 @@ def _to_numpy(value: Any) -> np.ndarray:
 
 def _resolve_step_size_ms(_sample_rate: int, _sample_count: int) -> float:
     return float(max(DEFAULT_PESTO_STEP_SIZE_MS, 1.0))
+
+
+def _empty_analysis_result() -> PestoAnalysisResult:
+    empty = np.zeros(0, dtype=np.float32)
+    return PestoAnalysisResult(
+        frequency=float("nan"),
+        confidence=float("nan"),
+        frame_times=empty,
+        predicted_frequencies=empty,
+        frame_confidences=empty,
+        activation_map=None,
+        activation_freq_axis=None,
+    )
+
+
+def _activation_frequency_axis(model: Any, num_bins: int) -> np.ndarray:
+    bins_per_semitone = max(int(getattr(model, "bins_per_semitone", 1)), 1)
+    preprocessor = getattr(model, "preprocessor", None)
+    hcqt_kwargs = getattr(preprocessor, "hcqt_kwargs", {}) if preprocessor is not None else {}
+    fmin = float(hcqt_kwargs.get("fmin", 32.7))
+    return (
+        fmin
+        * np.power(
+            2.0,
+            np.arange(num_bins, dtype=np.float32) / (12.0 * bins_per_semitone),
+        )
+    ).astype(np.float32, copy=False)
 
 
 def _ensure_runtime_dependencies() -> bool:
@@ -78,16 +119,34 @@ def estimate_pitch_from_audio(
     audio does not yield any voiced frames.
     """
 
+    result = analyze_audio_with_pesto(
+        audio,
+        sample_rate,
+        expected_frequency=expected_frequency,
+        include_activations=False,
+    )
+    return result.frequency, result.confidence
+
+
+def analyze_audio_with_pesto(
+    audio: np.ndarray,
+    sample_rate: int,
+    expected_frequency: Optional[float] = None,
+    *,
+    include_activations: bool = False,
+) -> PestoAnalysisResult:
+    """Return pitch estimates and optional activation diagnostics for ``audio``."""
+
     if sample_rate <= 0:
         raise ValueError("sample_rate must be positive.")
 
     if not _ensure_runtime_dependencies():
         LOGGER.warning("pesto-pitch is unavailable; cannot estimate pitch.")
-        return float("nan"), float("nan")
+        return _empty_analysis_result()
 
     audio_array = np.asarray(audio, dtype=np.float32).reshape(-1)
     if audio_array.size == 0:
-        return float("nan"), float("nan")
+        return _empty_analysis_result()
 
     step_size_ms = _resolve_step_size_ms(int(sample_rate), int(audio_array.size))
     model = _load_pesto_model_cached(
@@ -97,29 +156,37 @@ def estimate_pitch_from_audio(
     )
     if model is None:
         LOGGER.warning("pesto model loader is unavailable; cannot estimate pitch.")
-        return float("nan"), float("nan")
+        return _empty_analysis_result()
 
     audio_tensor = torch.from_numpy(audio_array).to(dtype=torch.float32).unsqueeze(0)
 
     try:
         with torch.inference_mode():
-            predictions, confidences, _ = model(
+            outputs = model(
                 audio_tensor,
                 sr=int(sample_rate),
                 convert_to_freq=True,
-                return_activations=False,
+                return_activations=bool(include_activations),
             )
     except Exception as exc:  # pragma: no cover - environment-specific inference failure
         LOGGER.warning("PESTO pitch estimation failed: %s", exc)
-        return float("nan"), float("nan")
+        return _empty_analysis_result()
 
-    predicted_frequencies = _to_numpy(predictions).reshape(-1)
-    confidence_values = _to_numpy(confidences).reshape(-1)
+    if len(outputs) < 2:
+        return _empty_analysis_result()
+
+    predictions = outputs[0]
+    confidences = outputs[1]
+    activations = outputs[3] if include_activations and len(outputs) >= 4 else None
+
+    predicted_frequencies = _to_numpy(predictions).reshape(-1).astype(np.float32, copy=False)
+    confidence_values = _to_numpy(confidences).reshape(-1).astype(np.float32, copy=False)
+    frame_times = (
+        np.arange(predicted_frequencies.size, dtype=np.float32) * (step_size_ms / 1000.0)
+    )
 
     valid = np.isfinite(predicted_frequencies) & (predicted_frequencies > 0.0)
     valid &= np.isfinite(confidence_values) & (confidence_values > 0.0)
-    if not np.any(valid):
-        return float("nan"), float("nan")
 
     if expected_frequency is not None:
         try:
@@ -131,13 +198,38 @@ def estimate_pitch_from_audio(
             if np.any(expected_mask):
                 valid = expected_mask
 
-    weighted_frequencies = predicted_frequencies[valid]
-    weights = confidence_values[valid]
-    weight_sum = float(np.sum(weights))
-    if weight_sum <= 0.0:
-        frequency = float(np.mean(weighted_frequencies))
+    if np.any(valid):
+        weighted_frequencies = predicted_frequencies[valid]
+        weights = confidence_values[valid]
+        weight_sum = float(np.sum(weights))
+        if weight_sum <= 0.0:
+            frequency = float(np.mean(weighted_frequencies))
+        else:
+            frequency = float(np.average(weighted_frequencies, weights=weights))
+        confidence = float(np.mean(weights))
     else:
-        frequency = float(np.average(weighted_frequencies, weights=weights))
+        frequency = float("nan")
+        confidence = float("nan")
 
-    confidence = float(np.mean(weights))
-    return frequency, confidence
+    activation_map: np.ndarray | None = None
+    activation_freq_axis: np.ndarray | None = None
+    if activations is not None:
+        activation_np = _to_numpy(activations)
+        if activation_np.ndim == 3 and activation_np.shape[0] == 1:
+            activation_np = activation_np[0]
+        if activation_np.ndim == 2:
+            activation_map = activation_np.T.astype(np.float32, copy=False)
+            activation_freq_axis = _activation_frequency_axis(
+                model,
+                activation_map.shape[0],
+            )
+
+    return PestoAnalysisResult(
+        frequency=frequency,
+        confidence=confidence,
+        frame_times=frame_times,
+        predicted_frequencies=predicted_frequencies,
+        frame_confidences=confidence_values,
+        activation_map=activation_map,
+        activation_freq_axis=activation_freq_axis,
+    )

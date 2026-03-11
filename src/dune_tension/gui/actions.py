@@ -51,11 +51,12 @@ def _publish_live_waveform(
     ctx: GUIContext,
     audio_sample: Any,
     samplerate: int,
+    analysis: Any | None,
 ) -> None:
     manager = getattr(ctx, "live_plot_manager", None)
     if manager is None:
         return
-    manager.publish_waveform(audio_sample, samplerate)
+    manager.publish_waveform(audio_sample, samplerate, analysis)
 
 
 def _request_live_summary_refresh(ctx: GUIContext, config: Any) -> None:
@@ -173,10 +174,11 @@ def create_tensiometer(ctx: GUIContext, inputs: WorkerInputs) -> "Tensiometer":
         strum=ctx.strum,
         focus_wiggle=ctx.servo_controller.nudge_focus,
         estimated_time_callback=lambda value: _set_estimated_time(ctx, value),
-        audio_sample_callback=lambda audio_sample, samplerate: _publish_live_waveform(
+        audio_sample_callback=lambda audio_sample, samplerate, analysis: _publish_live_waveform(
             ctx,
             audio_sample,
             samplerate,
+            analysis,
         ),
         summary_refresh_callback=lambda config: _request_live_summary_refresh(
             ctx,
