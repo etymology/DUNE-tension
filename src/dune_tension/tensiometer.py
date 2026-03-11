@@ -453,7 +453,7 @@ class Tensiometer:
 
         def wiggle() -> None:
             if choice([True, False]):
-                x_wiggle_target = gauss(wire_x, min(length * 1000 / 20, 10))
+                x_wiggle_target = gauss(wire_x, min(length * 1000 / 10, 10))
                 if self.config.dx != 0:
                     y_target = gauss(wire_y, 0.5) - (
                         (x_wiggle_target - wire_x) / self.config.dx * self.config.dy

@@ -12,7 +12,7 @@ from scipy.stats import gaussian_kde
 
 WIRE_DENSITY = 0.0001540460069  # in kg/m
 MAX_PASSING_TENSION = 8.5  # Note the minimum depends on the wire length
-MIN_PHYSICAL_TENSION = 2
+MIN_PHYSICAL_TENSION = 4
 MAX_PHYSICAL_TENSION = (
     8  # considering higher than 10 not possible because of winder tension control
 )
