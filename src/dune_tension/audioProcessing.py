@@ -13,11 +13,6 @@ import shutil
 import logging
 
 os.environ.setdefault("MPLBACKEND", "Agg")
-import matplotlib.pyplot as plt
-try:  # pragma: no cover - optional dependency
-    import crepe  # type: ignore
-except Exception:  # pragma: no cover - dependency may be absent
-    crepe = None  # type: ignore
 try:  # pragma: no cover - fallback for legacy test stubs
     from dune_tension.tension_calculation import tension_pass, wire_equation
 except ImportError:  # pragma: no cover
@@ -26,17 +21,56 @@ import sounddevice as sd
 import random
 import math
 
-# Optional dependencies used for alternative pitch detection
-try:
-    import torch
-    from pesto import load_model
-except Exception:  # pragma: no cover - optional
-    torch = None
-    load_model = None
-
 # Lazily initialized default pesto model
 _PESTO_MODEL = None
+_CREPE = None
+_CREPE_UNAVAILABLE = False
+_PESTO_RUNTIME = None
+_PESTO_RUNTIME_UNAVAILABLE = False
 LOGGER = logging.getLogger(__name__)
+
+
+def _get_pyplot():
+    import matplotlib.pyplot as plt
+
+    return plt
+
+
+def _get_crepe_module():
+    global _CREPE, _CREPE_UNAVAILABLE
+
+    if _CREPE is not None:
+        return _CREPE
+    if _CREPE_UNAVAILABLE:
+        return None
+
+    try:  # pragma: no cover - optional dependency
+        import crepe as crepe_module  # type: ignore
+    except Exception:  # pragma: no cover - dependency may be absent
+        _CREPE_UNAVAILABLE = True
+        return None
+
+    _CREPE = crepe_module
+    return _CREPE
+
+
+def _get_pesto_runtime():
+    global _PESTO_RUNTIME, _PESTO_RUNTIME_UNAVAILABLE
+
+    if _PESTO_RUNTIME is not None:
+        return _PESTO_RUNTIME
+    if _PESTO_RUNTIME_UNAVAILABLE:
+        return None, None
+
+    try:  # pragma: no cover - optional dependency
+        import torch as torch_module
+        from pesto import load_model as pesto_load_model
+    except Exception:  # pragma: no cover - optional dependency may be absent
+        _PESTO_RUNTIME_UNAVAILABLE = True
+        return None, None
+
+    _PESTO_RUNTIME = (torch_module, pesto_load_model)
+    return _PESTO_RUNTIME
 
 
 def load_audio_data(file_name):
@@ -92,6 +126,7 @@ def get_pitch_autocorrelation(
     # Plotting the autocorrelation function
     lags = np.arange(min_lag, max_lag + 1)
     if show_plots:
+        plt = _get_pyplot()
         plt.figure(figsize=(12, 6))
         plt.plot(lags / samplerate, autocorr)
         plt.axvline(
@@ -159,6 +194,7 @@ def get_pitch_naive_fft(
             break
 
     if show_plots:
+        plt = _get_pyplot()
         # Plot the time-domain audio data
         plt.figure(figsize=(12, 6))
         plt.subplot(2, 1, 1)
@@ -192,6 +228,7 @@ def get_pitch_crepe(
     audio_data: np.ndarray, samplerate, model_capacity="tiny"
 ) -> tuple[float, float]:
     """Extract the pitch and confidence from the audio data using CREPE."""
+    crepe = _get_crepe_module()
     if crepe is None:
         raise RuntimeError("crepe is not installed")
 
@@ -237,7 +274,7 @@ def get_pitch_pesto(
         Optional pre-loaded Pesto model.  When omitted, a default model is
         lazily instantiated using :func:`pesto.load_model`.
     """
-
+    torch, load_model = _get_pesto_runtime()
     if torch is None or load_model is None:
         raise RuntimeError("pesto and torch are required for get_pitch_pesto")
 
@@ -296,6 +333,7 @@ def record_audio(duration, sample_rate, plot=False, normalize=True):
                 audio_data = audio_data / max_val
 
         if plot:
+            plt = _get_pyplot()
             plt.figure(figsize=(10, 4))
             plt.plot(audio_data)
             plt.title("Recorded Audio Waveform")

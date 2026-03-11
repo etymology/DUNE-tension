@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import logging
+import sys
 from typing import Any, Callable
 
 try:  # pragma: no cover - fallback for legacy test stubs
@@ -22,6 +23,9 @@ LOGGER = logging.getLogger(__name__)
 
 
 def _import_plc_module() -> Any:
+    plc_stub = sys.modules.get("plc_io")
+    if plc_stub is not None:
+        return plc_stub
     try:
         import dune_tension.plc_io as plc
     except Exception:  # pragma: no cover - fallback for legacy test stubs
@@ -30,6 +34,9 @@ def _import_plc_module() -> Any:
 
 
 def _import_audio_module() -> Any:
+    audio_stub = sys.modules.get("audioProcessing")
+    if audio_stub is not None:
+        return audio_stub
     try:
         import dune_tension.audioProcessing as audio
     except Exception:  # pragma: no cover - fallback for legacy test stubs

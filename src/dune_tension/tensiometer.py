@@ -1,4 +1,5 @@
 import threading
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 import logging
 from typing import Optional, Callable
@@ -6,10 +7,6 @@ import time
 import numpy as np
 import pandas as pd
 from random import gauss, choice
-
-from spectrum_analysis.pitch_compare_config import PitchCompareConfig
-from spectrum_analysis.pesto_analysis import estimate_pitch_from_audio
-from spectrum_analysis.audio_processing import acquire_audio
 
 try:
     from dune_tension.geometry import zone_lookup, length_lookup
@@ -24,7 +21,18 @@ try:
     from dune_tension.services import AudioCaptureService, MotionService, ResultRepository
 except ImportError:  # pragma: no cover - fallback for legacy test stubs
     from geometry import zone_lookup, length_lookup
-    from tension_calculation import wire_equation, tension_plausible
+    try:
+        from tension_calculation import wire_equation, tension_plausible
+    except ImportError:
+        from tension_calculation import tension_lookup, tension_plausible
+
+        def wire_equation(*, length: float, frequency: float | None = None):
+            active_frequency = 1.0 if frequency is None else float(frequency)
+            return {
+                "frequency": active_frequency,
+                "tension": tension_lookup(length, active_frequency),
+            }
+
     from tensiometer_functions import (
         make_config,
         measure_list,
@@ -35,6 +43,42 @@ except ImportError:  # pragma: no cover - fallback for legacy test stubs
     from dune_tension.services import AudioCaptureService, MotionService, ResultRepository
 
 LOGGER = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class AudioAcquisitionConfig:
+    """Minimal runtime config passed into ``acquire_audio``."""
+
+    sample_rate: int
+    max_record_seconds: float
+    expected_f0: float | None
+    snr_threshold_db: float
+    trigger_mode: str
+    min_frequency: float = 30.0
+    max_frequency: float = 2000.0
+    min_oscillations_per_window: float = 10.0
+    min_window_overlap: float = 0.5
+    idle_timeout: float = 0.2
+    input_mode: str = "mic"
+    input_audio_path: str | None = None
+
+
+def acquire_audio(*args, **kwargs):
+    """Lazily import the runtime audio acquisition helper."""
+
+    from spectrum_analysis.audio_processing import acquire_audio as _acquire_audio
+
+    return _acquire_audio(*args, **kwargs)
+
+
+def estimate_pitch_from_audio(*args, **kwargs):
+    """Lazily import the runtime PESTO pitch estimator."""
+
+    from spectrum_analysis.pesto_analysis import (
+        estimate_pitch_from_audio as _estimate_pitch_from_audio,
+    )
+
+    return _estimate_pitch_from_audio(*args, **kwargs)
 
 
 class Tensiometer:
@@ -99,9 +143,10 @@ class Tensiometer:
 
     @staticmethod
     def _sample_sort_key(result: TensionResult) -> tuple[float, datetime]:
+        timestamp = getattr(result, "time", None)
         return (
             float(result.confidence),
-            result.time if result.time is not None else datetime.min,
+            timestamp if timestamp is not None else datetime.min,
         )
 
     def _is_current_side_taped(self) -> bool:
@@ -226,13 +271,14 @@ class Tensiometer:
                 )
                 self.goto_collect_wire_data(wire_number=wire_number, wire_x=x, wire_y=y)
                 measured_count += 1
-                elapsed = time.time() - start_time
-                avg_time = elapsed / measured_count
                 remaining = len(wires_to_measure) - measured_count
-                est_remaining = avg_time * remaining
-                eta_text = str(timedelta(seconds=int(est_remaining)))
-                self.estimated_time_callback(eta_text)
-                did_report_zero = eta_text == "0:00:00"
+                if remaining > 0:
+                    elapsed = time.time() - start_time
+                    avg_time = elapsed / measured_count
+                    est_remaining = avg_time * remaining
+                    eta_text = str(timedelta(seconds=int(est_remaining)))
+                    self.estimated_time_callback(eta_text)
+                    did_report_zero = eta_text == "0:00:00"
         if not did_report_zero:
             self.estimated_time_callback("0:00:00")
         LOGGER.info("Done measuring all wires")
@@ -266,7 +312,7 @@ class Tensiometer:
         expected_frequency = wire_equation(length=length)["frequency"]
         measuring_timeout = self.config.measuring_duration
         candidate_wires: list[TensionResult] = []
-        audio_acquisition_config = PitchCompareConfig(
+        audio_acquisition_config = AudioAcquisitionConfig(
             sample_rate=self.samplerate,
             max_record_seconds=self.config.record_duration,
             expected_f0=expected_frequency,

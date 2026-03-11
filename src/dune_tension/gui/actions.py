@@ -10,9 +10,8 @@ import os
 import re
 import threading
 from threading import Thread
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-import sounddevice as sd  # type: ignore
 from tkinter import messagebox
 
 from dune_tension.data_cache import (
@@ -23,10 +22,12 @@ from dune_tension.data_cache import (
     update_dataframe,
 )
 from dune_tension.results import EXPECTED_COLUMNS
-from dune_tension.tensiometer import Tensiometer
 from dune_tension.tensiometer_functions import make_config
 from dune_tension.gui.context import GUIContext
 from dune_tension.gui.state import save_state
+
+if TYPE_CHECKING:
+    from dune_tension.tensiometer import Tensiometer
 
 LOGGER = logging.getLogger(__name__)
 
@@ -122,8 +123,10 @@ def _capture_worker_inputs(ctx: GUIContext) -> WorkerInputs:
     )
 
 
-def create_tensiometer(ctx: GUIContext, inputs: WorkerInputs) -> Tensiometer:
+def create_tensiometer(ctx: GUIContext, inputs: WorkerInputs) -> "Tensiometer":
     """Instantiate a :class:`Tensiometer` from captured UI inputs."""
+
+    from dune_tension.tensiometer import Tensiometer
 
     try:
         samples = int(inputs.samples)
@@ -639,6 +642,8 @@ def handle_close(ctx: GUIContext) -> None:
         except Exception:
             pass
     try:
+        import sounddevice as sd  # type: ignore
+
         sd.stop()
     except Exception:
         pass
@@ -684,7 +689,7 @@ def _make_config_from_inputs(inputs: WorkerInputs):
 
 def _cleanup_after_measurement(
     ctx: GUIContext,
-    tensiometer: Tensiometer | None,
+    tensiometer: "Tensiometer | None",
     *,
     reset_estimated_time: bool = True,
 ) -> None:
