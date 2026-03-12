@@ -26,7 +26,11 @@ from dune_tension.gui.actions import (
     update_focus_command_indicator,
 )
 from dune_tension.gui.context import GUIContext, GUIWidgets, create_context
-from dune_tension.gui.live_plots import LivePlotManager
+from dune_tension.gui.live_plots import (
+    LIVE_SUMMARY_FIGSIZE,
+    LIVE_WAVEFORM_FIGSIZE,
+    LivePlotManager,
+)
 from dune_tension.gui.logging_panel import configure_gui_logging
 from dune_tension.gui.state import load_state
 from dune_tension.tensiometer_functions import make_config
@@ -38,7 +42,7 @@ def run_app(state_file: str = "gui_state.json", root: tk.Misc | None = None) -> 
     root = root or tk.Tk()
     root.title("Tensiometer GUI")
     if hasattr(root, "columnconfigure"):
-        root.columnconfigure(0, weight=1)
+        root.columnconfigure(0, weight=0)
         root.columnconfigure(1, weight=1)
     if hasattr(root, "rowconfigure"):
         root.rowconfigure(0, weight=1)
@@ -187,6 +191,8 @@ def _create_widgets(
 
     measure_frame = tk.LabelFrame(bottom_frame, text="Measurement")
     measure_frame.grid(row=1, column=0, sticky="ew", pady=5)
+    if hasattr(measure_frame, "columnconfigure"):
+        measure_frame.columnconfigure(1, weight=1)
 
     servo_frame = tk.LabelFrame(bottom_frame, text="Servo")
     servo_frame.grid(row=2, column=0, sticky="ew", pady=5)
@@ -414,6 +420,8 @@ def _create_widgets(
         "refresh_plots": btn_refresh_plots,
     }
 
+    _configure_root_minimum_size(root, main_frame, side_frame)
+
     return (
         widgets,
         focus_command_canvas,
@@ -424,6 +432,53 @@ def _create_widgets(
         summary_plot_frame,
         waveform_plot_frame,
     )
+
+
+def _configure_root_minimum_size(
+    root: tk.Misc,
+    main_frame: tk.Misc,
+    side_frame: tk.Misc,
+) -> None:
+    """Keep the two-column layout wide enough for controls and embedded plots."""
+
+    if not hasattr(root, "update_idletasks"):
+        return
+
+    try:
+        root.update_idletasks()
+    except Exception:
+        return
+
+    try:
+        main_width = int(main_frame.winfo_reqwidth())
+        side_width = int(side_frame.winfo_reqwidth())
+        main_height = int(main_frame.winfo_reqheight())
+        side_height = int(side_frame.winfo_reqheight())
+    except Exception:
+        return
+
+    estimated_plot_width = int(max(LIVE_SUMMARY_FIGSIZE[0], LIVE_WAVEFORM_FIGSIZE[0]) * 100)
+    side_width = max(side_width, estimated_plot_width)
+
+    if hasattr(root, "columnconfigure"):
+        try:
+            root.columnconfigure(0, weight=0, minsize=max(main_width, 1))
+            root.columnconfigure(1, weight=1, minsize=max(side_width, 1))
+        except Exception:
+            pass
+
+    if not hasattr(root, "minsize"):
+        return
+
+    total_width = main_width + side_width + 30
+    total_height = max(main_height, side_height) + 20
+    if total_width <= 0 or total_height <= 0:
+        return
+
+    try:
+        root.minsize(total_width, total_height)
+    except Exception:
+        return
 
 
 def _configure_commands(

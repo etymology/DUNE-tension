@@ -165,6 +165,41 @@ def test_erase_distribution_outliers_uses_bulk_detector(monkeypatch):
     assert clear_calls == [("db.sqlite", "APA", "G", "A", [7, 9])]
 
 
+def test_clear_range_accepts_tension_expression(monkeypatch):
+    actions = _load_actions_module(monkeypatch)
+
+    class DummyGetter:
+        def __init__(self, value):
+            self._value = value
+
+        def get(self):
+            return self._value
+
+    summaries = types.ModuleType("dune_tension.summaries")
+    summaries.get_tension_series = lambda _config: {"A": {1: 6.9, 2: 7.0, 3: 7.1, 5: 8.4}}
+    monkeypatch.setitem(sys.modules, "dune_tension.summaries", summaries)
+
+    cfg = types.SimpleNamespace(
+        data_path="db.sqlite",
+        apa_name="APA",
+        layer="G",
+        side="A",
+    )
+    monkeypatch.setattr(actions, "_make_config_from_widgets", lambda _ctx: cfg)
+
+    clear_calls = []
+    monkeypatch.setattr(actions, "clear_wire_numbers", lambda *args: clear_calls.append(args))
+
+    ctx = types.SimpleNamespace(
+        widgets=types.SimpleNamespace(entry_clear_range=DummyGetter("t>7")),
+        live_plot_manager=None,
+    )
+
+    actions.clear_range(ctx)
+
+    assert clear_calls == [("db.sqlite", "APA", "G", "A", [3, 5])]
+
+
 def test_measure_list_button_skips_already_measured_wires_when_enabled(monkeypatch):
     actions = _load_actions_module(monkeypatch)
 

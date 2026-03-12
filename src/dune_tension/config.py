@@ -6,7 +6,7 @@ from dataclasses import dataclass
 @dataclass(frozen=True)
 class GeometryConfig:
     x_min: int = 1200 # 1050
-    x_max: int = 6900 # 7030
+    x_max: int = 7000 
     y_min: int = 1458
     y_max: int = 1500
     g_length_m: float = 1.285

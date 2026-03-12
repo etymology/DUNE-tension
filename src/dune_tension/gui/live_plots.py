@@ -17,6 +17,9 @@ try:  # pragma: no cover - backend availability depends on the runtime environme
 except Exception:  # pragma: no cover - fall back to text placeholders in tests/headless
     FigureCanvasTkAgg = None  # type: ignore[assignment]
 
+LIVE_SUMMARY_FIGSIZE = (7.8, 3.6)
+LIVE_WAVEFORM_FIGSIZE = (7.2, 4.6)
+
 
 class LivePlotManager:
     """Own the embedded summary and waveform plot canvases."""
@@ -93,7 +96,10 @@ class LivePlotManager:
             return
 
         try:
-            figure = build_summary_plot_figure_for_config(config)
+            figure = build_summary_plot_figure_for_config(
+                config,
+                figsize=LIVE_SUMMARY_FIGSIZE,
+            )
         except Exception as exc:
             self._set_placeholder(
                 self.summary_placeholder,
@@ -178,7 +184,7 @@ class LivePlotManager:
         samplerate: int,
         analysis: Any | None,
     ) -> Figure:
-        figure = Figure(figsize=(8, 5.2), constrained_layout=True)
+        figure = Figure(figsize=LIVE_WAVEFORM_FIGSIZE, constrained_layout=True)
         grid = figure.add_gridspec(2, 2, height_ratios=[2.2, 1.6], hspace=0.16, wspace=0.12)
         waveform_axis = figure.add_subplot(grid[0, :])
         fft_axis = figure.add_subplot(grid[1, 0])

@@ -9,6 +9,7 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from dune_tension.gui.live_plots import LivePlotManager
+from dune_tension.gui.live_plots import LIVE_WAVEFORM_FIGSIZE
 
 
 def test_build_audio_diagnostics_figure_includes_fft_and_pesto_axes() -> None:
@@ -44,3 +45,15 @@ def test_pesto_axis_uses_twice_expected_frequency() -> None:
     )
 
     assert cutoff == 500.0
+
+
+def test_audio_diagnostics_figure_uses_live_panel_size() -> None:
+    waveform = np.sin(np.linspace(0.0, 4.0 * np.pi, 1024, dtype=np.float32))
+
+    figure = LivePlotManager._build_audio_diagnostics_figure(
+        waveform,
+        8000,
+        None,
+    )
+
+    assert tuple(figure.get_size_inches()) == LIVE_WAVEFORM_FIGSIZE

@@ -405,28 +405,6 @@ def calibrate_background_noise(ctx: GUIContext, _inputs: WorkerInputs) -> None:
 def measure_condition(ctx: GUIContext, inputs: WorkerInputs) -> None:
     """Measure wires whose tension satisfies the configured expression."""
 
-    def _get_wires(config, expr: str) -> list[int]:
-        from dune_tension.summaries import get_tension_series
-
-        try:
-            predicate = _compile_tension_condition(expr)
-        except ValueError as exc:
-            LOGGER.warning("Invalid expression %r: %s", expr, exc)
-            return []
-
-        wires: list[int] = []
-        tension_series = get_tension_series(config)
-        for wire_number, tension in sorted(
-            tension_series.get(str(config.side).upper(), {}).items()
-        ):
-            try:
-                if predicate(float(tension)):
-                    wires.append(int(wire_number))
-            except Exception as exc:
-                LOGGER.warning("Invalid expression %r: %s", expr, exc)
-                return []
-        return wires
-
     tensiometer: Tensiometer | None = None
     expr = inputs.condition.strip()
     if not expr:
@@ -435,7 +413,7 @@ def measure_condition(ctx: GUIContext, inputs: WorkerInputs) -> None:
 
     try:
         config = _make_config_from_inputs(inputs)
-        wires = _get_wires(config, expr)
+        wires = _get_wires_matching_tension_condition(config, expr)
         if not wires:
             LOGGER.info("No wires satisfy: %s", expr)
             return
@@ -510,16 +488,54 @@ def _compile_tension_condition(expr: str):
     return predicate
 
 
+def _get_wires_matching_tension_condition(config: Any, expr: str) -> list[int]:
+    from dune_tension.summaries import get_tension_series
+
+    try:
+        predicate = _compile_tension_condition(expr)
+    except ValueError as exc:
+        LOGGER.warning("Invalid expression %r: %s", expr, exc)
+        return []
+
+    wires: list[int] = []
+    tension_series = get_tension_series(config)
+    for wire_number, tension in sorted(
+        tension_series.get(str(config.side).upper(), {}).items()
+    ):
+        try:
+            if predicate(float(tension)):
+                wires.append(int(wire_number))
+        except Exception as exc:
+            LOGGER.warning("Invalid expression %r: %s", expr, exc)
+            return []
+    return wires
+
+
 def clear_range(ctx: GUIContext) -> None:
-    ranges = _parse_ranges(ctx.widgets.entry_clear_range.get())
-    if not ranges:
-        LOGGER.warning("No valid range specified")
+    raw_text = ctx.widgets.entry_clear_range.get().strip()
+    cfg = _make_config_from_widgets(ctx)
+    ranges = _parse_ranges(raw_text)
+    if ranges:
+        for start, end in ranges:
+            clear_wire_range(
+                cfg.data_path,
+                cfg.apa_name,
+                cfg.layer,
+                cfg.side,
+                start,
+                end,
+            )
+        LOGGER.info("Cleared ranges: %s", raw_text)
+        _request_live_summary_refresh(ctx, cfg)
         return
 
-    cfg = _make_config_from_widgets(ctx)
-    for start, end in ranges:
-        clear_wire_range(cfg.data_path, cfg.apa_name, cfg.layer, cfg.side, start, end)
-    LOGGER.info("Cleared ranges: %s", ctx.widgets.entry_clear_range.get())
+    wires = _get_wires_matching_tension_condition(cfg, raw_text)
+    if not wires:
+        LOGGER.warning("No valid range or condition specified")
+        return
+
+    clear_wire_numbers(cfg.data_path, cfg.apa_name, cfg.layer, cfg.side, wires)
+    LOGGER.info("Cleared wires %s matching %r", wires, raw_text)
     _request_live_summary_refresh(ctx, cfg)
 
 
