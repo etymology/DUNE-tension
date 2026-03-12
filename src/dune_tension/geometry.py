@@ -1,27 +1,23 @@
 # functions related to the geometry of the APA
-# geometry constants
 from __future__ import annotations
 
 from functools import lru_cache
 
-X_MIN: int = 1050
-X_MAX: int = 7030
-Y_MIN: int = 325
-Y_MAX: int = 2625
+try:  # pragma: no cover - fallback for legacy test stubs
+    from dune_tension.config import GEOMETRY_CONFIG
+except ImportError:  # pragma: no cover
+    from config import GEOMETRY_CONFIG
 
+X_MIN: int = GEOMETRY_CONFIG.x_min
+X_MAX: int = GEOMETRY_CONFIG.x_max
+Y_MIN: int = GEOMETRY_CONFIG.y_min
+Y_MAX: int = GEOMETRY_CONFIG.y_max
 
-G_LENGTH: float = 1.285
-X_LENGTH: float = 1.273
+G_LENGTH: float = GEOMETRY_CONFIG.g_length_m
+X_LENGTH: float = GEOMETRY_CONFIG.x_length_m
 
-comb_positions: list[int] = [
-    X_MIN,
-    2230,
-    3420,
-    4590,
-    5770,
-    X_MAX,
-]
-COMB_SPACING: float = (X_MIN - X_MAX) / 5
+comb_positions: list[int] = list(GEOMETRY_CONFIG.comb_positions)
+COMB_SPACING: float = GEOMETRY_CONFIG.comb_spacing
 
 
 def zone_lookup(x: float) -> int:
@@ -80,7 +76,7 @@ def refine_position(
 
     candidates: list[tuple[float, float]] = []
 
-    for n in range(300):
+    for n in range(GEOMETRY_CONFIG.refine_search_steps):
         # Generate forward and reverse candidates
         x1, y1 = x + n * dx, y - n * dy
         x2, y2 = x - n * dx, y + n * dy
@@ -95,19 +91,19 @@ def refine_position(
     low_candidates: list[tuple[float, float]] = [
         c
         for c in candidates
-        if score(c) > 200
+        if score(c) > GEOMETRY_CONFIG.refine_clearance_threshold
     ]
     if low_candidates:
-        #choose the low candidate with the lowest y value
+        # Choose the low candidate with the lowest y value.
         return min(low_candidates, key=lambda c: c[1])
-    
+
     return max(candidates, key=score)
 
 
 def length_lookup(
     layer: str, wire_number: int, zone: int, taped: bool = False
 ) -> float:
-    if layer not in ["U", "V", "X", "G"]:
+    if layer not in GEOMETRY_CONFIG.valid_layers:
         raise ValueError("Invalid layer. Must be 'U', 'V', 'X', or 'G'")
     if layer == "G":
         return G_LENGTH
@@ -116,15 +112,18 @@ def length_lookup(
 
     spreadsheet = _load_wire_length_lut(layer)
 
-    if wire_number < 1 or wire_number > 1151:
+    if (
+        wire_number < GEOMETRY_CONFIG.wire_number_min
+        or wire_number > GEOMETRY_CONFIG.wire_number_max
+    ):
         raise ValueError("Wire number must be between 1 and 1151")
-    if zone < 1 or zone > 5:
+    if zone < 1 or zone > GEOMETRY_CONFIG.zone_count:
         raise ValueError("Zone must be between 1 and 5")
 
     try:
         value: float = float(spreadsheet.at[wire_number, str(zone)])
         if taped:
-            return (value - 16) / 1000
+            return (value - GEOMETRY_CONFIG.taped_length_offset_mm) / 1000
         return value / 1000
     except KeyError:
         raise ValueError(

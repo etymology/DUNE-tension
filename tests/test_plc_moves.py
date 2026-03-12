@@ -8,9 +8,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 sys.modules.setdefault("requests", types.ModuleType("requests"))
 
 import dune_tension.plc_io as plc
+from dune_tension.config import GEOMETRY_CONFIG
 
 
-def _setup(monkeypatch, start_x: float = 2000.0, start_y: float = 500.0):
+def _setup(
+    monkeypatch,
+    start_x: float = 2000.0,
+    start_y: float = float(GEOMETRY_CONFIG.y_min),
+):
     moves = []
     cur = {"x": None, "y": None}
 
@@ -36,11 +41,15 @@ def _setup(monkeypatch, start_x: float = 2000.0, start_y: float = 500.0):
 
 def test_crossing_comb_splits_move(monkeypatch):
     moves = _setup(monkeypatch)
-    plc.goto_xy(3500.0, 800.0)
-    assert moves == [(2000.0, 0.0), (3500.0, 0.0), (3500.0, 800.0)]
+    plc.goto_xy(3500.0, float(GEOMETRY_CONFIG.y_max))
+    assert moves == [
+        (2000.0, float(GEOMETRY_CONFIG.y_min)),
+        (3500.0, float(GEOMETRY_CONFIG.y_min)),
+        (3500.0, float(GEOMETRY_CONFIG.y_max)),
+    ]
 
 
 def test_no_crossing_single_move(monkeypatch):
     moves = _setup(monkeypatch)
-    plc.goto_xy(2100.0, 800.0)
-    assert moves == [(2100.0, 800.0)]
+    plc.goto_xy(2100.0, float(GEOMETRY_CONFIG.y_max))
+    assert moves == [(2100.0, float(GEOMETRY_CONFIG.y_max))]

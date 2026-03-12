@@ -7,6 +7,8 @@ from threading import Event, Thread, RLock
 from typing import Callable
 from random import gauss
 
+from dune_tension.config import SERVO_CONFIG
+
 LOGGER = logging.getLogger(__name__)
 
 PY2 = version_info[0] == 2  # Running Python 2.x?
@@ -60,16 +62,24 @@ class Controller:
         #     ttyStr = maestro_port
 
         # Open the command port
-        try:
-            self.usb = serial.Serial(ttyStr)
-            self.faulted = False
-            LOGGER.info("Connected to Micro Maestro on %s", ttyStr)
-        except serial.SerialException:
-            LOGGER.warning(
-                "Couldn't find Micro Maestro on %s. Check the connection or port.",
-                ttyStr,
-            )
+        candidate_ports = self._candidate_ports(ttyStr)
+        last_error = None
+        for candidate_port in candidate_ports:
+            try:
+                self.usb = serial.Serial(candidate_port)
+                self.faulted = False
+                LOGGER.info("Connected to Micro Maestro on %s", candidate_port)
+                break
+            except serial.SerialException as exc:
+                last_error = exc
+                LOGGER.debug("Micro Maestro unavailable on %s", candidate_port)
+        else:
             self.faulted = True
+            LOGGER.warning(
+                "Couldn't find Micro Maestro on any of %s. Check the connection or port.",
+                ", ".join(candidate_ports),
+                exc_info=last_error,
+            )
 
         # Command lead-in and device number are sent for each Pololu serial command.
         self.PololuCmd = chr(0xAA) + chr(device)
@@ -80,10 +90,27 @@ class Controller:
         self.Maxs = [0] * 24
         self.lock = RLock()
 
+    @staticmethod
+    def _candidate_ports(tty_str):
+        if not tty_str.startswith("/dev/ttyACM"):
+            return [tty_str]
+
+        suffixes = ("0", "1", "2")
+        candidates = [tty_str]
+        prefix = "/dev/ttyACM"
+        candidates.extend(f"{prefix}{suffix}" for suffix in suffixes)
+
+        deduped_candidates = []
+        for candidate in candidates:
+            if candidate not in deduped_candidates:
+                deduped_candidates.append(candidate)
+        return deduped_candidates
+
     # Cleanup by closing USB serial port
     def close(self):
         with self.lock:
-            self.usb.close()
+            if self.usb is not None:
+                self.usb.close()
 
     # Send a Pololu command out the serial pnoort
     def sendCmd(self, cmd):
@@ -322,7 +349,9 @@ class ServoController:
         # while self.servo.isMoving(1):
         #     time.sleep(0.01)
 
-    def wiggle_focus(self, sigma: float = 20.0) -> None:
+    def wiggle_focus(
+        self, sigma: float = SERVO_CONFIG.focus_wiggle_sigma_quarter_us
+    ) -> None:
         """Randomly adjust the focus servo around the current position."""
         wiggle_amount = int(gauss(0, sigma))
         LOGGER.info("Wiggling focus by %s quarter-microseconds", wiggle_amount)

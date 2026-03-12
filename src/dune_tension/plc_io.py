@@ -5,9 +5,9 @@ import logging
 from random import gauss
 
 try:  # pragma: no cover - fallback for legacy test stubs
-    from dune_tension.geometry import comb_positions
+    from dune_tension.geometry import X_MAX, X_MIN, Y_MAX, Y_MIN, comb_positions
 except ImportError:  # pragma: no cover
-    from geometry import comb_positions
+    from geometry import X_MAX, X_MIN, Y_MAX, Y_MIN, comb_positions
 
 LOGGER = logging.getLogger(__name__)
 
@@ -29,6 +29,14 @@ IDLE_MOVE_TYPE = 0
 IDLE_STATE = 1
 XY_MOVE_TYPE = 2
 XY_STATE = 3
+
+
+def is_motion_target_in_bounds(x_target: float, y_target: float) -> bool:
+    """Return whether the target is legal for PLC XY motion."""
+
+    return (
+        X_MIN <= float(x_target) <= X_MAX and Y_MIN <= float(y_target) <= Y_MAX
+    )
 
 
 def read_tag(tag_name, *, timeout: float = 10.0, retry_interval: float = 0.1) -> float:
@@ -163,14 +171,21 @@ def goto_xy(
             (cur_x < c < x_target) or (x_target < c < cur_x) for c in comb_positions
         )
         if crosses:
-            goto_xy(cur_x, 0.0, speed=speed, deadzone=deadzone, check_comb=False)
-            goto_xy(x_target, 0.0, speed=speed, deadzone=deadzone, check_comb=False)
+            transit_y = float(Y_MIN)
+            goto_xy(cur_x, transit_y, speed=speed, deadzone=deadzone, check_comb=False)
+            goto_xy(
+                x_target,
+                transit_y,
+                speed=speed,
+                deadzone=deadzone,
+                check_comb=False,
+            )
             return goto_xy(
                 x_target, y_target, speed=speed, deadzone=deadzone, check_comb=False
             )
 
     with PLC_LOCK:
-        if not (1000 < x_target < 7174 and 0 <= y_target < 2680):
+        if not is_motion_target_in_bounds(x_target, y_target):
             LOGGER.warning(
                 "Motion target %s,%s out of bounds. Please enter a valid position.",
                 x_target,
@@ -305,7 +320,7 @@ def spoof_goto_xy(x_target: float, y_target: float, **_: object) -> bool:
     :func:`goto_xy` but ignored.
     """
     # Reuse bounds check from :func:`goto_xy` for consistency
-    if x_target < 0 or x_target > 7174 or y_target < 0 or y_target > 2680:
+    if not is_motion_target_in_bounds(x_target, y_target):
         LOGGER.warning("[spoof] Motion target %s,%s out of bounds.", x_target, y_target)
 
     LOGGER.info("[spoof] Moving to %s,%s", x_target, y_target)

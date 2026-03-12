@@ -6,9 +6,28 @@ from typing import List, Tuple
 from threading import Event
 
 try:  # pragma: no cover - fallback for legacy test stubs
+    from dune_tension.config import LAYER_LAYOUTS
+except ImportError:  # pragma: no cover
+    from config import LAYER_LAYOUTS
+
+try:  # pragma: no cover - fallback for legacy test stubs
+    from dune_tension.geometry import X_MAX, X_MIN, Y_MAX, Y_MIN
+except ImportError:  # pragma: no cover
+    from geometry import X_MAX, X_MIN, Y_MAX, Y_MIN
+
+try:  # pragma: no cover - fallback for legacy test stubs
     from dune_tension.data_cache import get_dataframe
 except ImportError:  # pragma: no cover
     from data_cache import get_dataframe
+
+try:  # pragma: no cover - fallback for legacy test stubs
+    from dune_tension.plc_io import is_motion_target_in_bounds
+except ImportError:  # pragma: no cover
+    try:
+        from plc_io import is_motion_target_in_bounds
+    except ImportError:  # pragma: no cover
+        def is_motion_target_in_bounds(x_target: float, y_target: float) -> bool:
+            return X_MIN <= float(x_target) <= X_MAX and Y_MIN <= float(y_target) <= Y_MAX
 
 LOGGER = logging.getLogger(__name__)
 
@@ -62,14 +81,20 @@ def make_config(
     record_duration: float = 0.5,
     measuring_duration: float = 10.0,
 ) -> TensiometerConfig:
-    if layer in ["X", "G"]:
-        dx, dy = 0.0, 2300 / 480
-        wire_min, wire_max = 1, 481 if layer == "G" else 480
-    else:
-        dx, dy = 8.0, 5.75
-        wire_min, wire_max = 8, 1145
-        if (layer == "U" and side == "A") or (layer == "V" and side == "B"):
-            dy = -dy
+    try:
+        layer_layout = LAYER_LAYOUTS[layer]
+    except KeyError as exc:
+        raise ValueError(f"Invalid layer {layer!r}") from exc
+
+    dx = layer_layout.dx
+    dy = layer_layout.dy
+    wire_min = layer_layout.wire_min
+    wire_max = layer_layout.wire_max
+
+    if layer in ["U", "V"] and (
+        (layer == "U" and side == "A") or (layer == "V" and side == "B")
+    ):
+        dy = -dy
     if flipped:
         dy = -dy
     return TensiometerConfig(
@@ -152,37 +177,77 @@ def greedy_order_triplets(
     startxy: tuple[float, float], triplets: List[Tuple[int, float, float]]
 ) -> List[Tuple[int, float, float]]:
     """
-    Orders triplets starting from the one closest to startxy by Euclidean distance,
-    then greedily minimizes wire number difference.
+    Order triplets by greedy nearest-neighbor distance.
 
     Args:
         startxy: (x, y) starting coordinates.
         triplets: List of (wire_number, x, y) tuples.
 
     Returns:
-        List of triplets ordered accordingly.
+        List of triplets that starts with the target closest to ``startxy``
+        and then repeatedly adds the closest remaining target.
     """
+    remaining = triplets.copy()
+    ordered: list[tuple[int, float, float]] = []
+    current_x, current_y = startxy
+
+    while remaining:
+        next_triplet = min(
+            remaining,
+            key=lambda triplet: math.hypot(
+                triplet[1] - current_x, triplet[2] - current_y
+            ),
+        )
+        ordered.append(next_triplet)
+        remaining.remove(next_triplet)
+        current_x, current_y = next_triplet[1], next_triplet[2]
+
+    return ordered
+
+
+def plan_measurement_triplets(
+    config: TensiometerConfig,
+    wire_list: list[int],
+    get_xy_from_file_func: Callable[
+        [TensiometerConfig, int], Optional[tuple[float, float]]
+    ],
+    get_current_xy_func: Callable[[], tuple[float, float]],
+    preserve_order: bool = False,
+) -> list[tuple[int, float, float]]:
+    """Resolve, validate, and order motion targets for wire measurements."""
+
+    LOGGER.info("Loading wire coordinates...")
+    triplets: list[tuple[int, float, float]] = []
+    for wire_number in wire_list:
+        xy = get_xy_from_file_func(config, wire_number)
+        if xy is None:
+            LOGGER.warning("No position data found for wire %s", wire_number)
+            continue
+
+        x, y = xy
+        if not is_motion_target_in_bounds(x, y):
+            LOGGER.warning(
+                "Skipping wire %s because motion target %s,%s is out of bounds.",
+                wire_number,
+                x,
+                y,
+            )
+            continue
+
+        triplets.append((wire_number, x, y))
+
     if not triplets:
+        LOGGER.warning("No valid wires with legal coordinates.")
         return []
 
-    remaining = triplets.copy()
+    if preserve_order:
+        LOGGER.info("Preserving requested wire order...")
+        return triplets
 
-    # Step 1: Find initial triplet closest to startxy
-    start_triplet = min(
-        remaining, key=lambda t: math.hypot(t[1] - startxy[0], t[2] - startxy[1])
-    )
-    visited = [start_triplet]
-    remaining.remove(start_triplet)
-    current_wire = start_triplet[0]
-
-    # Step 2: Greedily minimize wire number difference
-    while remaining:
-        nearest = min(remaining, key=lambda t: abs(t[0] - current_wire))
-        visited.append(nearest)
-        remaining.remove(nearest)
-        current_wire = nearest[0]
-
-    return visited
+    LOGGER.info("Getting current position...")
+    start_xy = get_current_xy_func()
+    LOGGER.info("Reordering wires...")
+    return greedy_order_triplets(start_xy, triplets)
 
 
 def measure_list(
@@ -205,28 +270,17 @@ def measure_list(
         profiler = cProfile.Profile()
         profiler.enable()
 
-    LOGGER.info("Loading wire coordinates...")
-    triplets: list[tuple[int, float, float]] = []
-    for wire_number in wire_list:
-        xy = get_xy_from_file_func(config, wire_number)
-        if xy is None:
-            continue
-        triplets.append((wire_number, *xy))
-
-    if not triplets:
-        LOGGER.warning("No valid wires with known coordinates.")
+    ordered_triplets = plan_measurement_triplets(
+        config=config,
+        wire_list=wire_list,
+        get_xy_from_file_func=get_xy_from_file_func,
+        get_current_xy_func=get_current_xy_func,
+        preserve_order=preserve_order,
+    )
+    if not ordered_triplets:
         if profile:
             profiler.disable()
         return
-
-    LOGGER.info("Getting current position...")
-    start_xy = get_current_xy_func()
-    if not preserve_order:
-        LOGGER.info("Reordering wires...")
-        ordered_triplets = greedy_order_triplets(start_xy, triplets)
-    else:
-        LOGGER.info("Preserving requested wire order...")
-        ordered_triplets = triplets
 
     for wire, x, y in ordered_triplets:
         LOGGER.info("Measuring wire %s at %s,%s", wire, x, y)
