@@ -8,6 +8,7 @@ import tkinter as tk
 
 from dune_tension.config import MEASUREMENT_WIGGLE_CONFIG
 from dune_tension.gui.actions import (
+    adjust_focus_with_x_compensation,
     calibrate_background_noise,
     clear_range,
     erase_distribution_outliers,
@@ -510,5 +511,5 @@ def _configure_commands(
 
     widgets = ctx.widgets
     widgets.focus_slider.configure(
-        command=lambda val: ctx.servo_controller.focus_target(int(float(val)))
+        command=lambda val: adjust_focus_with_x_compensation(ctx, int(float(val)))
     )

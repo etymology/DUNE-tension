@@ -32,6 +32,52 @@ if TYPE_CHECKING:
     from dune_tension.tensiometer import Tensiometer
 
 LOGGER = logging.getLogger(__name__)
+FOCUS_MM_PER_QUARTER_US = 20.0 / 4000.0
+
+
+def _focus_side_sign(side: str) -> float:
+    """Return +1 on side A and -1 on side B for focus/X compensation."""
+
+    return 1.0 if str(side).upper() == "A" else -1.0
+
+
+def adjust_focus_with_x_compensation(
+    ctx: GUIContext,
+    target: int,
+    *,
+    side: str | None = None,
+) -> None:
+    """Command focus and compensate X using the configured focus-to-mm scale."""
+
+    try:
+        target_int = int(target)
+    except (TypeError, ValueError):
+        LOGGER.warning("Invalid focus target: %s", target)
+        return
+
+    current_focus = int(ctx.servo_controller.focus_position)
+    delta_focus = target_int - current_focus
+    ctx.servo_controller.focus_target(target_int)
+    if delta_focus == 0:
+        return
+
+    side_name = str(side or ctx.widgets.side_var.get()).upper()
+    delta_x_mm = _focus_side_sign(side_name) * delta_focus * FOCUS_MM_PER_QUARTER_US
+
+    try:
+        cur_x, cur_y = ctx.get_xy()
+    except Exception as exc:
+        LOGGER.warning("Unable to read XY for focus compensation: %s", exc)
+        return
+
+    new_x = round(cur_x + delta_x_mm, 1)
+    try:
+        moved = ctx.goto_xy(new_x, cur_y)
+    except Exception as exc:
+        LOGGER.warning("Focus compensation move failed: %s", exc)
+        return
+    if moved is False:
+        LOGGER.warning("Focus compensation move to %s,%s failed.", new_x, cur_y)
 
 
 def _set_estimated_time(ctx: GUIContext, value: str) -> None:

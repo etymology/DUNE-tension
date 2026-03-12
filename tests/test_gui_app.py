@@ -38,6 +38,7 @@ def _load_app_module(monkeypatch):
 
     actions = types.ModuleType("dune_tension.gui.actions")
     for name in [
+        "adjust_focus_with_x_compensation",
         "calibrate_background_noise",
         "clear_range",
         "erase_distribution_outliers",
