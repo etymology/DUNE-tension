@@ -45,18 +45,3 @@ def test_value_error_defaults():
     assert res.wire_length == 0
     assert res.tension == 0
     assert res.tension_pass is False
-
-
-def test_servo_position_is_stored():
-    res = TensionResult(
-        apa_name="APA",
-        layer="U",
-        side="A",
-        wire_number=2,
-        frequency=10.0,
-        confidence=0.5,
-        x=0.0,
-        y=0.0,
-        servo_position=4321,
-    )
-    assert res.servo_position == 4321

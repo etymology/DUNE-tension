@@ -162,6 +162,7 @@ def _make_config(**kwargs):
 
 tf_stub.make_config = _make_config
 tf_stub.measure_list = lambda **k: None
+tf_stub.plan_measurement_triplets = lambda **k: []
 tf_stub.get_xy_from_file = lambda cfg, num: (0.0, 0.0)
 tf_stub.check_stop_event = lambda evt, msg="": False
 sys.modules["tensiometer_functions"] = tf_stub
@@ -287,27 +288,35 @@ def test_measure_auto_reports_estimated_time(monkeypatch):
     summaries_stub = types.ModuleType("dune_tension.summaries")
     summaries_stub.get_missing_wires = lambda _cfg: {"A": [1, 2]}
     monkeypatch.setitem(sys.modules, "dune_tension.summaries", summaries_stub)
+    planner_calls = []
     monkeypatch.setattr(
         tensiometer_module,
-        "get_xy_from_file",
-        lambda _cfg, wire: (wire, 0.0),
+        "plan_measurement_triplets",
+        lambda **kwargs: planner_calls.append(kwargs) or [(2, 2.0, 0.0), (1, 1.0, 0.0)],
     )
 
     times = iter([100.0, 110.0, 120.0])
     monkeypatch.setattr(tensiometer_module.time, "time", lambda: next(times))
 
+    collected = []
     t = Tensiometer(
         apa_name="APA",
         layer="X",
         side="A",
         estimated_time_callback=eta_updates.append,
     )
-    t.goto_xy_func = lambda *_args, **_kwargs: True
-    t.goto_collect_wire_data = lambda **_kwargs: None
+    t.goto_xy_func = lambda *_args, **_kwargs: pytest.fail("measure_auto should use the shared planner output directly")
+    t.goto_collect_wire_data = lambda **kwargs: collected.append(kwargs)
 
     t.measure_auto()
 
+    assert len(planner_calls) == 1
+    assert planner_calls[0]["wire_list"] == [1, 2]
     assert eta_updates == ["0:00:10", "0:00:00"]
+    assert collected == [
+        {"wire_number": 2, "wire_x": 2.0, "wire_y": 0.0},
+        {"wire_number": 1, "wire_x": 1.0, "wire_y": 0.0},
+    ]
 
 
 def test_load_tension_summary(tmp_path):

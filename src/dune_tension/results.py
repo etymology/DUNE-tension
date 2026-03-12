@@ -19,7 +19,6 @@ class TensionResult:
     confidence: float
     x: float
     y: float
-    servo_position: int | None = None
     taped: bool = False
     time: datetime | None = None
 
