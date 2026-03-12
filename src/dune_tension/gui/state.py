@@ -8,6 +8,7 @@ import logging
 import tkinter as tk
 from typing import Any
 
+from dune_tension.config import MEASUREMENT_WIGGLE_CONFIG
 from dune_tension.gui.context import GUIContext
 
 LOGGER = logging.getLogger(__name__)
@@ -26,12 +27,15 @@ class _PersistedState:
     samples_per_wire: int
     confidence_threshold: float
     plot_audio: bool
+    skip_measured: bool
     focus_target: int
     condition: str
     times_sigma: float
     set_tension: str
     record_duration: str
     measuring_duration: str
+    wiggle_y_sigma_mm: str
+    focus_wiggle_sigma_quarter_us: str
 
 
 def save_state(ctx: GUIContext) -> None:
@@ -63,12 +67,15 @@ def save_state(ctx: GUIContext) -> None:
         samples_per_wire=samples,
         confidence_threshold=conf,
         plot_audio=bool(w.plot_audio_var.get()),
+        skip_measured=bool(w.skip_measured_var.get()),
         focus_target=int(w.focus_slider.get()),
         condition=w.entry_condition.get(),
         times_sigma=times_sigma,
         set_tension=w.entry_set_tension.get(),
         record_duration=w.entry_record_duration.get(),
         measuring_duration=w.entry_measuring_duration.get(),
+        wiggle_y_sigma_mm=w.entry_wiggle_y_sigma.get(),
+        focus_wiggle_sigma_quarter_us=w.entry_focus_wiggle_sigma.get(),
     )
 
     with open(ctx.state_file, "w", encoding="utf-8") as handle:
@@ -104,11 +111,23 @@ def load_state(ctx: GUIContext) -> None:
     _set_entry(w.entry_samples, data.get("samples_per_wire", 3))
     _set_entry(w.entry_confidence, data.get("confidence_threshold", 0.7))
     w.plot_audio_var.set(bool(data.get("plot_audio", False)))
+    w.skip_measured_var.set(bool(data.get("skip_measured", False)))
     w.focus_slider.set(int(data.get("focus_target", 4000)))
     _set_entry(w.entry_condition, data.get("condition", ""))
     _set_entry(w.entry_times_sigma, data.get("times_sigma", 2.0))
     _set_entry(w.entry_set_tension, data.get("set_tension", ""))
     _set_entry(w.entry_record_duration, data.get("record_duration", 0.5))
     _set_entry(w.entry_measuring_duration, data.get("measuring_duration", 10.0))
+    _set_entry(
+        w.entry_wiggle_y_sigma,
+        data.get("wiggle_y_sigma_mm", MEASUREMENT_WIGGLE_CONFIG.y_sigma_mm),
+    )
+    _set_entry(
+        w.entry_focus_wiggle_sigma,
+        data.get(
+            "focus_wiggle_sigma_quarter_us",
+            MEASUREMENT_WIGGLE_CONFIG.focus_sigma_quarter_us,
+        ),
+    )
 
     ctx.focus_command_var.set(str(w.focus_slider.get()))

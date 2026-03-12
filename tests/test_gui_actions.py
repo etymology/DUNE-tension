@@ -28,6 +28,7 @@ def _load_actions_module(monkeypatch):
     data_cache = types.ModuleType("dune_tension.data_cache")
     data_cache.clear_wire_numbers = lambda *args, **kwargs: None
     data_cache.clear_wire_range = lambda *args, **kwargs: None
+    data_cache.find_distribution_outliers = lambda *args, **kwargs: []
     data_cache.find_outliers = lambda *args, **kwargs: []
     data_cache.get_dataframe = lambda *args, **kwargs: None
     data_cache.update_dataframe = lambda *args, **kwargs: None
@@ -112,3 +113,105 @@ def test_measurement_threads_are_serialized(monkeypatch):
 
     fake_measurement(ctx)
     assert _wait_for(lambda: len(calls) == 2)
+
+
+def test_erase_distribution_outliers_uses_bulk_detector(monkeypatch):
+    actions = _load_actions_module(monkeypatch)
+
+    class DummyGetter:
+        def __init__(self, value):
+            self._value = value
+
+        def get(self):
+            return self._value
+
+    cfg = types.SimpleNamespace(
+        data_path="db.sqlite",
+        apa_name="APA",
+        layer="G",
+        side="A",
+    )
+    monkeypatch.setattr(actions, "_make_config_from_widgets", lambda _ctx: cfg)
+
+    detector_calls = []
+    clear_calls = []
+
+    def fake_find(*args, **kwargs):
+        detector_calls.append((args, kwargs))
+        return [7, 9]
+
+    def fake_clear(*args):
+        clear_calls.append(args)
+
+    monkeypatch.setattr(actions, "find_distribution_outliers", fake_find)
+    monkeypatch.setattr(actions, "clear_wire_numbers", fake_clear)
+
+    ctx = types.SimpleNamespace(
+        widgets=types.SimpleNamespace(
+            entry_confidence=DummyGetter("0.85"),
+            entry_times_sigma=DummyGetter("2.5"),
+        ),
+        live_plot_manager=None,
+    )
+
+    actions.erase_distribution_outliers(ctx)
+
+    assert detector_calls == [
+        (
+            ("db.sqlite", "APA", "G", "A"),
+            {"times_sigma": 2.5, "confidence_threshold": 0.85},
+        )
+    ]
+    assert clear_calls == [("db.sqlite", "APA", "G", "A", [7, 9])]
+
+
+def test_measure_list_button_skips_already_measured_wires_when_enabled(monkeypatch):
+    actions = _load_actions_module(monkeypatch)
+
+    measured_wires = []
+
+    class DummyTensiometer:
+        def measure_list(self, wire_list, preserve_order=False):
+            measured_wires.append((wire_list, preserve_order))
+
+        def close(self):
+            pass
+
+    summaries = types.ModuleType("dune_tension.summaries")
+    summaries.get_tension_series = lambda _config: {"A": {3: 5.8, 6: 6.1}}
+    monkeypatch.setitem(sys.modules, "dune_tension.summaries", summaries)
+    monkeypatch.setattr(actions, "create_tensiometer", lambda _ctx, _inputs: DummyTensiometer())
+    monkeypatch.setattr(
+        actions,
+        "_make_config_from_inputs",
+        lambda _inputs: types.SimpleNamespace(side="A"),
+    )
+    monkeypatch.setattr(actions, "_cleanup_after_measurement", lambda *_args, **_kwargs: None)
+
+    inputs = types.SimpleNamespace(wire_list="3,5-7", skip_measured=True)
+
+    actions.measure_list_button.__wrapped__(types.SimpleNamespace(), inputs)
+
+    assert measured_wires == [([5, 7], False)]
+
+
+def test_measure_list_button_keeps_requested_wires_when_skip_disabled(monkeypatch):
+    actions = _load_actions_module(monkeypatch)
+
+    measured_wires = []
+
+    class DummyTensiometer:
+        def measure_list(self, wire_list, preserve_order=False):
+            measured_wires.append((wire_list, preserve_order))
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(actions, "create_tensiometer", lambda _ctx, _inputs: DummyTensiometer())
+    monkeypatch.setattr(actions, "_cleanup_after_measurement", lambda *_args, **_kwargs: None)
+
+    inputs = types.SimpleNamespace(wire_list="3,5-7", skip_measured=False)
+
+    actions.measure_list_button.__wrapped__(types.SimpleNamespace(), inputs)
+
+    assert measured_wires == [([3, 5, 6, 7], False)]

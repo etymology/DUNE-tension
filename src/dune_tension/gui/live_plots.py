@@ -232,6 +232,7 @@ class LivePlotManager:
         activation_freq_axis = getattr(analysis, "activation_freq_axis", None)
         frame_times = getattr(analysis, "frame_times", None)
         predicted_frequencies = getattr(analysis, "predicted_frequencies", None)
+        expected_frequency = getattr(analysis, "expected_frequency", None)
 
         axis.set_title("PESTO Activations")
         axis.set_xlabel("Time (s)")
@@ -275,10 +276,8 @@ class LivePlotManager:
 
         visible_freqs = activation_freq_axis[mask]
         visible_activation = activation_map[mask, :]
-        visible_max_frequency = LivePlotManager._activation_coverage_max_frequency(
-            visible_freqs,
-            visible_activation,
-            coverage=0.99,
+        visible_max_frequency = LivePlotManager._expected_frequency_max_frequency(
+            expected_frequency,
             fallback_max=float(cfg.max_frequency),
         )
         axis.pcolormesh(
@@ -305,27 +304,17 @@ class LivePlotManager:
         axis.grid(False)
 
     @staticmethod
-    def _activation_coverage_max_frequency(
-        frequencies: np.ndarray,
-        activation: np.ndarray,
+    def _expected_frequency_max_frequency(
+        expected_frequency: float | None,
         *,
-        coverage: float,
         fallback_max: float,
     ) -> float:
-        if frequencies.size == 0 or activation.size == 0:
+        if expected_frequency is None:
             return float(fallback_max)
-
-        coverage = float(np.clip(coverage, 0.0, 1.0))
-        if coverage <= 0.0:
-            return float(frequencies[0])
-
-        positive_activation = np.where(activation > 0.0, activation, 0.0)
-        total_activation = float(positive_activation.sum())
-        if total_activation <= 0.0:
-            return float(min(fallback_max, float(frequencies[-1])))
-
-        cumulative = np.cumsum(positive_activation.sum(axis=1), dtype=np.float64)
-        target = coverage * total_activation
-        cutoff_index = int(np.searchsorted(cumulative, target, side="left"))
-        cutoff_index = min(max(cutoff_index, 0), frequencies.size - 1)
-        return float(min(fallback_max, float(frequencies[cutoff_index])))
+        try:
+            limit = float(expected_frequency) * 2.0
+        except (TypeError, ValueError):
+            return float(fallback_max)
+        if not np.isfinite(limit) or limit <= 0.0:
+            return float(fallback_max)
+        return float(min(fallback_max, limit))

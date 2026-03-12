@@ -138,6 +138,7 @@ def test_analyze_audio_with_pesto_returns_activation_map(monkeypatch):
 
     assert np.isclose(result.frequency, 115.625)
     assert np.isclose(result.confidence, 0.8)
+    assert result.expected_frequency is None
     assert result.activation_map is not None
     assert result.activation_map.shape == (3, 2)
     assert result.activation_freq_axis is not None
@@ -181,6 +182,7 @@ def test_analyze_audio_with_pesto_reverses_sr_augmentation(monkeypatch):
 
     assert np.isclose(result.frequency, 116.0)
     assert np.isclose(result.confidence, 0.625)
+    assert np.isclose(result.expected_frequency, 300.0)
     assert np.allclose(result.frame_times, np.array([0.0, 0.01], dtype=np.float32))
     assert np.allclose(
         result.predicted_frequencies,

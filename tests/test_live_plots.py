@@ -18,6 +18,7 @@ def test_build_audio_diagnostics_figure_includes_fft_and_pesto_axes() -> None:
         activation_freq_axis=np.geomspace(40.0, 400.0, 32).astype(np.float32),
         frame_times=np.linspace(0.0, 0.04, 8, dtype=np.float32),
         predicted_frequencies=np.linspace(80.0, 120.0, 8, dtype=np.float32),
+        expected_frequency=200.0,
     )
 
     figure = LivePlotManager._build_audio_diagnostics_figure(
@@ -36,23 +37,10 @@ def test_build_audio_diagnostics_figure_includes_fft_and_pesto_axes() -> None:
     assert figure.axes[2].get_ylim() == (30.0, 400.0)
 
 
-def test_pesto_axis_uses_99_percent_activation_cutoff() -> None:
-    frequencies = np.array([40.0, 60.0, 80.0, 100.0], dtype=np.float32)
-    activation = np.array(
-        [
-            [90.0, 90.0],
-            [5.0, 5.0],
-            [3.0, 3.0],
-            [2.0, 2.0],
-        ],
-        dtype=np.float32,
-    )
-
-    cutoff = LivePlotManager._activation_coverage_max_frequency(
-        frequencies,
-        activation,
-        coverage=0.99,
+def test_pesto_axis_uses_twice_expected_frequency() -> None:
+    cutoff = LivePlotManager._expected_frequency_max_frequency(
+        250.0,
         fallback_max=2000.0,
     )
 
-    assert cutoff == 100.0
+    assert cutoff == 500.0

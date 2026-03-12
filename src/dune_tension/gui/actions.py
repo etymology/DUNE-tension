@@ -5,6 +5,7 @@ from __future__ import annotations
 import ast
 from dataclasses import dataclass
 from datetime import datetime
+from functools import wraps
 import logging
 import os
 import re
@@ -17,6 +18,7 @@ from tkinter import messagebox
 from dune_tension.data_cache import (
     clear_wire_numbers,
     clear_wire_range,
+    find_distribution_outliers,
     find_outliers,
     get_dataframe,
     update_dataframe,
@@ -78,7 +80,10 @@ class WorkerInputs:
     confidence: float
     record_duration: float
     measuring_duration: float
+    wiggle_y_sigma_mm: float
+    focus_wiggle_sigma_quarter_us: float
     plot_audio: bool
+    skip_measured: bool
     wire_number: str
     wire_list: str
     condition: str
@@ -120,6 +125,21 @@ def _capture_worker_inputs(ctx: GUIContext) -> WorkerInputs:
         _show_input_error(ctx, str(exc))
         raise
 
+    try:
+        wiggle_y_sigma_mm = float(w.entry_wiggle_y_sigma.get())
+        focus_wiggle_sigma_quarter_us = float(w.entry_focus_wiggle_sigma.get())
+    except ValueError as exc:
+        _show_input_error(ctx, str(exc))
+        raise
+    if wiggle_y_sigma_mm < 0:
+        msg = "Y wiggle sigma must be non-negative"
+        _show_input_error(ctx, msg)
+        raise ValueError(msg)
+    if focus_wiggle_sigma_quarter_us < 0:
+        msg = "Focus wiggle sigma must be non-negative"
+        _show_input_error(ctx, msg)
+        raise ValueError(msg)
+
     return WorkerInputs(
         apa_name=w.entry_apa.get(),
         layer=w.layer_var.get(),
@@ -131,7 +151,10 @@ def _capture_worker_inputs(ctx: GUIContext) -> WorkerInputs:
         confidence=confidence,
         record_duration=record_duration,
         measuring_duration=measuring_duration,
+        wiggle_y_sigma_mm=wiggle_y_sigma_mm,
+        focus_wiggle_sigma_quarter_us=focus_wiggle_sigma_quarter_us,
         plot_audio=bool(w.plot_audio_var.get()),
+        skip_measured=bool(w.skip_measured_var.get()),
         wire_number=w.entry_wire.get(),
         wire_list=w.entry_wire_list.get(),
         condition=w.entry_condition.get(),
@@ -152,6 +175,10 @@ def create_tensiometer(ctx: GUIContext, inputs: WorkerInputs) -> "Tensiometer":
         confidence = float(inputs.confidence)
         record_duration = float(inputs.record_duration)
         measuring_duration = float(inputs.measuring_duration)
+        wiggle_y_sigma_mm = float(inputs.wiggle_y_sigma_mm)
+        focus_wiggle_sigma_quarter_us = float(
+            inputs.focus_wiggle_sigma_quarter_us
+        )
     except (TypeError, ValueError) as exc:
         raise ValueError(f"Invalid measurement inputs: {exc}") from exc
 
@@ -170,13 +197,11 @@ def create_tensiometer(ctx: GUIContext, inputs: WorkerInputs) -> "Tensiometer":
         confidence_threshold=confidence,
         record_duration=record_duration,
         measuring_duration=measuring_duration,
+        wiggle_y_sigma_mm=wiggle_y_sigma_mm,
+        focus_wiggle_sigma_quarter_us=focus_wiggle_sigma_quarter_us,
         plot_audio=inputs.plot_audio,
         strum=ctx.strum,
         focus_wiggle=ctx.servo_controller.nudge_focus,
-        focus_position_getter=lambda: int(ctx.servo_controller.focus_position),
-        focus_position_setter=lambda target: ctx.servo_controller.focus_target(
-            int(target)
-        ),
         estimated_time_callback=lambda value: _set_estimated_time(ctx, value),
         audio_sample_callback=lambda audio_sample, samplerate, analysis: _publish_live_waveform(
             ctx,
@@ -220,6 +245,7 @@ def _run_in_thread(func=None, *, measurement: bool = False):
     """Decorator to execute ``func`` in a daemon thread."""
 
     def decorator(func):
+        @wraps(func)
         def wrapper(ctx: GUIContext, *args: Any, **kwargs: Any) -> None:
             try:
                 inputs = _capture_worker_inputs(ctx)
@@ -324,10 +350,35 @@ def measure_list_button(ctx: GUIContext, inputs: WorkerInputs) -> None:
         wire_list: list[int] = []
         for start, end in ranges:
             wire_list.extend(range(start, end + 1))
+        if inputs.skip_measured:
+            wire_list = _filter_unmeasured_wires(inputs, wire_list)
+            if not wire_list:
+                return
         LOGGER.info("Measuring wires: %s", wire_list)
         tensiometer.measure_list(wire_list, preserve_order=False)
     finally:
         _cleanup_after_measurement(ctx, tensiometer)
+
+
+def _filter_unmeasured_wires(inputs: WorkerInputs, wire_list: list[int]) -> list[int]:
+    """Return ``wire_list`` with already measured wires removed."""
+
+    from dune_tension.summaries import get_tension_series
+
+    config = _make_config_from_inputs(inputs)
+    side = str(config.side).upper()
+    measured_wires = set(get_tension_series(config).get(side, {}))
+    if not measured_wires:
+        return wire_list
+
+    skipped_wires = [wire for wire in wire_list if wire in measured_wires]
+    if skipped_wires:
+        LOGGER.info("Skipping already measured wires: %s", skipped_wires)
+
+    remaining_wires = [wire for wire in wire_list if wire not in measured_wires]
+    if not remaining_wires:
+        LOGGER.info("All requested wires are already measured.")
+    return remaining_wires
 
 
 @_run_in_thread
@@ -473,6 +524,18 @@ def clear_range(ctx: GUIContext) -> None:
 
 
 def erase_outliers(ctx: GUIContext) -> None:
+    _erase_detected_outliers(ctx, find_outliers, "residual")
+
+
+def erase_distribution_outliers(ctx: GUIContext) -> None:
+    _erase_detected_outliers(ctx, find_distribution_outliers, "bulk-distribution")
+
+
+def _erase_detected_outliers(
+    ctx: GUIContext,
+    detector,
+    detector_name: str,
+) -> None:
     cfg = _make_config_from_widgets(ctx)
     try:
         conf = float(ctx.widgets.entry_confidence.get())
@@ -484,7 +547,7 @@ def erase_outliers(ctx: GUIContext) -> None:
         times_sigma = 2.0
 
     outliers = sorted(
-        find_outliers(
+        detector(
             cfg.data_path,
             cfg.apa_name,
             cfg.layer,
@@ -502,10 +565,10 @@ def erase_outliers(ctx: GUIContext) -> None:
             cfg.side,
             outliers,
         )
-        LOGGER.info("Erased outlier wires: %s", outliers)
+        LOGGER.info("Erased %s outlier wires: %s", detector_name, outliers)
         _request_live_summary_refresh(ctx, cfg)
     else:
-        LOGGER.info("No outlier wires found")
+        LOGGER.info("No %s outlier wires found", detector_name)
 
 
 def set_manual_tension(ctx: GUIContext) -> None:

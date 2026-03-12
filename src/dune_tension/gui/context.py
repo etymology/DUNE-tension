@@ -51,7 +51,10 @@ class GUIWidgets:
     entry_confidence: tk.Entry
     entry_record_duration: tk.Entry
     entry_measuring_duration: tk.Entry
+    entry_wiggle_y_sigma: tk.Entry
+    entry_focus_wiggle_sigma: tk.Entry
     plot_audio_var: tk.BooleanVar
+    skip_measured_var: tk.BooleanVar
     entry_clear_range: tk.Entry
     entry_condition: tk.Entry
     entry_times_sigma: tk.Entry

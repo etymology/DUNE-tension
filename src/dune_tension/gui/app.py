@@ -6,9 +6,11 @@ from functools import partial
 from typing import Any
 import tkinter as tk
 
+from dune_tension.config import MEASUREMENT_WIGGLE_CONFIG
 from dune_tension.gui.actions import (
     calibrate_background_noise,
     clear_range,
+    erase_distribution_outliers,
     erase_outliers,
     handle_close,
     interrupt,
@@ -247,6 +249,22 @@ def _create_widgets(
     entry_measuring_duration = tk.Entry(measure_frame)
     entry_measuring_duration.grid(row=10, column=1)
 
+    tk.Label(measure_frame, text="Y Wiggle σ (mm):").grid(
+        row=11, column=0, sticky="e"
+    )
+    entry_wiggle_y_sigma = tk.Entry(measure_frame)
+    entry_wiggle_y_sigma.grid(row=11, column=1)
+    entry_wiggle_y_sigma.insert(0, str(MEASUREMENT_WIGGLE_CONFIG.y_sigma_mm))
+
+    tk.Label(measure_frame, text="Focus Wiggle σ:").grid(
+        row=12, column=0, sticky="e"
+    )
+    entry_focus_wiggle_sigma = tk.Entry(measure_frame)
+    entry_focus_wiggle_sigma.grid(row=12, column=1)
+    entry_focus_wiggle_sigma.insert(
+        0, str(MEASUREMENT_WIGGLE_CONFIG.focus_sigma_quarter_us)
+    )
+
     tk.Label(measure_frame, text="Wire Number:").grid(row=2, column=0, sticky="e")
     entry_wire = tk.Entry(measure_frame)
     entry_wire.grid(row=2, column=1)
@@ -258,6 +276,12 @@ def _create_widgets(
     entry_wire_list.grid(row=3, column=1)
     btn_measure_list = tk.Button(measure_frame, text="Seek Wire(s)")
     btn_measure_list.grid(row=3, column=2)
+    skip_measured_var = tk.BooleanVar(value=False)
+    tk.Checkbutton(
+        measure_frame,
+        text="Skip Measured",
+        variable=skip_measured_var,
+    ).grid(row=3, column=3, sticky="w")
 
     plot_audio_var = tk.BooleanVar(value=False)
     tk.Checkbutton(measure_frame, text="Plot Audio", variable=plot_audio_var).grid(
@@ -268,9 +292,9 @@ def _create_widgets(
     btn_measure_auto.grid(row=4, column=0)
     btn_interrupt = tk.Button(measure_frame, text="Interrupt")
     btn_interrupt.grid(row=4, column=1)
-    tk.Label(measure_frame, text="ETA:").grid(row=11, column=0, sticky="e")
+    tk.Label(measure_frame, text="ETA:").grid(row=13, column=0, sticky="e")
     tk.Label(measure_frame, textvariable=estimated_time_var).grid(
-        row=11, column=1, sticky="w"
+        row=13, column=1, sticky="w"
     )
 
     tk.Label(measure_frame, text="Clear Range:").grid(row=5, column=0, sticky="e")
@@ -291,8 +315,12 @@ def _create_widgets(
     entry_times_sigma = tk.Entry(measure_frame)
     entry_times_sigma.grid(row=7, column=1)
     entry_times_sigma.insert(0, "2.0")
-    btn_erase_outliers = tk.Button(measure_frame, text="Erase Outliers")
+    btn_erase_outliers = tk.Button(measure_frame, text="Erase Residual Outliers")
     btn_erase_outliers.grid(row=7, column=2)
+    btn_erase_distribution_outliers = tk.Button(
+        measure_frame, text="Erase Bulk Outliers"
+    )
+    btn_erase_distribution_outliers.grid(row=7, column=3)
 
     tk.Label(measure_frame, text="Set Tensions:").grid(row=8, column=0, sticky="e")
     entry_set_tension = tk.Entry(measure_frame)
@@ -301,7 +329,7 @@ def _create_widgets(
     btn_set_tension.grid(row=8, column=2)
 
     btn_calibrate_noise = tk.Button(measure_frame, text="Calibrate Noise")
-    btn_calibrate_noise.grid(row=11, column=2)
+    btn_calibrate_noise.grid(row=13, column=2)
 
     tk.Label(servo_frame, text="Focus:").grid(row=0, column=0, sticky="e")
     focus_slider = tk.Scale(servo_frame, from_=4000, to=8000, orient=tk.HORIZONTAL)
@@ -359,7 +387,10 @@ def _create_widgets(
         entry_confidence=entry_confidence,
         entry_record_duration=entry_record_duration,
         entry_measuring_duration=entry_measuring_duration,
+        entry_wiggle_y_sigma=entry_wiggle_y_sigma,
+        entry_focus_wiggle_sigma=entry_focus_wiggle_sigma,
         plot_audio_var=plot_audio_var,
+        skip_measured_var=skip_measured_var,
         entry_clear_range=entry_clear_range,
         entry_condition=entry_condition,
         entry_times_sigma=entry_times_sigma,
@@ -376,6 +407,7 @@ def _create_widgets(
         "clear_range": btn_clear_range,
         "measure_condition": btn_measure_condition,
         "erase_outliers": btn_erase_outliers,
+        "erase_distribution_outliers": btn_erase_distribution_outliers,
         "set_tension": btn_set_tension,
         "calibrate_noise": btn_calibrate_noise,
         "manual_go": btn_manual_go,
@@ -408,6 +440,9 @@ def _configure_commands(
     buttons["clear_range"].configure(command=lambda: clear_range(ctx))
     buttons["measure_condition"].configure(command=lambda: measure_condition(ctx))
     buttons["erase_outliers"].configure(command=lambda: erase_outliers(ctx))
+    buttons["erase_distribution_outliers"].configure(
+        command=lambda: erase_distribution_outliers(ctx)
+    )
     buttons["set_tension"].configure(command=lambda: set_manual_tension(ctx))
     buttons["calibrate_noise"].configure(
         command=lambda: calibrate_background_noise(ctx)

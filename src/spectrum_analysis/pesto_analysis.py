@@ -24,6 +24,7 @@ class PestoAnalysisResult:
 
     frequency: float
     confidence: float
+    expected_frequency: float | None
     frame_times: np.ndarray
     predicted_frequencies: np.ndarray
     frame_confidences: np.ndarray
@@ -46,6 +47,7 @@ def _empty_analysis_result() -> PestoAnalysisResult:
     return PestoAnalysisResult(
         frequency=float("nan"),
         confidence=float("nan"),
+        expected_frequency=None,
         frame_times=empty,
         predicted_frequencies=empty,
         frame_confidences=empty,
@@ -276,6 +278,9 @@ def analyze_audio_with_pesto(
     return PestoAnalysisResult(
         frequency=frequency,
         confidence=confidence,
+        expected_frequency=(
+            None if expected_frequency is None else float(expected_frequency)
+        ),
         frame_times=frame_times,
         predicted_frequencies=predicted_frequencies,
         frame_confidences=confidence_values,

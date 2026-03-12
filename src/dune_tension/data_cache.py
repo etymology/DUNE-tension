@@ -271,3 +271,37 @@ def find_outliers(
     is_outlier = rolling_mean.notna() & (residuals.abs() > times_sigma * resid_std)
     outliers = subset.loc[is_outlier, "wire_number"].astype(int).tolist()
     return sorted(set(outliers))
+
+
+def find_distribution_outliers(
+    file_path: str,
+    apa_name: str,
+    layer: str,
+    side: str,
+    times_sigma: float = 2.5,
+    confidence_threshold: float = 0.0,
+) -> list[int]:
+    """Find wires whose tension lies far from the bulk tension distribution."""
+
+    df = get_dataframe(file_path)
+    mask = (
+        (df["apa_name"] == apa_name)
+        & (df["layer"] == layer)
+        & (df["side"] == side)
+        & (df["confidence"].astype(float) >= confidence_threshold)
+    )
+    subset = df[mask].copy()
+    subset["tension"] = pd.to_numeric(subset["tension"], errors="coerce")
+    subset["wire_number"] = pd.to_numeric(subset["wire_number"], errors="coerce")
+    subset = subset.dropna(subset=["tension", "wire_number"])
+    if subset.empty:
+        return []
+
+    tension_mean = subset["tension"].mean(skipna=True)
+    tension_std = subset["tension"].std(skipna=True)
+    if pd.isna(tension_mean) or pd.isna(tension_std) or tension_std == 0:
+        return []
+
+    is_outlier = (subset["tension"] - tension_mean).abs() > times_sigma * tension_std
+    outliers = subset.loc[is_outlier, "wire_number"].astype(int).tolist()
+    return sorted(set(outliers))

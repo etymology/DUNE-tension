@@ -13,6 +13,7 @@ from dune_tension.data_cache import (
     append_dataframe_row,
     append_results_row,
     clear_wire_numbers,
+    find_distribution_outliers,
     get_dataframe,
     get_results_dataframe,
 )
@@ -170,3 +171,41 @@ def test_clear_wire_numbers_removes_selected_rows_from_both_tables(tmp_path) -> 
 
     assert remaining_data == [(1, "A"), (3, "A"), (4, "B")]
     assert remaining_results == [(1, "A"), (3, "A"), (4, "B")]
+
+
+def test_find_distribution_outliers_uses_bulk_tension_distribution(tmp_path) -> None:
+    db_path = tmp_path / "distribution_outliers.db"
+
+    def make_row(wire_number: int, tension: float, confidence: float = 0.95) -> dict:
+        return {
+            "apa_name": "APA",
+            "layer": "G",
+            "side": "A",
+            "wire_number": wire_number,
+            "frequency": 75.0,
+            "confidence": confidence,
+            "x": 100.0,
+            "y": 200.0,
+            "taped": False,
+            "time": "2026-03-10T10:00:00",
+            "zone": 1,
+            "wire_length": 1200.0,
+            "tension": tension,
+            "tension_pass": True,
+        }
+
+    for wire_number in range(1, 11):
+        append_dataframe_row(str(db_path), make_row(wire_number, 5.0))
+    append_dataframe_row(str(db_path), make_row(11, 9.0))
+    append_dataframe_row(str(db_path), make_row(12, 9.5, confidence=0.1))
+
+    outliers = find_distribution_outliers(
+        str(db_path),
+        "APA",
+        "G",
+        "A",
+        times_sigma=2.0,
+        confidence_threshold=0.9,
+    )
+
+    assert outliers == [11]
