@@ -50,6 +50,7 @@ except ImportError:  # pragma: no cover - fallback for legacy test stubs
     from dune_tension.services import AudioCaptureService, MotionService, ResultRepository
 
 LOGGER = logging.getLogger(__name__)
+FOCUS_MM_PER_QUARTER_US = 20.0 / 4000.0
 
 
 @dataclass(frozen=True)
@@ -159,6 +160,7 @@ class Tensiometer:
         self.goto_xy_func = self.motion.goto_xy
         self.wiggle_func = self.motion.increment
 
+        self._has_focus_wiggle_callback = focus_wiggle is not None
         self.focus_wiggle_func = focus_wiggle or (lambda _delta: None)
         self.strum_func = strum or (lambda: None)
         self.estimated_time_callback = estimated_time_callback or (lambda _value: None)
@@ -174,6 +176,51 @@ class Tensiometer:
         # State tracking for winder wiggle thread
         self._wiggle_event: threading.Event | None = None
         self._wiggle_thread: threading.Thread | None = None
+
+    def _focus_wiggle_x_sign(self) -> float:
+        """Return +1 on side A and -1 on side B for focus/X coupling."""
+
+        return 1.0 if str(self.config.side).upper() == "A" else -1.0
+
+    def _apply_focus_wiggle_with_x_compensation(self, delta_focus: float) -> float | None:
+        """Apply focus wiggle and X compensation for equivalent travel in mm."""
+
+        if not self._has_focus_wiggle_callback:
+            return None
+
+        commanded_delta = int(float(delta_focus))
+        self.focus_wiggle_func(commanded_delta)
+        if commanded_delta == 0:
+            return None
+
+        delta_x_mm = (
+            self._focus_wiggle_x_sign() * commanded_delta * FOCUS_MM_PER_QUARTER_US
+        )
+        try:
+            cur_x, cur_y = self.get_current_xy_position()
+        except Exception as exc:
+            LOGGER.warning("Unable to read XY for focus wiggle compensation: %s", exc)
+            return None
+
+        new_x = round(cur_x + delta_x_mm, 1)
+        try:
+            moved = self.goto_xy_func(new_x, cur_y)
+        except Exception as exc:
+            LOGGER.warning("Focus wiggle compensation move failed: %s", exc)
+            return None
+        if moved is False:
+            LOGGER.warning(
+                "Focus wiggle compensation move to %s,%s failed.",
+                new_x,
+                cur_y,
+            )
+            return None
+
+        try:
+            compensated_x, _ = self.get_current_xy_position()
+            return float(compensated_x)
+        except Exception:
+            return new_x
 
     @staticmethod
     def _sample_sort_key(result: TensionResult) -> tuple[float, datetime]:
@@ -365,6 +412,7 @@ class Tensiometer:
         )
 
         def wiggle() -> None:
+            nonlocal wire_x
             if choice([True, False]):
                 x_wiggle_sigma = min(
                     length * MEASUREMENT_WIGGLE_CONFIG.xy_sigma_per_meter,
@@ -381,9 +429,11 @@ class Tensiometer:
                 self.goto_xy_func(x_wiggle_target, y_target)
             else:
                 LOGGER.info("Wiggling focus")
-                self.focus_wiggle_func(
+                compensated_x = self._apply_focus_wiggle_with_x_compensation(
                     gauss(0, self.focus_wiggle_sigma_quarter_us)
                 )
+                if compensated_x is not None:
+                    wire_x = compensated_x
 
         while (time.time() - start_time) < measuring_timeout:
             if check_stop_event(self.stop_event, "tension measurement interrupted!"):

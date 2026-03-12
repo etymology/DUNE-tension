@@ -250,3 +250,53 @@ def test_measure_list_button_keeps_requested_wires_when_skip_disabled(monkeypatc
     actions.measure_list_button.__wrapped__(types.SimpleNamespace(), inputs)
 
     assert measured_wires == [([3, 5, 6, 7], False)]
+
+
+def test_adjust_focus_with_x_compensation_side_a(monkeypatch):
+    actions = _load_actions_module(monkeypatch)
+
+    focus_targets = []
+    moves = []
+    servo_controller = types.SimpleNamespace(
+        focus_position=4000,
+        focus_target=lambda target: (
+            focus_targets.append(target),
+            setattr(servo_controller, "focus_position", target),
+        ),
+    )
+    ctx = types.SimpleNamespace(
+        servo_controller=servo_controller,
+        get_xy=lambda: (1000.0, 2000.0),
+        goto_xy=lambda x, y: moves.append((x, y)) or True,
+        widgets=types.SimpleNamespace(side_var=types.SimpleNamespace(get=lambda: "A")),
+    )
+
+    actions.adjust_focus_with_x_compensation(ctx, 4400)
+
+    assert focus_targets == [4400]
+    assert moves == [(1002.0, 2000.0)]
+
+
+def test_adjust_focus_with_x_compensation_side_b(monkeypatch):
+    actions = _load_actions_module(monkeypatch)
+
+    focus_targets = []
+    moves = []
+    servo_controller = types.SimpleNamespace(
+        focus_position=4000,
+        focus_target=lambda target: (
+            focus_targets.append(target),
+            setattr(servo_controller, "focus_position", target),
+        ),
+    )
+    ctx = types.SimpleNamespace(
+        servo_controller=servo_controller,
+        get_xy=lambda: (1000.0, 2000.0),
+        goto_xy=lambda x, y: moves.append((x, y)) or True,
+        widgets=types.SimpleNamespace(side_var=types.SimpleNamespace(get=lambda: "B")),
+    )
+
+    actions.adjust_focus_with_x_compensation(ctx, 4200)
+
+    assert focus_targets == [4200]
+    assert moves == [(999.0, 2000.0)]

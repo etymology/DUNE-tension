@@ -367,3 +367,103 @@ def test_wiggle_start_stop(monkeypatch):
     assert len(moves) >= 1
     # first move should remain near the starting Y position
     assert 1.0 <= moves[0][1] <= 3.0
+
+
+def test_focus_wiggle_compensates_x_side_a():
+    focus_deltas = []
+    moves = []
+    t = Tensiometer(
+        apa_name="APA",
+        layer="X",
+        side="A",
+        focus_wiggle=lambda delta: focus_deltas.append(delta),
+    )
+    t.get_current_xy_position = lambda: (1000.0, 2000.0)
+    t.goto_xy_func = lambda x, y: moves.append((x, y)) or True
+
+    t._apply_focus_wiggle_with_x_compensation(400.0)
+
+    assert focus_deltas == [400]
+    assert moves == [(1002.0, 2000.0)]
+
+
+def test_focus_wiggle_compensates_x_side_b():
+    focus_deltas = []
+    moves = []
+    t = Tensiometer(
+        apa_name="APA",
+        layer="X",
+        side="B",
+        focus_wiggle=lambda delta: focus_deltas.append(delta),
+    )
+    t.get_current_xy_position = lambda: (1000.0, 2000.0)
+    t.goto_xy_func = lambda x, y: moves.append((x, y)) or True
+
+    t._apply_focus_wiggle_with_x_compensation(400.0)
+
+    assert focus_deltas == [400]
+    assert moves == [(998.0, 2000.0)]
+
+
+def test_focus_wiggle_without_callback_does_not_adjust_x():
+    moves = []
+    t = Tensiometer(apa_name="APA", layer="X", side="A")
+    t.get_current_xy_position = lambda: (1000.0, 2000.0)
+    t.goto_xy_func = lambda x, y: moves.append((x, y)) or True
+
+    t._apply_focus_wiggle_with_x_compensation(400.0)
+
+    assert moves == []
+
+
+def test_focus_wiggle_updates_wire_x_center_for_future_xy_wiggles(monkeypatch):
+    current = {"x": 1000.0, "y": 2000.0}
+    focus_deltas = []
+    x_wiggle_means = []
+
+    t = Tensiometer(
+        apa_name="APA",
+        layer="X",
+        side="A",
+        measuring_duration=10.0,
+        focus_wiggle=lambda delta: focus_deltas.append(delta),
+    )
+    t.get_current_xy_position = lambda: (current["x"], current["y"])
+    t.goto_xy_func = (
+        lambda x, y, **_kwargs: current.update({"x": x, "y": y}) or True
+    )
+    t.strum_func = lambda: None
+
+    monkeypatch.setattr(tensiometer_module, "acquire_audio", lambda **_kwargs: None)
+
+    # Run exactly two loop iterations: first focus wiggle, then XY wiggle.
+    stop_checks = {"count": 0}
+
+    def _check_stop(_event, _msg=""):
+        stop_checks["count"] += 1
+        return stop_checks["count"] >= 3
+
+    monkeypatch.setattr(tensiometer_module, "check_stop_event", _check_stop)
+
+    choices = iter([False, True])
+    monkeypatch.setattr(tensiometer_module, "choice", lambda _vals: next(choices))
+
+    def _gauss(mu, _sigma):
+        if mu == 0:
+            return 400.0
+        if mu > 100.0:
+            x_wiggle_means.append(float(mu))
+        return float(mu)
+
+    monkeypatch.setattr(tensiometer_module, "gauss", _gauss)
+
+    t._collect_samples(
+        wire_number=1,
+        length=1.0,
+        start_time=time.time(),
+        wire_y=2000.0,
+        wire_x=1000.0,
+    )
+
+    assert focus_deltas == [400]
+    assert x_wiggle_means[0] == pytest.approx(1002.0)
