@@ -397,9 +397,13 @@ def measure_list_button(ctx: GUIContext, inputs: WorkerInputs) -> None:
         for start, end in ranges:
             wire_list.extend(range(start, end + 1))
         if inputs.skip_measured:
-            wire_list = _filter_unmeasured_wires(inputs, wire_list)
-            if not wire_list:
-                return
+            filtered_wire_list = _filter_unmeasured_wires(inputs, wire_list)
+            if filtered_wire_list:
+                wire_list = filtered_wire_list
+            else:
+                LOGGER.info(
+                    "All requested wires are already measured; keeping the requested list so the winder still seeks those wire positions."
+                )
         LOGGER.info("Measuring wires: %s", wire_list)
         tensiometer.measure_list(wire_list, preserve_order=False)
     finally:
