@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from functools import wraps
 import logging
+import math
 import os
 import re
 import threading
@@ -32,13 +33,13 @@ if TYPE_CHECKING:
     from dune_tension.tensiometer import Tensiometer
 
 LOGGER = logging.getLogger(__name__)
-FOCUS_MM_PER_QUARTER_US = 20.0 / 4000.0
+FOCUS_X_MM_PER_QUARTER_US = (20.0 / 4000.0) / math.sqrt(3.0)
 
 
 def _focus_side_sign(side: str) -> float:
-    """Return +1 on side A and -1 on side B for focus/X compensation."""
+    """Return focus/X coupling sign: A is negative, B is positive."""
 
-    return 1.0 if str(side).upper() == "A" else -1.0
+    return -1.0 if str(side).upper() == "A" else 1.0
 
 
 def adjust_focus_with_x_compensation(
@@ -62,7 +63,7 @@ def adjust_focus_with_x_compensation(
         return
 
     side_name = str(side or ctx.widgets.side_var.get()).upper()
-    delta_x_mm = _focus_side_sign(side_name) * delta_focus * FOCUS_MM_PER_QUARTER_US
+    delta_x_mm = _focus_side_sign(side_name) * delta_focus * FOCUS_X_MM_PER_QUARTER_US
 
     try:
         cur_x, cur_y = ctx.get_xy()
@@ -248,6 +249,7 @@ def create_tensiometer(ctx: GUIContext, inputs: WorkerInputs) -> "Tensiometer":
         plot_audio=inputs.plot_audio,
         strum=ctx.strum,
         focus_wiggle=ctx.servo_controller.nudge_focus,
+        focus_position_getter=lambda: int(ctx.servo_controller.focus_position),
         estimated_time_callback=lambda value: _set_estimated_time(ctx, value),
         audio_sample_callback=lambda audio_sample, samplerate, analysis: _publish_live_waveform(
             ctx,

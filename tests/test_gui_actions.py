@@ -274,7 +274,7 @@ def test_adjust_focus_with_x_compensation_side_a(monkeypatch):
     actions.adjust_focus_with_x_compensation(ctx, 4400)
 
     assert focus_targets == [4400]
-    assert moves == [(1002.0, 2000.0)]
+    assert moves == [(998.8, 2000.0)]
 
 
 def test_adjust_focus_with_x_compensation_side_b(monkeypatch):
@@ -299,4 +299,4 @@ def test_adjust_focus_with_x_compensation_side_b(monkeypatch):
     actions.adjust_focus_with_x_compensation(ctx, 4200)
 
     assert focus_targets == [4200]
-    assert moves == [(999.0, 2000.0)]
+    assert moves == [(1000.6, 2000.0)]
