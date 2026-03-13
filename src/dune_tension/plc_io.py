@@ -97,15 +97,25 @@ def get_xy():
     return x, y
 
 
+def _ensure_tracked_xy() -> tuple[float, float]:
+    """Return the tracked XY position, seeding it from the PLC if needed."""
+
+    if _TRUE_XY[0] is None or _TRUE_XY[1] is None:
+        _TRUE_XY[0], _TRUE_XY[1] = get_xy()
+    return tuple(_TRUE_XY)
+
+
 def get_cached_xy() -> tuple[float, float]:
     """Return the internally tracked XY position.
 
     ``goto_xy`` keeps ``_TRUE_XY`` updated whenever a move command is issued.
-    This function exposes that cached value so that callers can avoid an
-    unreliable read from the PLC server.
+    If no tracked state exists yet, seed it from the PLC once. Callers should
+    prefer this over ``get_xy`` when doing motion math so backlash compensation
+    stays internally consistent.
     """
 
-    return tuple(_TRUE_XY)
+    with PLC_LOCK:
+        return _ensure_tracked_xy()
 
 
 def get_state() -> int:
@@ -162,8 +172,7 @@ def goto_xy(
 
     global _TRUE_XY, _LAST_X_DIR, _X_DEADZONE_LEFT
 
-    if _TRUE_XY[0] is None or _TRUE_XY[1] is None:
-        _TRUE_XY[0], _TRUE_XY[1] = get_xy()
+    _ensure_tracked_xy()
 
     if check_comb:
         cur_x = _TRUE_XY[0]

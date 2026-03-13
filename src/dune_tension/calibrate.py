@@ -94,7 +94,7 @@ def calibrate(
         msg = "Scan step must be positive."
         raise ValueError(msg)
 
-    x_start, y_start = plc_io.get_xy()
+    x_start, y_start = plc_io.get_cached_xy()
     y_lower = y_start - dy / 2
 
     goto_kwargs = {"speed": cfg.speed} if cfg.speed is not None else {}

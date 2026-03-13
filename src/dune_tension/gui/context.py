@@ -15,12 +15,16 @@ from valve_trigger import DeviceNotFoundError, ValveController
 
 try:  # pragma: no cover - optional dependency
     from dune_tension.plc_io import (  # type: ignore
+        get_cached_xy as plc_get_cached_xy,
         get_xy as plc_get_xy,
         goto_xy as plc_goto_xy,
         spoof_get_xy,
         spoof_goto_xy,
     )
 except Exception:  # pragma: no cover - graceful fallback when PLC IO is absent
+
+    def plc_get_cached_xy() -> tuple[float, float]:
+        return (0.0, 0.0)
 
     def plc_get_xy() -> tuple[float, float]:
         return (0.0, 0.0)
@@ -140,7 +144,7 @@ def _resolve_plc_functions() -> tuple[
 
     if os.environ.get("SPOOF_PLC"):
         return spoof_get_xy, spoof_goto_xy
-    return plc_get_xy, plc_goto_xy
+    return plc_get_cached_xy, plc_goto_xy
 
 
 def create_context(
