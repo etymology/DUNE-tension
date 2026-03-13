@@ -62,6 +62,7 @@ class MotionService:
         reset_plc = getattr(plc, "reset_plc", lambda *_args, **_kwargs: None)
 
         get_xy = getattr(plc, "get_xy", None)
+        get_cached_xy = getattr(plc, "get_cached_xy", get_xy)
         goto_xy = getattr(plc, "goto_xy", None)
 
         spoof_get_xy = getattr(plc, "spoof_get_xy", lambda: (0.0, 0.0))
@@ -72,8 +73,8 @@ class MotionService:
         except Exception:
             web_ok = False
 
-        if not spoof_movement and web_ok and get_xy is not None and goto_xy is not None:
-            active_get_xy = get_xy
+        if not spoof_movement and web_ok and get_cached_xy is not None and goto_xy is not None:
+            active_get_xy = get_cached_xy
             active_goto_xy = goto_xy
         else:
             LOGGER.warning(

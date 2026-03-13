@@ -252,6 +252,38 @@ def test_measure_list_button_keeps_requested_wires_when_skip_disabled(monkeypatc
     assert measured_wires == [([3, 5, 6, 7], False)]
 
 
+def test_measure_list_button_keeps_requested_wires_when_skip_filters_everything(
+    monkeypatch,
+):
+    actions = _load_actions_module(monkeypatch)
+
+    measured_wires = []
+
+    class DummyTensiometer:
+        def measure_list(self, wire_list, preserve_order=False):
+            measured_wires.append((wire_list, preserve_order))
+
+        def close(self):
+            pass
+
+    summaries = types.ModuleType("dune_tension.summaries")
+    summaries.get_tension_series = lambda _config: {"A": {3: 5.8, 5: 6.0, 6: 6.1, 7: 6.2}}
+    monkeypatch.setitem(sys.modules, "dune_tension.summaries", summaries)
+    monkeypatch.setattr(actions, "create_tensiometer", lambda _ctx, _inputs: DummyTensiometer())
+    monkeypatch.setattr(
+        actions,
+        "_make_config_from_inputs",
+        lambda _inputs: types.SimpleNamespace(side="A"),
+    )
+    monkeypatch.setattr(actions, "_cleanup_after_measurement", lambda *_args, **_kwargs: None)
+
+    inputs = types.SimpleNamespace(wire_list="3,5-7", skip_measured=True)
+
+    actions.measure_list_button.__wrapped__(types.SimpleNamespace(), inputs)
+
+    assert measured_wires == [([3, 5, 6, 7], False)]
+
+
 def test_adjust_focus_with_x_compensation_side_a(monkeypatch):
     actions = _load_actions_module(monkeypatch)
 

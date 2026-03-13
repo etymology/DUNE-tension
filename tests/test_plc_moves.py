@@ -53,3 +53,11 @@ def test_no_crossing_single_move(monkeypatch):
     moves = _setup(monkeypatch)
     plc.goto_xy(2100.0, float(GEOMETRY_CONFIG.y_max))
     assert moves == [(2100.0, float(GEOMETRY_CONFIG.y_max))]
+
+
+def test_get_cached_xy_seeds_tracking_from_live_read(monkeypatch):
+    monkeypatch.setattr(plc, "get_xy", lambda: (1234.5, 678.9))
+    plc._TRUE_XY = [None, None]
+
+    assert plc.get_cached_xy() == (1234.5, 678.9)
+    assert plc._TRUE_XY == [1234.5, 678.9]
