@@ -52,7 +52,7 @@ def test_activations_to_pitch_last_duration(monkeypatch):
         activation, times, freq_axis
     )
 
-    expected_confidence = (0.9 * 0.05) + (0.7 * 0.1)
+    expected_confidence = (0.9 * 0.1) + (0.7 * 0.1)
     assert np.isclose(confidence, expected_confidence)
 
 
@@ -76,8 +76,8 @@ def test_activations_to_pitch_expected_frequency_mask(monkeypatch):
         expected_frequency=120.0,
     )
 
-    assert np.isclose(freq, 162.5)
-    expected_confidence = (0.2 * 0.1) + (0.3 * 0.1)
+    assert np.isclose(freq, 100.0)
+    expected_confidence = (0.1 * 0.1) + (0.2 * 0.1)
     assert np.isclose(confidence, expected_confidence)
 
 

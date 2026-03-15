@@ -1,23 +1,16 @@
-import sys
 from pathlib import Path
-import types
 import math
+import sys
 
-# Insert src into path before importing
+import numpy as np
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-# Provide a minimal numpy stub so the module can be imported without the real package
+import dune_tension.audio_runtime as audio_runtime_module
+from dune_tension.audioProcessing import spoof_audio_sample
+
+
 sample_audio = [0.1, 0.2, 0.3]
-
-numpy_stub = types.ModuleType("numpy")
-numpy_stub.ndarray = object
-
-
-def array(data):
-    return list(data)
-
-
-numpy_stub.array = array
 
 
 class Loader(dict):
@@ -25,31 +18,16 @@ class Loader(dict):
         return self
 
     def __exit__(self, exc_type, exc, tb):
-        pass
+        return False
 
 
-def load(path):
-    return Loader({"audio": sample_audio})
-
-
-numpy_stub.load = load
-sys.modules.setdefault("numpy", numpy_stub)
-sys.modules.setdefault("matplotlib", types.ModuleType("matplotlib"))
-sys.modules.setdefault("matplotlib.pyplot", types.ModuleType("matplotlib.pyplot"))
-sys.modules.setdefault("crepe", types.ModuleType("crepe"))
-tc_module = types.ModuleType("tension_calculation")
-tc_module.tension_lookup = lambda length, frequency: 0.0
-tc_module.tension_pass = lambda t, length: True
-sys.modules.setdefault("tension_calculation", tc_module)
-sys.modules.setdefault("sounddevice", types.ModuleType("sounddevice"))
-
-import dune_tension.audio_runtime as audio_runtime_module
-from dune_tension.audioProcessing import spoof_audio_sample
+def _fake_load(_path):
+    return Loader({"audio": np.asarray(sample_audio, dtype=np.float32)})
 
 
 def test_spoof_audio_sample(tmp_path, monkeypatch):
     (tmp_path / "sample.npz").write_bytes(b"fake")
-    monkeypatch.setattr(audio_runtime_module.np, "load", load, raising=False)
+    monkeypatch.setattr(audio_runtime_module.np, "load", _fake_load)
     loaded = spoof_audio_sample(str(tmp_path))
     assert list(loaded) == sample_audio
 
