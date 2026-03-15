@@ -6,8 +6,12 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import pandas as pd
 
-from dune_tension.compare_b_index_models import build_model_comparison
-from dune_tension.compare_tension_sources import build_comparison_frame
+from dune_tension.ukapa7_comparison.compare_b_index_models import (
+    build_model_comparison,
+)
+from dune_tension.ukapa7_comparison.compare_tension_sources import (
+    build_comparison_frame,
+)
 
 
 def _rolling_mean(series: pd.Series, window: int = 15) -> pd.Series:

@@ -147,7 +147,7 @@ The new design should reuse these pieces rather than replacing them.
 | `src/dune_tension/tensiometer_functions.py` | `TensiometerConfig`, geometry-aware wire planning, future cached position provider |
 | `src/dune_tension/summaries.py` | missing-wire lookup and GUI summary refresh |
 | `src/dune_tension/gui/actions.py` | threading, stop-event handling, runtime assembly seam |
-| `src/valve_trigger.py:ValveController` | pulse execution |
+| `src/dune_tension/hardware/valve_trigger.py:ValveController` | pulse execution |
 | `src/spectrum_analysis/audio_sources.py:MicSource` | continuous microphone capture |
 | `src/spectrum_analysis/comb_trigger.py` | harmonic comb scoring logic |
 | `src/spectrum_analysis/pesto_analysis.py` | slow pitch confirmation |

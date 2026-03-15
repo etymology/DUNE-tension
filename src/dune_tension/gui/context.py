@@ -10,8 +10,8 @@ from threading import Event, Thread
 from typing import Any, Callable
 import tkinter as tk
 
+from dune_tension.hardware.valve_trigger import DeviceNotFoundError, ValveController
 from dune_tension.maestro import Controller, DummyController, ServoController
-from valve_trigger import DeviceNotFoundError, ValveController
 
 try:  # pragma: no cover - optional dependency
     from dune_tension.plc_io import (  # type: ignore

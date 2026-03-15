@@ -493,7 +493,7 @@ class Tensiometer:
                 return None
             x, y = self.get_current_xy_position()
 
-            # trigger a valve pulse using pulse from valve_trigger.py
+            # Trigger a valve pulse before capturing audio.
             self.strum_func()
             # record audio with harmonic comb
 

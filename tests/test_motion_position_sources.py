@@ -52,7 +52,9 @@ def test_gui_context_prefers_backlash_aware_cached_xy(monkeypatch):
     maestro.DummyController = _DummyController
     maestro.ServoController = _DummyServoController
 
-    valve_trigger = types.ModuleType("valve_trigger")
+    hardware_pkg = types.ModuleType("dune_tension.hardware")
+    hardware_pkg.__path__ = []
+    valve_trigger = types.ModuleType("dune_tension.hardware.valve_trigger")
     valve_trigger.DeviceNotFoundError = RuntimeError
     valve_trigger.ValveController = type("ValveController", (), {})
 
@@ -65,8 +67,11 @@ def test_gui_context_prefers_backlash_aware_cached_xy(monkeypatch):
 
     monkeypatch.setitem(sys.modules, "dune_tension", dune_pkg)
     monkeypatch.setitem(sys.modules, "dune_tension.gui", gui_pkg)
+    monkeypatch.setitem(sys.modules, "dune_tension.hardware", hardware_pkg)
     monkeypatch.setitem(sys.modules, "dune_tension.maestro", maestro)
-    monkeypatch.setitem(sys.modules, "valve_trigger", valve_trigger)
+    monkeypatch.setitem(
+        sys.modules, "dune_tension.hardware.valve_trigger", valve_trigger
+    )
     monkeypatch.setitem(sys.modules, "dune_tension.plc_io", plc_io)
     monkeypatch.delenv("SPOOF_PLC", raising=False)
 
