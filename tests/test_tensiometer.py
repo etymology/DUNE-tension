@@ -1,5 +1,6 @@
 import sys
 from pathlib import Path
+import sqlite3
 import types
 import time
 import pytest
@@ -122,6 +123,8 @@ dc_stub.get_dataframe = lambda path: None
 dc_stub.update_dataframe = lambda path, df: None
 dc_stub.get_samples_dataframe = lambda path: None
 dc_stub.update_samples_dataframe = lambda path, df: None
+dc_stub.connect_write_database = lambda path: sqlite3.connect(":memory:")
+dc_stub.ensure_tables = lambda conn: None
 dc_stub.EXPECTED_COLUMNS = []
 sys.modules["data_cache"] = dc_stub
 
@@ -324,9 +327,6 @@ def test_measure_auto_reports_estimated_time(monkeypatch):
         lambda **kwargs: planner_calls.append(kwargs) or [(2, 2.0, 0.0), (1, 1.0, 0.0)],
     )
 
-    times = iter([100.0, 110.0, 120.0])
-    monkeypatch.setattr(tensiometer_module.time, "time", lambda: next(times))
-
     collected = []
     t = Tensiometer(
         apa_name="APA",
@@ -334,6 +334,8 @@ def test_measure_auto_reports_estimated_time(monkeypatch):
         side="A",
         estimated_time_callback=eta_updates.append,
     )
+    times = iter([100.0, 110.0, 120.0])
+    t._time = lambda: next(times)
     t.goto_xy_func = lambda *_args, **_kwargs: pytest.fail("measure_auto should use the shared planner output directly")
     t.goto_collect_wire_data = lambda **kwargs: collected.append(kwargs)
 

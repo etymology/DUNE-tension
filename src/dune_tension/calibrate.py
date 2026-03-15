@@ -11,7 +11,7 @@ from typing import Sequence
 import numpy as np
 
 from . import plc_io
-from .audioProcessing import get_samplerate, record_audio_filtered
+from .audio_runtime import get_samplerate, record_audio_filtered
 
 MicrophoneSampler = Callable[
     [float, int], tuple[Sequence[float] | np.ndarray | None, float]

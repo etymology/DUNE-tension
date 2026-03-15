@@ -574,7 +574,7 @@ def calibrate_background_noise(ctx: GUIContext, _inputs: WorkerInputs) -> None:
     """Record background noise for filtering future recordings."""
 
     try:
-        from dune_tension.audioProcessing import (
+        from dune_tension.audio_runtime import (
             calibrate_background_noise,
             get_samplerate,
         )

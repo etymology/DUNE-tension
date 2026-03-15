@@ -43,13 +43,15 @@ tc_module.tension_pass = lambda t, length: True
 sys.modules.setdefault("tension_calculation", tc_module)
 sys.modules.setdefault("sounddevice", types.ModuleType("sounddevice"))
 
+import dune_tension.audio_runtime as audio_runtime_module
 from dune_tension.audioProcessing import spoof_audio_sample
 
 
-def test_spoof_audio_sample(tmp_path):
+def test_spoof_audio_sample(tmp_path, monkeypatch):
     (tmp_path / "sample.npz").write_bytes(b"fake")
+    monkeypatch.setattr(audio_runtime_module.np, "load", load, raising=False)
     loaded = spoof_audio_sample(str(tmp_path))
-    assert loaded == sample_audio
+    assert list(loaded) == sample_audio
 
 
 def test_spoof_audio_sample_fallback(tmp_path):
@@ -61,4 +63,4 @@ def test_spoof_audio_sample_fallback(tmp_path):
     for i in range(sr):
         phase = 2 * math.pi * freq * i / sr
         expected.append(1.0 if math.sin(phase) >= 0 else -1.0)
-    assert loaded == expected
+    assert list(loaded) == expected

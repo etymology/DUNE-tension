@@ -44,11 +44,14 @@ def _import_plc_module() -> Any:
 
 
 def _import_audio_module() -> Any:
+    runtime_stub = sys.modules.get("dune_tension.audio_runtime")
+    if runtime_stub is not None:
+        return runtime_stub
     audio_stub = sys.modules.get("audioProcessing")
     if audio_stub is not None:
         return audio_stub
     try:
-        import dune_tension.audioProcessing as audio
+        import dune_tension.audio_runtime as audio
     except Exception:  # pragma: no cover - fallback for legacy test stubs
         import audioProcessing as audio  # type: ignore
     return audio
