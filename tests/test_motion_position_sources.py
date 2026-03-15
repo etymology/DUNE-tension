@@ -58,6 +58,11 @@ def test_gui_context_prefers_backlash_aware_cached_xy(monkeypatch):
     valve_trigger.DeviceNotFoundError = RuntimeError
     valve_trigger.ValveController = type("ValveController", (), {})
 
+    services = types.ModuleType("dune_tension.services")
+    services.RuntimeBundle = object
+    services.build_runtime_bundle = lambda *_args, **_kwargs: None
+    services.resolve_runtime_options = lambda *_args, **_kwargs: None
+
     plc_io = types.ModuleType("dune_tension.plc_io")
     plc_io.get_xy = lambda: (10.0, 20.0)
     plc_io.get_cached_xy = lambda: (30.0, 40.0)
@@ -72,6 +77,7 @@ def test_gui_context_prefers_backlash_aware_cached_xy(monkeypatch):
     monkeypatch.setitem(
         sys.modules, "dune_tension.hardware.valve_trigger", valve_trigger
     )
+    monkeypatch.setitem(sys.modules, "dune_tension.services", services)
     monkeypatch.setitem(sys.modules, "dune_tension.plc_io", plc_io)
     monkeypatch.delenv("SPOOF_PLC", raising=False)
 

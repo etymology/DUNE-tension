@@ -161,6 +161,12 @@ def _make_config(**kwargs):
 
 
 tf_stub.make_config = _make_config
+tf_stub.TensiometerConfig = type("TensiometerConfig", (), {})
+tf_stub.WirePositionProvider = type(
+    "WirePositionProvider",
+    (),
+    {"__init__": lambda self, *args, **kwargs: None, "get_xy": lambda self, cfg, num: (0.0, 0.0)},
+)
 tf_stub.measure_list = lambda **k: None
 tf_stub.plan_measurement_triplets = lambda **k: []
 tf_stub.get_xy_from_file = lambda cfg, num: (0.0, 0.0)
@@ -168,12 +174,12 @@ tf_stub.check_stop_event = lambda evt, msg="": False
 sys.modules["tensiometer_functions"] = tf_stub
 
 import dune_tension.tensiometer as tensiometer_module  # noqa: E402
-from dune_tension.tensiometer import Tensiometer, TensionResult  # noqa: E402
+from dune_tension.tensiometer import Tensiometer  # noqa: E402
 
 
 def test_generate_result_single_sample():
     t = Tensiometer(apa_name="APA", layer="X", side="A", samples_per_wire=1)
-    sample = TensionResult(
+    sample = results_stub.TensionResult(
         apa_name="APA",
         layer="X",
         side="A",
@@ -200,7 +206,7 @@ def test_generate_result_single_sample():
 def test_generate_result_multi_sample():
     t = Tensiometer(apa_name="APA", layer="X", side="A", samples_per_wire=3)
     wires = [
-        TensionResult(
+        results_stub.TensionResult(
             apa_name="APA",
             layer="X",
             side="A",
@@ -211,7 +217,7 @@ def test_generate_result_multi_sample():
             y=0.0,
             wires=[2.0],
         ),
-        TensionResult(
+        results_stub.TensionResult(
             apa_name="APA",
             layer="X",
             side="A",
@@ -222,7 +228,7 @@ def test_generate_result_multi_sample():
             y=0.2,
             wires=[2.2],
         ),
-        TensionResult(
+        results_stub.TensionResult(
             apa_name="APA",
             layer="X",
             side="A",
@@ -252,8 +258,27 @@ def test_collect_samples_stops_when_confidence_threshold_is_met(monkeypatch):
     monkeypatch.setattr(tensiometer_module, "acquire_audio", lambda **_kwargs: [1.0])
     monkeypatch.setattr(
         tensiometer_module,
+        "wire_equation",
+        lambda *, length, frequency=None: {
+            "frequency": 5.0,
+            "tension": 0.5 if frequency is not None else 0.0,
+        },
+    )
+    monkeypatch.setattr(tensiometer_module, "tension_plausible", lambda _tension: True)
+    monkeypatch.setattr(
+        tensiometer_module,
         "estimate_pitch_from_audio",
         lambda *_args: (5.0, 0.95),
+    )
+    monkeypatch.setattr(tensiometer_module, "TensionResult", results_stub.TensionResult)
+
+    def _raise_analysis(*_args, **_kwargs):
+        raise RuntimeError("fallback to simple pitch estimate")
+
+    monkeypatch.setattr(
+        tensiometer_module,
+        "analyze_audio_with_pesto",
+        _raise_analysis,
     )
 
     t = Tensiometer(
@@ -319,32 +344,48 @@ def test_measure_auto_reports_estimated_time(monkeypatch):
     ]
 
 
-def test_load_tension_summary(tmp_path):
-    csv = tmp_path / "test.csv"
-    csv.write_text("A,B\n1,2\n3,4\n")
+def test_load_tension_summary_uses_sqlite_backed_summary_series(tmp_path, monkeypatch):
+    db_path = tmp_path / "tension_data.db"
+    db_path.write_text("")
+    summaries_stub = types.ModuleType("dune_tension.summaries")
+    summaries_stub.get_expected_range = lambda _layer: range(1, 4)
+    summaries_stub.get_tension_series = (
+        lambda _config: {"A": {1: 1.0, 3: 3.0}, "B": {1: 2.0}}
+    )
+    monkeypatch.setitem(sys.modules, "dune_tension.summaries", summaries_stub)
+
     t = Tensiometer(apa_name="APA", layer="X", side="A")
-    t.config.data_path = str(csv)
+    t.config.data_path = str(db_path)
     a, b = t.load_tension_summary()
-    assert a == [1.0, 3.0]
-    assert b == [2.0, 4.0]
+
+    assert a[0] == 1.0
+    assert a[1] != a[1]
+    assert a[2] == 3.0
+    assert b[0] == 2.0
+    assert b[1] != b[1]
+    assert b[2] != b[2]
 
 
 def test_load_tension_summary_missing(tmp_path):
-    csv = tmp_path / "missing.csv"
     t = Tensiometer(apa_name="APA", layer="X", side="A")
-    t.config.data_path = str(csv)
+    t.config.data_path = str(tmp_path / "missing.db")
     msg, a, b = t.load_tension_summary()
     assert "File not found" in msg
     assert a == [] and b == []
 
 
-def test_load_tension_summary_bad_columns(tmp_path):
-    csv = tmp_path / "bad.csv"
-    csv.write_text("C,D\n1,2\n")
+def test_load_tension_summary_reports_missing_summary_rows(tmp_path, monkeypatch):
+    db_path = tmp_path / "empty.db"
+    db_path.write_text("")
+    summaries_stub = types.ModuleType("dune_tension.summaries")
+    summaries_stub.get_expected_range = lambda _layer: range(1, 3)
+    summaries_stub.get_tension_series = lambda _config: {"A": {}, "B": {}}
+    monkeypatch.setitem(sys.modules, "dune_tension.summaries", summaries_stub)
+
     t = Tensiometer(apa_name="APA", layer="X", side="A")
-    t.config.data_path = str(csv)
+    t.config.data_path = str(db_path)
     msg, a, b = t.load_tension_summary()
-    assert "missing" in msg
+    assert "No summary measurements found" in msg
     assert a == [] and b == []
 
 

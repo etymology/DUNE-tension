@@ -1,6 +1,6 @@
 from dataclasses import dataclass, field
 import logging
-from typing import Optional, Callable
+from typing import Any, Optional, Callable
 import math
 from typing import List, Tuple
 from threading import Event
@@ -116,61 +116,129 @@ def make_config(
     )
 
 
+@dataclass(frozen=True)
+class _WirePositionSnapshot:
+    wire_numbers: Any
+    xs: Any
+    ys: Any
+
+
+class WirePositionProvider:
+    """Cache normalized per-wire coordinates for repeated measurement planning."""
+
+    def __init__(
+        self,
+        dataframe_loader: Callable[[str], Any] = get_dataframe,
+    ) -> None:
+        self._dataframe_loader = dataframe_loader
+        self._snapshots: dict[tuple[str, str, str, str], _WirePositionSnapshot | None] = {}
+
+    def _snapshot_key(self, config: TensiometerConfig) -> tuple[str, str, str, str]:
+        return (
+            config.data_path,
+            config.apa_name,
+            config.layer,
+            f"{config.side.upper()}:{int(bool(config.flipped))}",
+        )
+
+    def invalidate(self) -> None:
+        self._snapshots.clear()
+
+    def _build_snapshot(
+        self,
+        config: TensiometerConfig,
+    ) -> _WirePositionSnapshot | None:
+        df_all = self._dataframe_loader(config.data_path)
+        if df_all is None or getattr(df_all, "empty", True):
+            return None
+
+        _data_path, apa_name, layer, _cache_side = self._snapshot_key(config)
+        virtual_side = (
+            {"A": "B", "B": "A"}[config.side.upper()]
+            if config.flipped
+            else config.side.upper()
+        )
+
+        df = df_all[
+            (df_all["apa_name"] == apa_name) & (df_all["layer"] == layer)
+        ]
+        if getattr(df, "empty", True):
+            return None
+
+        df_side = (
+            df[df["side"].astype(str).str.upper() == virtual_side]
+            .sort_values("time")
+            .drop_duplicates(subset="wire_number", keep="last")
+            .sort_values("wire_number")
+            .reset_index(drop=True)
+        )
+        if df_side.empty:
+            return None
+
+        return _WirePositionSnapshot(
+            wire_numbers=df_side["wire_number"].astype(int).values,
+            xs=df_side["x"].astype(float).values,
+            ys=df_side["y"].astype(float).values,
+        )
+
+    def _get_snapshot(
+        self,
+        config: TensiometerConfig,
+    ) -> _WirePositionSnapshot | None:
+        key = self._snapshot_key(config)
+        if key not in self._snapshots:
+            self._snapshots[key] = self._build_snapshot(config)
+        return self._snapshots[key]
+
+    def get_xy(
+        self,
+        config: TensiometerConfig,
+        wire_number: int,
+    ) -> Optional[tuple[float, float]]:
+        import numpy as np
+
+        try:  # pragma: no cover - fallback for legacy test stubs
+            from dune_tension.geometry import refine_position
+        except ImportError:  # pragma: no cover
+            from geometry import refine_position
+
+        snapshot = self._get_snapshot(config)
+        if snapshot is None:
+            LOGGER.warning(
+                "No data found for side %s in layer %s.",
+                config.side,
+                config.layer,
+            )
+            return None
+
+        lookup_wire_number = int(wire_number)
+        if config.flipped and config.layer in ["X", "G"]:
+            lookup_wire_number = config.wire_max - lookup_wire_number
+            LOGGER.info("Flipped wire number: %s", lookup_wire_number)
+
+        idx_closest = np.argmin(np.abs(snapshot.wire_numbers - lookup_wire_number))
+        closest_wire = snapshot.wire_numbers[idx_closest]
+        dy_offset = (lookup_wire_number - closest_wire) * config.dy
+        x = float(snapshot.xs[idx_closest])
+        y = float(snapshot.ys[idx_closest] + dy_offset)
+
+        return (
+            refine_position(x, y, config.dx, config.dy)
+            if config.layer in ["V", "U"]
+            else (x, y)
+        )
+
+
+_DEFAULT_WIRE_POSITION_PROVIDER = WirePositionProvider()
+
+
 def get_xy_from_file(
     config: TensiometerConfig,
     wire_number: int,
+    provider: WirePositionProvider | None = None,
 ) -> Optional[tuple[float, float]]:
-    import numpy as np
-    try:  # pragma: no cover - fallback for legacy test stubs
-        from dune_tension.geometry import refine_position
-    except ImportError:  # pragma: no cover
-        from geometry import refine_position
-
-    df_all = get_dataframe(config.data_path)
-    df = df_all[
-        (df_all["apa_name"] == config.apa_name) & (df_all["layer"] == config.layer)
-    ]
-    virtual_side = (
-        {"A": "B", "B": "A"}[config.side.upper()]
-        if config.flipped
-        else config.side.upper()
-    )
-    if config.flipped and config.layer in ["X", "G"]:
-        wire_number = config.wire_max - wire_number
-        LOGGER.info("Flipped wire number: %s", wire_number)
-    df_side = (
-        df[df["side"].str.upper() == virtual_side]
-        .sort_values("time")
-        .drop_duplicates(subset="wire_number", keep="last")
-        .sort_values("wire_number")
-        .reset_index(drop=True)
-    )
-
-    if df_side.empty:
-        LOGGER.warning(
-            "No data found for side %s in layer %s.",
-            config.side,
-            config.layer,
-        )
-        return None
-
-    wire_numbers = df_side["wire_number"].values
-    xs, ys = df_side["x"].values, df_side["y"].values
-
-    # Find index of the closest wire_number in the array
-    idx_closest = np.argmin(np.abs(wire_numbers - wire_number))
-    closest_wire = wire_numbers[idx_closest]
-    dy_offset = (wire_number - closest_wire) * config.dy
-
-    # Since we assume each wire is (0, dy) away from the next:
-    x = xs[idx_closest]
-    y = ys[idx_closest] + dy_offset
-
-    return (
-        refine_position(x, y, config.dx, config.dy)
-        if config.layer in ["V", "U"]
-        else (x, y)
-    )
+    active_provider = provider or _DEFAULT_WIRE_POSITION_PROVIDER
+    return active_provider.get_xy(config, wire_number)
 
 
 def greedy_order_triplets(

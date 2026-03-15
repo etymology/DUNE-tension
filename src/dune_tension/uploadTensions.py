@@ -1,22 +1,22 @@
 try:  # pragma: no cover - fallback for local script execution
     from dune_tension.m2m.common import ConnectToAPI, EditAction
+    from dune_tension.summaries import get_expected_range, get_tension_series
+    from dune_tension.tensiometer_functions import make_config
 except ImportError:  # pragma: no cover
     from m2m.common import ConnectToAPI, EditAction
-
-# from tensiometer import Tensiometer
-import pandas as pd
+    from summaries import get_expected_range, get_tension_series  # type: ignore
+    from tensiometer_functions import make_config  # type: ignore
 
 
 def load_tension_summary(apa_name: str, layer: str) -> tuple[list, list]:
-    datapath = f"data/tension_summaries/tension_summary_{apa_name}_{layer}.csv"
-    df = pd.read_csv(datapath, encoding="utf-8")
-    if "A" not in df.columns or "B" not in df.columns:
-        return "⚠️ File missing required columns 'A' and 'B'", [], []
-
-    # Convert columns to lists, preserving NaNs if present
-    a_list = df["A"].tolist()
-    b_list = df["B"].tolist()
-    return a_list, b_list
+    config = make_config(apa_name=apa_name, layer=layer, side="A")
+    tension_series = get_tension_series(config)
+    wire_range = list(get_expected_range(layer))
+    nan = float("nan")
+    return (
+        [tension_series["A"].get(wire, nan) for wire in wire_range],
+        [tension_series["B"].get(wire, nan) for wire in wire_range],
+    )
 
 
 def uploadTensions(apa_name: str, layer: str, create_layer_action_id: str) -> None:

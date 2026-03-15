@@ -34,6 +34,7 @@ from dune_tension.gui.live_plots import (
 )
 from dune_tension.gui.logging_panel import configure_gui_logging
 from dune_tension.gui.state import load_state
+from dune_tension.services import build_runtime_bundle, resolve_runtime_options
 from dune_tension.tensiometer_functions import make_config
 
 
@@ -63,12 +64,14 @@ def run_app(state_file: str = "gui_state.json", root: tk.Misc | None = None) -> 
         root, focus_command_var, estimated_time_var
     )
     log_binding = configure_gui_logging(root, log_text)
+    runtime_bundle = build_runtime_bundle(resolve_runtime_options())
     ctx = create_context(
         root,
         widgets,
         state_file,
         focus_command_var=focus_command_var,
         estimated_time_var=estimated_time_var,
+        runtime_bundle=runtime_bundle,
     )
     ctx.focus_command_canvas = focus_canvas
     ctx.focus_command_dot = focus_dot

@@ -40,6 +40,7 @@ def _load_actions_module(monkeypatch):
 
     tensiometer = types.ModuleType("dune_tension.tensiometer")
     tensiometer.Tensiometer = object
+    tensiometer.build_tensiometer = lambda **kwargs: kwargs
     monkeypatch.setitem(sys.modules, "dune_tension.tensiometer", tensiometer)
 
     tensiometer_functions = types.ModuleType("dune_tension.tensiometer_functions")
@@ -113,6 +114,54 @@ def test_measurement_threads_are_serialized(monkeypatch):
 
     fake_measurement(ctx)
     assert _wait_for(lambda: len(calls) == 2)
+
+
+def test_create_tensiometer_uses_context_runtime_bundle(monkeypatch):
+    actions = _load_actions_module(monkeypatch)
+
+    build_calls = []
+
+    monkeypatch.setitem(
+        sys.modules,
+        "dune_tension.tensiometer",
+        types.SimpleNamespace(
+            build_tensiometer=lambda **kwargs: build_calls.append(kwargs) or kwargs,
+            Tensiometer=object,
+        ),
+    )
+
+    runtime = object()
+    servo_controller = types.SimpleNamespace(
+        focus_position=4100,
+        nudge_focus=lambda _delta: None,
+    )
+    ctx = types.SimpleNamespace(
+        runtime=runtime,
+        stop_event=threading.Event(),
+        strum=lambda: None,
+        servo_controller=servo_controller,
+        widgets=types.SimpleNamespace(),
+    )
+    inputs = types.SimpleNamespace(
+        apa_name="APA",
+        layer="X",
+        side="A",
+        flipped=False,
+        a_taped=False,
+        b_taped=False,
+        samples=2,
+        confidence=0.9,
+        record_duration=0.5,
+        measuring_duration=5.0,
+        wiggle_y_sigma_mm=0.4,
+        focus_wiggle_sigma_quarter_us=50.0,
+        plot_audio=True,
+    )
+
+    actions.create_tensiometer(ctx, inputs)
+
+    assert len(build_calls) == 1
+    assert build_calls[0]["runtime_bundle"] is runtime
 
 
 def test_erase_distribution_outliers_uses_bulk_detector(monkeypatch):

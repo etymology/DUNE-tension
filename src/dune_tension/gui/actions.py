@@ -8,7 +8,6 @@ from datetime import datetime
 from functools import wraps
 import logging
 import math
-import os
 import re
 import threading
 from threading import Thread
@@ -215,7 +214,7 @@ def _capture_worker_inputs(ctx: GUIContext) -> WorkerInputs:
 def create_tensiometer(ctx: GUIContext, inputs: WorkerInputs) -> "Tensiometer":
     """Instantiate a :class:`Tensiometer` from captured UI inputs."""
 
-    from dune_tension.tensiometer import Tensiometer
+    from dune_tension.tensiometer import build_tensiometer
 
     try:
         samples = int(inputs.samples)
@@ -229,16 +228,13 @@ def create_tensiometer(ctx: GUIContext, inputs: WorkerInputs) -> "Tensiometer":
     except (TypeError, ValueError) as exc:
         raise ValueError(f"Invalid measurement inputs: {exc}") from exc
 
-    spoof_audio = bool(os.environ.get("SPOOF_AUDIO"))
-    return Tensiometer(
+    return build_tensiometer(
         apa_name=inputs.apa_name,
         layer=inputs.layer,
         side=inputs.side,
         flipped=inputs.flipped,
         a_taped=inputs.a_taped,
         b_taped=inputs.b_taped,
-        spoof=spoof_audio,
-        spoof_movement=bool(os.environ.get("SPOOF_PLC")),
         stop_event=ctx.stop_event,
         samples_per_wire=samples,
         confidence_threshold=confidence,
@@ -261,6 +257,7 @@ def create_tensiometer(ctx: GUIContext, inputs: WorkerInputs) -> "Tensiometer":
             ctx,
             config,
         ),
+        runtime_bundle=ctx.runtime,
     )
 
 

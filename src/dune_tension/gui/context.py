@@ -10,8 +10,7 @@ from threading import Event, Thread
 from typing import Any, Callable
 import tkinter as tk
 
-from dune_tension.hardware.valve_trigger import DeviceNotFoundError, ValveController
-from dune_tension.maestro import Controller, DummyController, ServoController
+from dune_tension.services import RuntimeBundle, build_runtime_bundle, resolve_runtime_options
 
 try:  # pragma: no cover - optional dependency
     from dune_tension.plc_io import (  # type: ignore
@@ -74,9 +73,10 @@ class GUIContext:
     root: tk.Misc
     widgets: GUIWidgets
     state_file: str
+    runtime: RuntimeBundle
     stop_event: Event
-    servo_controller: ServoController
-    valve_controller: ValveController | None
+    servo_controller: Any
+    valve_controller: Any | None
     get_xy: Callable[[], tuple[float, float]]
     goto_xy: Callable[[float, float], bool]
     focus_command_var: tk.StringVar
@@ -97,46 +97,6 @@ class GUIContext:
 LOGGER = logging.getLogger(__name__)
 
 
-def _create_servo_controller() -> ServoController:
-    """Return a :class:`ServoController` respecting spoof settings."""
-
-    if os.environ.get("SPOOF_SERVO"):
-        return ServoController(servo=DummyController())
-    return ServoController(Controller())
-
-
-def _create_valve_controller() -> ValveController | None:
-    """Attempt to create a :class:`ValveController`, logging failures."""
-
-    if os.environ.get("SPOOF_VALVE"):
-        return None
-
-    try:
-        return ValveController()
-    except (DeviceNotFoundError, RuntimeError) as exc:
-        LOGGER.warning("Unable to initialise valve controller: %s", exc)
-        return None
-
-
-def _make_strum_callback(controller: ValveController | None) -> Callable[[], None]:
-    """Return a callable that emits a single valve pulse when invoked."""
-
-    if controller is None:
-
-        def _noop() -> None:
-            return
-
-        return _noop
-
-    def _strum() -> None:
-        try:
-            controller.pulse(0.002)
-        except Exception as exc:
-            LOGGER.warning("Valve pulse failed: %s", exc)
-
-    return _strum
-
-
 def _resolve_plc_functions() -> tuple[
     Callable[[], tuple[float, float]], Callable[[float, float], bool]
 ]:
@@ -154,14 +114,12 @@ def create_context(
     *,
     focus_command_var: tk.StringVar | None = None,
     estimated_time_var: tk.StringVar | None = None,
+    runtime_bundle: RuntimeBundle | None = None,
 ) -> GUIContext:
     """Create and return a :class:`GUIContext` for the GUI."""
 
     stop_event = Event()
-    servo_controller = _create_servo_controller()
-    valve_controller = _create_valve_controller()
-    strum = _make_strum_callback(valve_controller)
-    get_xy, goto_xy = _resolve_plc_functions()
+    runtime = runtime_bundle or build_runtime_bundle(resolve_runtime_options())
     if focus_command_var is None:
         focus_command_var = tk.StringVar(master=root, value="4000")
     if estimated_time_var is None:
@@ -171,12 +129,13 @@ def create_context(
         root=root,
         widgets=widgets,
         state_file=state_file,
+        runtime=runtime,
         stop_event=stop_event,
-        servo_controller=servo_controller,
-        valve_controller=valve_controller,
-        get_xy=get_xy,
-        goto_xy=goto_xy,
+        servo_controller=runtime.servo_controller,
+        valve_controller=runtime.valve_controller,
+        get_xy=runtime.motion.get_xy,
+        goto_xy=runtime.motion.goto_xy,
         focus_command_var=focus_command_var,
         estimated_time_var=estimated_time_var,
-        strum=strum,
+        strum=runtime.strum,
     )
