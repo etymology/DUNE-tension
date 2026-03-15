@@ -7,6 +7,7 @@ from dune_tension.streaming.controller import (
     StreamingControllerConfig,
     StreamingMeasurementController,
     SweepCorridor,
+    build_corridors_for_wire_numbers,
 )
 from dune_tension.streaming.evidence import PitchEvidenceField, merge_pitch_confidence
 from dune_tension.streaming.focus_plane import FocusPlaneModel
@@ -65,6 +66,7 @@ __all__ = [
     "StreamingSessionRepository",
     "StreamingWirePositionProvider",
     "SweepCorridor",
+    "build_corridors_for_wire_numbers",
     "VoicedWindow",
     "WireCandidate",
     "analyze_wav_file",

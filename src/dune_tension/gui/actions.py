@@ -117,6 +117,7 @@ def _request_live_summary_refresh(ctx: GUIContext, config: Any) -> None:
 @dataclass(frozen=True)
 class WorkerInputs:
     apa_name: str
+    measurement_mode: str
     layer: str
     side: str
     flipped: bool
@@ -188,6 +189,7 @@ def _capture_worker_inputs(ctx: GUIContext) -> WorkerInputs:
 
     return WorkerInputs(
         apa_name=w.entry_apa.get(),
+        measurement_mode=w.measurement_mode_var.get(),
         layer=w.layer_var.get(),
         side=w.side_var.get(),
         flipped=bool(w.flipped_var.get()),
@@ -261,6 +263,120 @@ def create_tensiometer(ctx: GUIContext, inputs: WorkerInputs) -> "Tensiometer":
     )
 
 
+def _measurement_mode(inputs: WorkerInputs) -> str:
+    return str(getattr(inputs, "measurement_mode", "legacy")).strip().lower() or "legacy"
+
+
+def _publish_streaming_status(ctx: GUIContext, payload: dict[str, object]) -> None:
+    def apply() -> None:
+        if "segment_id" in payload:
+            ctx.widgets.stream_segment_var.set(str(payload["segment_id"]))
+        if "comb_score" in payload:
+            try:
+                ctx.widgets.stream_comb_var.set(f"{float(payload['comb_score']):.2f}")
+            except (TypeError, ValueError):
+                ctx.widgets.stream_comb_var.set(str(payload["comb_score"]))
+        if "focus_prediction" in payload:
+            try:
+                ctx.widgets.stream_focus_var.set(f"{float(payload['focus_prediction']):.1f}")
+            except (TypeError, ValueError):
+                ctx.widgets.stream_focus_var.set(str(payload["focus_prediction"]))
+        if "pitch_backlog" in payload:
+            ctx.widgets.stream_pitch_backlog_var.set(str(payload["pitch_backlog"]))
+        if "rescue_queue_depth" in payload:
+            ctx.widgets.stream_rescue_queue_var.set(str(payload["rescue_queue_depth"]))
+
+    try:
+        if threading.current_thread() is threading.main_thread():
+            apply()
+            return
+        ctx.root.after(0, apply)
+    except Exception:
+        return
+
+
+def _reset_streaming_status(ctx: GUIContext) -> None:
+    _publish_streaming_status(
+        ctx,
+        {
+            "segment_id": "Idle",
+            "comb_score": 0.0,
+            "focus_prediction": "--",
+            "pitch_backlog": 0,
+            "rescue_queue_depth": 0,
+        },
+    )
+
+
+def create_streaming_controller(ctx: GUIContext, inputs: WorkerInputs):
+    from dune_tension.streaming import (
+        StreamingControllerConfig,
+        StreamingMeasurementController,
+        build_measurement_runtime,
+    )
+
+    try:
+        confidence = float(inputs.confidence)
+        samples = int(inputs.samples)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"Invalid streaming inputs: {exc}") from exc
+
+    runtime = build_measurement_runtime(runtime_bundle=ctx.runtime)
+    config = StreamingControllerConfig(
+        apa_name=inputs.apa_name,
+        layer=inputs.layer,
+        side=inputs.side,
+        flipped=inputs.flipped,
+        sample_rate=int(getattr(ctx.runtime.audio, "samplerate", 44100)),
+        direct_accept_confidence=confidence,
+        direct_accept_support=max(1, samples),
+    )
+    return StreamingMeasurementController(
+        runtime=runtime,
+        config=config,
+        status_callback=lambda payload: _publish_streaming_status(ctx, payload),
+        stop_event=ctx.stop_event,
+    )
+
+
+def _run_streaming_for_wires(
+    ctx: GUIContext,
+    inputs: WorkerInputs,
+    wire_numbers: list[int],
+) -> None:
+    from dune_tension.streaming import build_corridors_for_wire_numbers
+
+    if not wire_numbers:
+        LOGGER.info("No wires available for streaming measurement.")
+        return
+
+    controller = None
+    try:
+        controller = create_streaming_controller(ctx, inputs)
+        _reset_streaming_status(ctx)
+        mode = _measurement_mode(inputs)
+        if mode == "stream_rescue":
+            for wire_number in wire_numbers:
+                if ctx.stop_event.is_set():
+                    break
+                summary = controller.run_rescue(int(wire_number))
+                LOGGER.info("Streaming rescue summary for wire %s: %s", wire_number, summary)
+            return
+
+        corridors = build_corridors_for_wire_numbers(
+            provider=controller.runtime.wire_positions,
+            apa_name=inputs.apa_name,
+            layer=inputs.layer,
+            side=inputs.side,
+            flipped=inputs.flipped,
+            wire_numbers=wire_numbers,
+        )
+        summary = controller.run_sweep(corridors)
+        LOGGER.info("Streaming sweep summary: %s", summary)
+    finally:
+        _cleanup_after_measurement(ctx, controller)
+
+
 def _begin_measurement(ctx: GUIContext, name: str) -> bool:
     """Mark a measurement as active, returning ``False`` if one is already running."""
 
@@ -330,6 +446,12 @@ def _run_in_thread(func=None, *, measurement: bool = False):
 def measure_calibrate(ctx: GUIContext, inputs: WorkerInputs) -> None:
     """Measure and calibrate a single wire."""
 
+    if _measurement_mode(inputs) != "legacy":
+        wire_number = int(inputs.wire_number)
+        _run_streaming_for_wires(ctx, inputs, [wire_number])
+        LOGGER.info("Done streaming measurement for wire %s", wire_number)
+        return
+
     tensiometer: Tensiometer | None = None
     try:
         tensiometer = create_tensiometer(ctx, inputs)
@@ -344,6 +466,17 @@ def measure_calibrate(ctx: GUIContext, inputs: WorkerInputs) -> None:
 def measure_auto(ctx: GUIContext, inputs: WorkerInputs) -> None:
     """Automatically measure the full APA."""
     LOGGER.info("Starting automatic measurement of full APA")
+
+    if _measurement_mode(inputs) != "legacy":
+        from dune_tension.summaries import get_missing_wires
+
+        config = _make_config_from_inputs(inputs)
+        wires_to_measure = get_missing_wires(config).get(inputs.side, [])
+        _run_streaming_for_wires(ctx, inputs, list(map(int, wires_to_measure)))
+        if ctx.stop_event.is_set():
+            _set_estimated_time(ctx, "Interrupted")
+        return
+
     tensiometer: Tensiometer | None = None
     try:
         _set_estimated_time(ctx, "--")
@@ -388,21 +521,27 @@ def _parse_ranges(text: str) -> list[tuple[int, int]]:
 def measure_list_button(ctx: GUIContext, inputs: WorkerInputs) -> None:
     """Measure a comma separated list of wire ranges."""
 
+    ranges = _parse_ranges(inputs.wire_list)
+    wire_list: list[int] = []
+    for start, end in ranges:
+        wire_list.extend(range(start, end + 1))
+    if inputs.skip_measured:
+        filtered_wire_list = _filter_unmeasured_wires(inputs, wire_list)
+        if filtered_wire_list:
+            wire_list = filtered_wire_list
+        elif wire_list:
+            LOGGER.info(
+                "All requested wires are already measured; keeping the requested list so the winder still seeks those wire positions."
+            )
+
+    if _measurement_mode(inputs) != "legacy":
+        LOGGER.info("Streaming measurement wires: %s", wire_list)
+        _run_streaming_for_wires(ctx, inputs, wire_list)
+        return
+
     tensiometer: Tensiometer | None = None
     try:
         tensiometer = create_tensiometer(ctx, inputs)
-        ranges = _parse_ranges(inputs.wire_list)
-        wire_list: list[int] = []
-        for start, end in ranges:
-            wire_list.extend(range(start, end + 1))
-        if inputs.skip_measured:
-            filtered_wire_list = _filter_unmeasured_wires(inputs, wire_list)
-            if filtered_wire_list:
-                wire_list = filtered_wire_list
-            else:
-                LOGGER.info(
-                    "All requested wires are already measured; keeping the requested list so the winder still seeks those wire positions."
-                )
         LOGGER.info("Measuring wires: %s", wire_list)
         tensiometer.measure_list(wire_list, preserve_order=False)
     finally:
@@ -465,6 +604,10 @@ def measure_condition(ctx: GUIContext, inputs: WorkerInputs) -> None:
         wires = _get_wires_matching_tension_condition(config, expr)
         if not wires:
             LOGGER.info("No wires satisfy: %s", expr)
+            return
+        if _measurement_mode(inputs) != "legacy":
+            LOGGER.info("Streaming measurement wires %s matching %r", wires, expr)
+            _run_streaming_for_wires(ctx, inputs, wires)
             return
         tensiometer = create_tensiometer(ctx, inputs)
         LOGGER.info("Measuring wires %s matching %r", wires, expr)
@@ -855,13 +998,13 @@ def _make_config_from_inputs(inputs: WorkerInputs):
 
 def _cleanup_after_measurement(
     ctx: GUIContext,
-    tensiometer: "Tensiometer | None",
+    measurement_obj: Any | None,
     *,
     reset_estimated_time: bool = True,
 ) -> None:
-    if tensiometer is not None:
+    if measurement_obj is not None:
         try:
-            tensiometer.close()
+            measurement_obj.close()
         except Exception:
             pass
     try:

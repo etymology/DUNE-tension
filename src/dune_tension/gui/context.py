@@ -43,6 +43,7 @@ class GUIWidgets:
     """Collection of Tkinter widgets used by the GUI."""
 
     entry_apa: tk.Entry
+    measurement_mode_var: tk.StringVar
     layer_var: tk.StringVar
     side_var: tk.StringVar
     flipped_var: tk.BooleanVar
@@ -64,6 +65,11 @@ class GUIWidgets:
     entry_set_tension: tk.Entry
     focus_slider: tk.Scale
     entry_xy: tk.Entry
+    stream_segment_var: tk.StringVar
+    stream_comb_var: tk.StringVar
+    stream_focus_var: tk.StringVar
+    stream_pitch_backlog_var: tk.StringVar
+    stream_rescue_queue_var: tk.StringVar
 
 
 @dataclass

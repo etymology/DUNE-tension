@@ -213,26 +213,36 @@ def _create_widgets(
     entry_apa = tk.Entry(apa_frame)
     entry_apa.grid(row=0, column=1)
 
-    tk.Label(apa_frame, text="Layer:").grid(row=1, column=0, sticky="e")
-    layer_var = tk.StringVar(apa_frame, value="X")
-    tk.OptionMenu(apa_frame, layer_var, "X", "V", "U", "G").grid(row=1, column=1)
+    tk.Label(apa_frame, text="Mode:").grid(row=1, column=0, sticky="e")
+    measurement_mode_var = tk.StringVar(apa_frame, value="legacy")
+    tk.OptionMenu(
+        apa_frame,
+        measurement_mode_var,
+        "legacy",
+        "stream_sweep",
+        "stream_rescue",
+    ).grid(row=1, column=1)
 
-    tk.Label(apa_frame, text="Side:").grid(row=2, column=0, sticky="e")
+    tk.Label(apa_frame, text="Layer:").grid(row=2, column=0, sticky="e")
+    layer_var = tk.StringVar(apa_frame, value="X")
+    tk.OptionMenu(apa_frame, layer_var, "X", "V", "U", "G").grid(row=2, column=1)
+
+    tk.Label(apa_frame, text="Side:").grid(row=3, column=0, sticky="e")
     side_var = tk.StringVar(apa_frame, value="A")
-    tk.OptionMenu(apa_frame, side_var, "A", "B").grid(row=2, column=1)
+    tk.OptionMenu(apa_frame, side_var, "A", "B").grid(row=3, column=1)
 
     flipped_var = tk.BooleanVar(value=False)
     tk.Checkbutton(apa_frame, text="Flipped", variable=flipped_var).grid(
-        row=3, column=1, sticky="w"
+        row=4, column=1, sticky="w"
     )
 
     a_taped_var = tk.BooleanVar(value=False)
     tk.Checkbutton(apa_frame, text="A taped", variable=a_taped_var).grid(
-        row=4, column=0, sticky="w"
+        row=5, column=0, sticky="w"
     )
     b_taped_var = tk.BooleanVar(value=False)
     tk.Checkbutton(apa_frame, text="B taped", variable=b_taped_var).grid(
-        row=4, column=1, sticky="w"
+        row=5, column=1, sticky="w"
     )
 
     tk.Label(measure_frame, text="Samples per Wire (≥1):").grid(
@@ -305,6 +315,31 @@ def _create_widgets(
     tk.Label(measure_frame, text="ETA:").grid(row=13, column=0, sticky="e")
     tk.Label(measure_frame, textvariable=estimated_time_var).grid(
         row=13, column=1, sticky="w"
+    )
+    stream_segment_var = tk.StringVar(measure_frame, value="Idle")
+    stream_comb_var = tk.StringVar(measure_frame, value="0.00")
+    stream_focus_var = tk.StringVar(measure_frame, value="--")
+    stream_pitch_backlog_var = tk.StringVar(measure_frame, value="0")
+    stream_rescue_queue_var = tk.StringVar(measure_frame, value="0")
+    tk.Label(measure_frame, text="Stream Segment:").grid(row=14, column=0, sticky="e")
+    tk.Label(measure_frame, textvariable=stream_segment_var).grid(
+        row=14, column=1, sticky="w"
+    )
+    tk.Label(measure_frame, text="Comb Score:").grid(row=15, column=0, sticky="e")
+    tk.Label(measure_frame, textvariable=stream_comb_var).grid(
+        row=15, column=1, sticky="w"
+    )
+    tk.Label(measure_frame, text="Focus Pred:").grid(row=16, column=0, sticky="e")
+    tk.Label(measure_frame, textvariable=stream_focus_var).grid(
+        row=16, column=1, sticky="w"
+    )
+    tk.Label(measure_frame, text="Pitch Backlog:").grid(row=17, column=0, sticky="e")
+    tk.Label(measure_frame, textvariable=stream_pitch_backlog_var).grid(
+        row=17, column=1, sticky="w"
+    )
+    tk.Label(measure_frame, text="Rescue Queue:").grid(row=18, column=0, sticky="e")
+    tk.Label(measure_frame, textvariable=stream_rescue_queue_var).grid(
+        row=18, column=1, sticky="w"
     )
 
     tk.Label(measure_frame, text="Clear Range:").grid(row=5, column=0, sticky="e")
@@ -386,6 +421,7 @@ def _create_widgets(
 
     widgets = GUIWidgets(
         entry_apa=entry_apa,
+        measurement_mode_var=measurement_mode_var,
         layer_var=layer_var,
         side_var=side_var,
         flipped_var=flipped_var,
@@ -407,6 +443,11 @@ def _create_widgets(
         entry_set_tension=entry_set_tension,
         focus_slider=focus_slider,
         entry_xy=entry_xy,
+        stream_segment_var=stream_segment_var,
+        stream_comb_var=stream_comb_var,
+        stream_focus_var=stream_focus_var,
+        stream_pitch_backlog_var=stream_pitch_backlog_var,
+        stream_rescue_queue_var=stream_rescue_queue_var,
     )
 
     buttons = {

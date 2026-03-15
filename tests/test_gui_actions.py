@@ -164,6 +164,38 @@ def test_create_tensiometer_uses_context_runtime_bundle(monkeypatch):
     assert build_calls[0]["runtime_bundle"] is runtime
 
 
+def test_measure_calibrate_dispatches_to_streaming_controller(monkeypatch):
+    actions = _load_actions_module(monkeypatch)
+    monkeypatch.setattr(actions, "save_state", lambda _ctx: None)
+
+    inputs = types.SimpleNamespace(
+        measurement_mode="stream_rescue",
+        wire_number="7",
+    )
+    monkeypatch.setattr(actions, "_capture_worker_inputs", lambda _ctx: inputs)
+
+    calls = []
+    monkeypatch.setattr(
+        actions,
+        "_run_streaming_for_wires",
+        lambda _ctx, stream_inputs, wire_numbers: calls.append(
+            (stream_inputs.measurement_mode, wire_numbers)
+        ),
+    )
+
+    ctx = types.SimpleNamespace(
+        stop_event=threading.Event(),
+        measurement_lock=threading.Lock(),
+        measurement_active=False,
+        active_measurement_name="",
+    )
+
+    actions.measure_calibrate(ctx)
+
+    assert _wait_for(lambda: len(calls) == 1)
+    assert calls == [("stream_rescue", [7])]
+
+
 def test_erase_distribution_outliers_uses_bulk_detector(monkeypatch):
     actions = _load_actions_module(monkeypatch)
 

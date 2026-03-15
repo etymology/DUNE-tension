@@ -89,6 +89,44 @@ class StreamingControllerConfig:
         )
 
 
+def build_corridors_for_wire_numbers(
+    *,
+    provider,
+    apa_name: str,
+    layer: str,
+    side: str,
+    flipped: bool,
+    wire_numbers: Iterable[int],
+    extent_mm: float = 1.0,
+    speed_mm_s: float = 5.0,
+) -> list[SweepCorridor]:
+    direction = provider.wire_direction(layer=layer, side=side, flipped=flipped)
+    dx = float(direction[0]) * float(extent_mm)
+    dy = float(direction[1]) * float(extent_mm)
+    corridors: list[SweepCorridor] = []
+    for wire_number in sorted({int(wire) for wire in wire_numbers}):
+        xy = provider.get_true_position(
+            apa_name=apa_name,
+            layer=layer,
+            side=side,
+            flipped=flipped,
+            wire_number=wire_number,
+        )
+        if xy is None:
+            continue
+        corridors.append(
+            SweepCorridor(
+                corridor_id=f"wire-{wire_number}",
+                x0=float(xy[0]) - dx,
+                y0=float(xy[1]) - dy,
+                x1=float(xy[0]) + dx,
+                y1=float(xy[1]) + dy,
+                speed_mm_s=float(speed_mm_s),
+            )
+        )
+    return corridors
+
+
 class StreamingMeasurementController:
     """Headless controller for sweep and rescue streaming runs."""
 
@@ -98,10 +136,12 @@ class StreamingMeasurementController:
         runtime: MeasurementRuntime,
         config: StreamingControllerConfig,
         status_callback: Callable[[dict[str, object]], None] | None = None,
+        stop_event: threading.Event | None = None,
     ) -> None:
         self.runtime = runtime
         self.config = config
         self.status_callback = status_callback or (lambda _payload: None)
+        self.stop_event = stop_event or threading.Event()
         self.analysis = FastFrameAnalyzer(config.analysis_config())
         self.pitch_worker = AsyncPitchWorker(
             sample_rate=self.config.sample_rate,
@@ -146,6 +186,8 @@ class StreamingMeasurementController:
         next_pulse = start_time
         index = 0
         while not stop_event.is_set():
+            if self.stop_event.is_set():
+                return
             now = self.runtime.clock()
             if now >= end_time:
                 return
@@ -186,6 +228,10 @@ class StreamingMeasurementController:
             )
             pitch_bin = self.evidence_field.observe(observation)
             self._active_repo.upsert_pitch_bin(pitch_bin)
+            self._notify(
+                comb_score=float(completed.job.max_comb_score),
+                focus_prediction=float(completed.job.window.pose_center.focus_reference),
+            )
 
     def _corridor_segment(
         self,
@@ -284,6 +330,11 @@ class StreamingMeasurementController:
             for window in windows:
                 repo.append_voiced_window(window.window)
                 self.pitch_worker.submit(window)
+            if frames:
+                self._notify(
+                    comb_score=max(float(frame.comb_score) for frame in frames),
+                    pitch_backlog=len(windows),
+                )
 
     def _coherence_score(self, points, direction, competitors) -> float:
         if len(points) < 2:
@@ -457,6 +508,8 @@ class StreamingMeasurementController:
         queued_for_rescue: list[int] = []
         try:
             for index, corridor in enumerate(corridor_list):
+                if self.stop_event.is_set():
+                    break
                 segment, x_stage0, y0, x_stage1, y1 = self._corridor_segment(
                     corridor=corridor,
                     segment_index=index,
@@ -544,6 +597,11 @@ class StreamingMeasurementController:
                     )
                 repo.upsert_wire_candidate(candidate)
 
+            self._notify(
+                rescue_queue_depth=len(queued_for_rescue),
+                candidate_count=len(candidates),
+            )
+
             return {
                 "session_id": repo.session_id,
                 "accepted_wires": [result.wire_number for result in accepted_results],
@@ -600,6 +658,8 @@ class StreamingMeasurementController:
         best_candidate: WireCandidate | None = None
         try:
             for trial_index, (along_offset, focus_offset) in enumerate(trials):
+                if self.stop_event.is_set():
+                    break
                 x_laser = float(x_target) + (float(direction[0]) * float(along_offset))
                 y_laser = float(y_target) + (float(direction[1]) * float(along_offset))
                 focus_reference = self.runtime.focus_plane.predict(x_laser, y_laser, clamp=False)
@@ -690,3 +750,6 @@ class StreamingMeasurementController:
             repo.close()
             self._active_repo = None
             self._active_session_id = None
+
+    def close(self) -> None:
+        self.pitch_worker.stop()
