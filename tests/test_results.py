@@ -1,38 +1,52 @@
-import sys
-import types
-from pathlib import Path
+from __future__ import annotations
 
-# Ensure src is on path
+from datetime import datetime
+from pathlib import Path
+import sys
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-# Minimal numpy stub
-numpy_stub = types.ModuleType("numpy")
-numpy_stub.std = lambda arr: 0.0
-sys.modules.setdefault("numpy", numpy_stub)
-
-# geometry stub raising ValueError for length lookup
-geo_stub = types.ModuleType("geometry")
-geo_stub.zone_lookup = lambda x: 1
+import dune_tension.results as results_module
+from dune_tension.results import TensionResult, derive_tension_fields
 
 
-def _raise(*_a, **_k):
-    raise ValueError("bad")
+def test_derive_tension_fields_defaults_when_geometry_fails(monkeypatch) -> None:
+    monkeypatch.setattr(results_module, "zone_lookup", lambda _x: 1)
+
+    def _raise(*_args, **_kwargs):
+        raise ValueError("bad")
+
+    monkeypatch.setattr(results_module, "length_lookup", _raise)
+
+    derived = derive_tension_fields(
+        layer="U",
+        wire_number=1,
+        frequency=10.0,
+        x=0.0,
+    )
+
+    assert derived.zone == 1
+    assert derived.wire_length == 0.0
+    assert derived.tension == 0.0
+    assert derived.tension_pass is False
 
 
-geo_stub.length_lookup = _raise
-sys.modules["geometry"] = geo_stub
+def test_tension_result_from_measurement_populates_derived_fields(monkeypatch) -> None:
+    monkeypatch.setattr(results_module, "zone_lookup", lambda _x: 2)
+    monkeypatch.setattr(
+        results_module,
+        "length_lookup",
+        lambda _layer, _wire, _zone, taped=False: 1.5,
+    )
+    monkeypatch.setattr(
+        results_module,
+        "wire_equation",
+        lambda length, frequency: {"tension": 6.0, "frequency": frequency},
+    )
+    monkeypatch.setattr(results_module, "tension_pass", lambda _tension, _length: True)
 
-# tension_calculation stub
-tc_stub = types.ModuleType("tension_calculation")
-tc_stub.tension_lookup = lambda length, frequency: 0.0
-tc_stub.tension_pass = lambda tension, length: True
-sys.modules["tension_calculation"] = tc_stub
-
-from dune_tension.results import TensionResult  # noqa: E402
-
-
-def test_value_error_defaults():
-    res = TensionResult(
+    timestamp = datetime(2026, 3, 15, 12, 0, 0)
+    result = TensionResult.from_measurement(
         apa_name="APA",
         layer="U",
         side="A",
@@ -41,7 +55,11 @@ def test_value_error_defaults():
         confidence=0.5,
         x=0.0,
         y=0.0,
+        time=timestamp,
     )
-    assert res.wire_length == 0
-    assert res.tension == 0
-    assert res.tension_pass is False
+
+    assert result.time is timestamp
+    assert result.zone == 2
+    assert result.wire_length == 1.5
+    assert result.tension == 6.0
+    assert result.tension_pass is True

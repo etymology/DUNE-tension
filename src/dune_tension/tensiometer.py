@@ -676,11 +676,10 @@ class Tensiometer:
                     wire_equation(length=length, frequency=frequency),
                     confidence,
                 )
-                wire_result = TensionResult(
+                wire_result = TensionResult.from_measurement(
                     apa_name=self.config.apa_name,
                     layer=self.config.layer,
                     side=self.config.side,
-                    taped=self._is_current_side_taped(),
                     wire_number=wire_number,
                     frequency=frequency,
                     confidence=confidence,
@@ -688,6 +687,7 @@ class Tensiometer:
                     y=y,
                     focus_position=self._get_focus_position(),
                     time=self._now(),
+                    taped=self._is_current_side_taped(),
                 )
                 self.repository.append_sample(wire_result)
 
@@ -759,11 +759,10 @@ class Tensiometer:
                 wire_x,
                 wire_y,
             )
-            return TensionResult(
+            return TensionResult.from_measurement(
                 apa_name=self.config.apa_name,
                 layer=self.config.layer,
                 side=self.config.side,
-                taped=self._is_current_side_taped(),
                 wire_number=wire_number,
                 frequency=0.0,
                 confidence=0.0,
@@ -771,6 +770,7 @@ class Tensiometer:
                 y=wire_y,
                 focus_position=self._get_focus_position(),
                 time=self._now(),
+                taped=self._is_current_side_taped(),
             )
         start_time = self._time()
         try:

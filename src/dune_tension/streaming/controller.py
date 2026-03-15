@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import datetime
 import logging
 import math
 from pathlib import Path
@@ -440,7 +441,7 @@ class StreamingMeasurementController:
     def _persist_final_result(self, candidate: WireCandidate, measurement_mode: str) -> TensionResult:
         avg_frequency = float(np.average(candidate.pitch_estimates, weights=np.maximum(candidate.pitch_confidences, 1e-6)))
         avg_confidence = float(np.mean(candidate.pitch_confidences))
-        result = TensionResult(
+        result = TensionResult.from_measurement(
             apa_name=self.config.apa_name,
             layer=self.config.layer,
             side=self.config.side,
@@ -449,6 +450,7 @@ class StreamingMeasurementController:
             confidence=avg_confidence,
             x=float(candidate.best_pose.x_laser),
             y=float(candidate.best_pose.y_true),
+            time=datetime.now(),
             focus_position=int(round(candidate.best_pose.focus)),
             measurement_mode=measurement_mode,
             stream_session_id=self._active_session_id,

@@ -80,7 +80,7 @@ def migrate_csvs(
         for _, row in df.iterrows():
             time_val = parse_time(str(row.get("time", "")))
 
-            tr = TensionResult(
+            tr = TensionResult.from_measurement(
                 apa_name=apa_name,
                 layer=layer,
                 side=str(row.get("side", "")),

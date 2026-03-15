@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 import math
 import sqlite3
 import sys
@@ -29,7 +30,7 @@ from spectrum_analysis.comb_trigger import harmonic_comb_response
 
 
 def test_tension_result_defaults_to_legacy_measurement_mode() -> None:
-    result = TensionResult(
+    result = TensionResult.from_measurement(
         apa_name="APA",
         layer="X",
         side="A",
@@ -38,6 +39,7 @@ def test_tension_result_defaults_to_legacy_measurement_mode() -> None:
         confidence=0.8,
         x=1.0,
         y=2.0,
+        time=datetime(2026, 3, 15, 12, 0, 0),
     )
 
     assert result.measurement_mode == "legacy"

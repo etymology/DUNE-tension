@@ -142,6 +142,10 @@ class _Dummy:
         self.wire_length = 1.0
         self.t_sigma = _std(self.wires) if self.wires else 0.0
 
+    @classmethod
+    def from_measurement(cls, **kwargs):
+        return cls(**kwargs)
+
 
 results_stub.TensionResult = _Dummy
 results_stub.RawSample = _Dummy
