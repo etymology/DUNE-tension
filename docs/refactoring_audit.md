@@ -2,274 +2,359 @@
 
 ## Scope
 
-This audit focuses on the current `dune_tension` runtime path for measurement, persistence, and GUI orchestration, with secondary attention to legacy modules that still affect maintainability and tests.
+This audit covers the current `dune_tension` runtime for measurement, persistence,
+and GUI orchestration, plus the test and compatibility layers that now shape how
+easy the package is to refactor.
 
-Primary files reviewed:
+Primary code paths reviewed:
 
+- `src/dune_tension/main.py`
 - `src/dune_tension/tensiometer.py`
 - `src/dune_tension/tensiometer_functions.py`
-- `src/dune_tension/data_cache.py`
 - `src/dune_tension/services.py`
+- `src/dune_tension/data_cache.py`
 - `src/dune_tension/results.py`
+- `src/dune_tension/gui/app.py`
+- `src/dune_tension/gui/actions.py`
 - `src/dune_tension/gui/context.py`
+- `src/dune_tension/gui/live_plots.py`
+- `src/dune_tension/summaries.py`
 - `src/dune_tension/audioProcessing.py`
 - `src/spectrum_analysis/audio_processing.py`
 - `src/spectrum_analysis/pesto_analysis.py`
 - `tests/test_tensiometer.py`
+- `tests/test_tensiometer_functions.py`
+- `tests/test_tensiometer_live_callbacks.py`
+- `tests/test_gui_actions.py`
+- `tests/test_motion_position_sources.py`
+- `tests/test_data_cache.py`
 - `tests/test_main_dependencies.py`
 
-## Summary
+## What Changed Since the Last Audit
 
-The package has already moved in a better direction in a few places. `src/dune_tension/main.py` is now a thin entry point, the GUI is split into focused modules, and the newer `spectrum_analysis` code is noticeably easier to reason about than older `dune_tension.audioProcessing`.
+The codebase has moved into an intermediate state. The runtime is not fully
+decoupled, but several worthwhile seams already exist and should be treated as
+real architecture, not just temporary cleanup.
 
-The main remaining problems are:
+### Already Landed
 
-1. The measurement path still mixes orchestration, hardware access, persistence, and retry policy in one class.
-2. The hottest loops still do repeated DataFrame work and per-row SQLite writes.
-3. Tests often have to stub entire modules through `sys.modules`, which is a strong signal that dependency boundaries are still too implicit.
-4. Legacy fallback import patterns keep production code tolerant of many shapes, but they make the codebase harder to simplify and verify.
+- `src/dune_tension/main.py` is now only a thin GUI entrypoint that delegates to
+  `dune_tension.gui.run_app`.
+- GUI responsibilities are now split across focused modules:
+  `gui/app.py`, `gui/actions.py`, `gui/context.py`, `gui/live_plots.py`, and
+  `gui/state.py`.
+- Measurement planning is no longer duplicated inline. The shared planner
+  `tensiometer_functions.plan_measurement_triplets(...)` is now used by both
+  `Tensiometer.measure_auto()` and `tensiometer_functions.measure_list(...)`.
+- Motion lookup now prefers cached PLC position in two places:
+  `services.MotionService.build(...)` and `gui.context._resolve_plc_functions()`.
+- Persistence already distinguishes between final summary rows and per-sample
+  rows via the `tension_data` and `tension_samples` SQLite tables in
+  `data_cache.py`.
 
-## Highest-Value Refactors
+### Partial Seams That Exist but Are Not Finished
 
-### 1. Cache coordinate lookups per run instead of rebuilding them per wire
+- `services.MotionService`, `services.AudioCaptureService`, and
+  `services.ResultRepository` are real adapters, but `Tensiometer.__init__()`
+  still constructs them internally instead of receiving them from a runtime
+  assembly layer.
+- `gui.actions.WorkerInputs`, `gui.actions._capture_worker_inputs()`, and
+  `gui.actions.create_tensiometer(ctx, inputs)` are useful seams for GUI-driven
+  measurement setup, but bootstrap and environment resolution are still spread
+  across both `gui.actions` and `gui.context`.
+- `Tensiometer(..., audio_sample_callback=..., summary_refresh_callback=...)`
+  exposes meaningful observer hooks, but those callbacks do not yet make the
+  measurement loop fully injectable or easy to simulate end-to-end.
 
-`get_xy_from_file()` reloads cached measurement data, filters by APA and layer, filters again by side, sorts by time, drops duplicates, sorts by wire number, and only then finds the closest wire on every call (`src/dune_tension/tensiometer_functions.py:94-148`).
+## Current Public Seams Worth Preserving
 
-That work is repeated from:
+These interfaces are already valuable and should be preserved or formalized
+rather than accidentally re-inlined during future refactors:
 
-- `Tensiometer.measure_auto()` for every missing wire (`src/dune_tension/tensiometer.py:240-284`)
-- `measure_list()` for every requested wire (`src/dune_tension/tensiometer_functions.py:188-240`)
+- `gui.actions.WorkerInputs`
+- `gui.actions.create_tensiometer(ctx, inputs)`
+- `tensiometer_functions.plan_measurement_triplets(...)`
+- `services.MotionService`
+- `services.AudioCaptureService`
+- `services.ResultRepository`
+- `Tensiometer(..., audio_sample_callback=..., summary_refresh_callback=...)`
 
-Why this matters:
+## Highest-Value Remaining Refactors
 
-- For long measurement runs, this turns coordinate lookup into repeated `pandas` reshaping work.
-- The algorithm is effectively `O(number_of_requests * dataframe_cleanup)` when the cleanup result is mostly invariant for a given APA/layer/side.
-- It also makes coordinate logic harder to test in isolation because the lookup logic is coupled directly to the global database accessor.
+### 1. Planner extraction is done, but coordinate lookup is still the hot-path bottleneck
+
+The measurement planner is now centralized in
+`tensiometer_functions.plan_measurement_triplets(...)`, which is a real
+improvement. The remaining issue is that `tensiometer_functions.get_xy_from_file()`
+still reloads cached measurement data, filters by APA and layer, filters again by
+side, sorts by time, drops duplicates, sorts by wire number, and only then finds
+the closest wire on every call.
+
+That repeated cleanup still happens once per requested wire from both the auto and
+list flows. The expensive part is no longer the planner itself; it is the
+per-wire DataFrame reconstruction under the planner.
 
 Recommended refactor:
 
-- Introduce a `WirePositionProvider` that precomputes the latest per-wire position series once per `(apa_name, layer, side, flipped)` context.
-- Build the provider at the start of `measure_auto()` and `measure_list()`.
-- Expose a pure `get_position_for_wire(wire_number)` method that works on already-normalized arrays.
-- Keep `refine_position()` separate so it can be tested independently.
+- Introduce a cached `WirePositionProvider` keyed by
+  `(apa_name, layer, side, flipped)`.
+- Precompute the latest valid per-wire positions once per run.
+- Use the provider from both `Tensiometer.measure_auto()` and the shared list
+  measurement path.
+- Keep the geometric refinement step separate so it remains testable.
 
 Expected impact:
 
-- Faster automatic runs.
-- Less repeated DataFrame churn.
-- Straightforward unit tests using in-memory data instead of stubbing `data_cache`.
+- Lower repeated `pandas` churn during long runs.
+- Cleaner tests for coordinate lookup using small synthetic inputs.
+- A better separation between planning and historical-data normalization.
 
-### 2. Replace per-row SQLite writes and DataFrame cache copies with batched persistence
+### 2. SQLite table split is done, but batching and cache invalidation are still missing
 
-Every sample and final result is appended individually through `ResultRepository` (`src/dune_tension/services.py:136-148`), which ends up in `_append_row()` (`src/dune_tension/data_cache.py:100-118`).
+`data_cache.py` now stores summary rows and sample rows separately, and
+`ResultRepository.append_result()` / `append_sample()` reflect that split. That is
+real progress compared with the older single-table shape.
 
-Current behavior per append:
+The remaining hot-path problem is still in `data_cache._append_row()`:
 
-- Open a new SQLite connection.
-- Ensure table schemas exist.
-- Execute one insert.
-- Commit immediately.
-- Copy the full cached DataFrame and append one row in memory.
-
-Why this matters:
-
-- Sample collection is in the hot path (`src/dune_tension/tensiometer.py:347-394`).
-- Opening and committing SQLite transactions per row adds avoidable I/O overhead.
-- Copying the whole cached DataFrame on every append becomes increasingly expensive as the database grows.
+- a new SQLite connection is opened for every row
+- table existence and schema are rechecked on every append
+- each row is committed immediately
+- the in-process DataFrame cache is copied and extended on every append
 
 Recommended refactor:
 
-- Add a write-through repository with an explicit connection lifetime or transaction scope per measurement run.
-- Buffer raw samples per wire and flush them with `executemany`.
-- Either remove the in-process DataFrame cache for append-heavy paths or switch it to append-only invalidation instead of full-copy updates.
-- Separate read models from write models: SQLite for writes, query helpers for reads.
+- Give `ResultRepository` an explicit connection or transaction scope for one
+  measurement run.
+- Buffer sample rows and flush them with `executemany`.
+- Replace full-copy cache updates with cheaper invalidation or append-aware cache
+  maintenance.
+- Keep read helpers separate from append-heavy write paths.
 
 Expected impact:
 
-- Lower measurement latency during sampling.
-- Better scaling as the DB grows.
-- Cleaner repository tests around transaction boundaries and error handling.
+- Lower latency in the sampling loop.
+- Less avoidable I/O and less DataFrame copying as the DB grows.
+- Repository tests that can focus on transaction boundaries instead of repeated
+  singleton writes.
 
-### 3. Split `Tensiometer` into orchestration plus injectable adapters
+### 3. Adapter wrappers exist, but `Tensiometer` still owns too much runtime assembly
 
-`Tensiometer` currently constructs its own config, motion service, audio service, repository, and uses global helper functions for audio acquisition and pitch estimation (`src/dune_tension/tensiometer.py:84-135`, `src/dune_tension/tensiometer.py:66-81`).
+`Tensiometer` is no longer reaching directly into every legacy module for every
+operation; it now uses `MotionService`, `AudioCaptureService`, `ResultRepository`,
+and observer callbacks. That makes the class easier to reason about than before.
 
-It also owns:
+Even so, `Tensiometer` still creates its own config, services, repository, and
+core runtime behavior in one place. It still owns:
 
-- hardware movement
+- runtime assembly
 - stop-event handling
-- sampling retry policy
-- sample/result persistence
-- ETA reporting
-- wire selection flow
-
-Why this matters:
-
-- The class has too many reasons to change.
-- Unit tests currently need broad monkeypatching because collaborators are implicit globals.
-- It is difficult to benchmark or simulate the measurement loop without patching module-level functions.
+- optimizer and retry policy
+- sample persistence
+- final-result persistence
+- ETA updates
+- measurement loop orchestration
 
 Recommended refactor:
 
-- Keep `Tensiometer` as the workflow coordinator only.
-- Inject these collaborators explicitly:
-  - `motion`
-  - `audio_capture`
-  - `pitch_estimator`
-  - `result_repository`
-  - `position_provider`
-  - `clock` / `now`
-  - `random_source` or `wiggle_policy`
-- Move object construction into a factory such as `build_tensiometer(...)` used by the GUI.
+- Keep `Tensiometer` as the workflow coordinator.
+- Move construction into an explicit runtime factory such as
+  `build_tensiometer(...)` or a `RuntimeBundle`.
+- Inject motion, audio capture, pitch estimation, persistence, position lookup,
+  and time/random helpers explicitly.
+- Reuse the same runtime assembly path from the GUI instead of resolving pieces in
+  multiple layers.
 
 Expected impact:
 
-- Smaller tests with fake objects instead of `sys.modules` hacks.
-- Easier profiling of just the measurement loop.
-- Better control over timing-sensitive code in tests.
+- Smaller tests with local fakes instead of global import surgery.
+- Cleaner separation between workflow code and environment bootstrap.
+- Easier profiling and simulation of the measurement loop.
 
-### 4. Make `TensionResult` a data object, not a calculation container
+### 4. `TensionResult` is still an impure data object, and a stale CSV path remains visible
 
-`TensionResult.__post_init__()` computes zone, wire length, tension, pass/fail, and default timestamp (`src/dune_tension/results.py:12-43`).
+`results.TensionResult.__post_init__()` still computes zone, wire length,
+tension, pass/fail, and a default timestamp. That keeps geometry and tension
+calculation logic entangled with what is otherwise acting like a persisted record.
 
-Why this matters:
-
-- Simple object creation pulls in geometry and tension logic.
-- Derived values depend on runtime lookups, which makes the model impure.
-- Tests that want to build a result object for one purpose end up implicitly testing geometry and physics rules too.
+There is now a second stale signal in the same area:
+`Tensiometer.load_tension_summary()` still assumes `config.data_path` points to a
+CSV with `A` and `B` columns, but `tensiometer_functions.make_config()` now
+hardcodes the runtime data path to the SQLite database
+`data/tension_data/tension_data.db`.
 
 Recommended refactor:
 
-- Convert `TensionResult` into a plain persisted record.
-- Create a separate pure function or builder, for example `derive_tension_result(...)`, to compute `zone`, `wire_length`, `tension`, and `tension_pass`.
-- Pass timestamps explicitly from the caller instead of defaulting with `datetime.now()`.
+- Convert `TensionResult` into a plain persisted record or split creation into a
+  pure derivation function plus a data container.
+- Pass timestamps explicitly from callers.
+- Remove or rewrite `Tensiometer.load_tension_summary()` so it matches the actual
+  SQLite-backed summary model.
 
 Expected impact:
 
-- Better separation between domain calculations and storage schema.
-- Simpler fixtures in unit tests.
-- Fewer surprises when constructing objects for UI or repository code.
+- Simpler fixtures and fewer hidden calculations during object construction.
+- Removal of a stale CSV-era code path that no longer matches the runtime.
+- Clearer boundaries between domain math and storage schema.
 
-## Testability Findings
+### 5. GUI bootstrap is cleaner, but hardware and environment resolution are still too deep in the GUI layer
 
-### 5. Tests still need module-level stubbing to import core code
+The GUI now has a much cleaner structure than the earlier single-file shape. The
+remaining issue is specifically where runtime dependencies are still assembled.
 
-`tests/test_tensiometer.py` replaces `numpy`, `pandas`, `geometry`, `tension_calculation`, `audioProcessing`, `plc_io`, `data_cache`, `results`, and `tensiometer_functions` via `sys.modules` before import (`tests/test_tensiometer.py:1-170`).
-
-`tests/test_main_dependencies.py` does similar broad import-time stubbing for `tkinter`, `serial`, and old module names (`tests/test_main_dependencies.py:1-136`).
-
-This is the clearest evidence that production dependencies are not explicit enough.
-
-Recommended refactor:
-
-- Remove fallback imports that support alternate top-level module names once migration is complete.
-- Depend on explicit interfaces passed at construction time.
-- Keep import-time side effects minimal so modules can be imported without fake hardware modules installed.
-
-Target outcome:
-
-- Tests use local fakes and temporary SQLite files instead of global import surgery.
-- CI failures become easier to interpret because they fail at object boundaries, not import order.
-
-### 6. GUI context still constructs hardware at creation time
-
-`create_context()` creates the servo controller, valve controller, and PLC functions directly (`src/dune_tension/gui/context.py:142-174`). The helper functions also read environment variables to pick live versus spoofed hardware (`src/dune_tension/gui/context.py:92-139`).
-
-Why this matters:
-
-- GUI tests must simulate environment state instead of simply passing collaborators.
-- Importing the GUI stack is still coupled to hardware-oriented modules such as `valve_trigger`.
-- The GUI is harder to run in alternate environments like headless integration tests.
+`gui.context.create_context(...)` still constructs the servo controller, tries to
+construct the valve controller, and resolves live-vs-spoof PLC functions from
+environment variables. `gui.actions.create_tensiometer(...)` still resolves
+`SPOOF_AUDIO` and `SPOOF_PLC` while building the measurement runtime.
 
 Recommended refactor:
 
-- Introduce a `HardwareBundle` or `RuntimeServices` object built in one place.
-- Let `create_context()` accept those services as optional parameters.
-- Keep environment-variable resolution in a top-level bootstrap layer only.
+- Move environment-variable resolution to one outer bootstrap layer.
+- Build a single `RuntimeBundle` or equivalent object for motion, audio, valve,
+  servo, and persistence services.
+- Let `create_context(...)` and `create_tensiometer(...)` receive already-built
+  collaborators instead of deciding how to construct them.
 
-## Lower-Priority Cleanup
+Expected impact:
 
-### 7. Legacy `audioProcessing.py` should be quarantined or retired
+- GUI code that is easier to run in headless or semi-spoofed environments.
+- Cleaner separation between Tk wiring and hardware/runtime assembly.
+- More direct GUI tests that do not need to simulate environment state.
 
-The current measurement path uses `spectrum_analysis.audio_processing.acquire_audio()` and `spectrum_analysis.pesto_analysis.estimate_pitch_from_audio()` through lazy imports in `tensiometer.py` (`src/dune_tension/tensiometer.py:66-81`).
+## Test Suite Realignment
 
-However, `dune_tension.audioProcessing.py` still contains overlapping functionality and some library-hostile behavior such as `exit(1)` in `get_samplerate()` (`src/dune_tension/audioProcessing.py:488-510`).
+The test suite now shows both the progress that has been made and the remaining
+architectural debt.
 
-Why this matters:
+### Focused seam tests that should be expanded
 
-- Duplicate runtime paths increase maintenance cost.
-- Process exit inside a library helper makes testing and embedding harder.
-- `services.AudioCaptureService` still depends on this older module (`src/dune_tension/services.py:36-44`, `src/dune_tension/services.py:100-133`).
+Newer tests already target specific seams instead of monolithic import-time
+behavior:
 
-Recommended refactor:
+- `tests/test_tensiometer_functions.py` covers
+  `plan_measurement_triplets(...)` and the shared planner output used by list
+  measurement.
+- `tests/test_tensiometer_live_callbacks.py` covers
+  `audio_sample_callback` and `summary_refresh_callback`.
+- `tests/test_gui_actions.py` covers worker-thread serialization and GUI action
+  seams such as list filtering and cleanup helpers.
+- `tests/test_motion_position_sources.py` covers cached PLC position selection.
+- `tests/test_data_cache.py` covers DB schema migration and split-table behavior.
 
-- Decide whether `dune_tension.audioProcessing` is still authoritative.
-- If not, move remaining required functionality into `spectrum_analysis` or a small dedicated audio adapter module.
-- Replace `exit(1)` with an exception.
+These tests align with the current architecture and should be the model for
+future refactors.
 
-### 8. Compatibility fallbacks should be removed after migration
+### Older import-surgery tests that now distort the architecture
 
-Several modules still support both package-qualified imports and old top-level imports:
+`tests/test_tensiometer.py` still replaces broad dependency sets through
+`sys.modules` before import. That remains a strong signal that the production
+dependency graph is still too implicit.
 
-- `src/dune_tension/tensiometer.py:11-43`
-- `src/dune_tension/services.py:8-20`
-- `src/dune_tension/results.py:4-9`
-- `src/dune_tension/tensiometer_functions.py:8-11`
+`tests/test_main_dependencies.py` now appears stale against the current package
+shape. It imports `dune_tension.main` but still expects GUI/bootstrap behaviors
+that now live elsewhere, such as `create_tensiometer()` and other GUI-oriented
+helpers. This file should be replaced with package-native GUI bootstrap tests that
+target `gui.app.run_app(...)`, `gui.context.create_context(...)`, and the action
+layer directly.
 
-Why this matters:
+Recommended test workstream:
 
-- It hides dependency failures.
-- It increases the number of code paths tests must account for.
-- It encourages tests to rely on pre-import module patching instead of stable interfaces.
+- Replace stale `main.py` tests with tests against the current GUI entrypoint and
+  bootstrap modules.
+- Shrink `sys.modules`-heavy tensiometer tests as collaborators become injectable.
+- Add focused tests for a future `WirePositionProvider`.
+- Add repository tests for batched inserts and read-after-write behavior under a
+  shared transaction scope.
 
-Recommended refactor:
+## Legacy Path Removal
 
-- Remove compatibility imports once the package layout is final.
-- Keep one import path and one runtime shape.
+The remaining cleanup work is no longer just about code style. There are still
+multiple runtime shapes coexisting in the package.
 
-## Positive Patterns Worth Reusing
+### Split audio stack
 
-Two modules already show the direction the rest of the package should follow:
+The active measurement flow now uses `spectrum_analysis.audio_processing` and
+`spectrum_analysis.pesto_analysis` through lazy imports in `tensiometer.py`, but
+`services.AudioCaptureService` and GUI calibration paths still depend on
+`dune_tension.audioProcessing`.
 
-- `src/spectrum_analysis/pesto_analysis.py:29-143` keeps runtime dependency loading, model caching, and pitch estimation reasonably isolated.
-- `src/spectrum_analysis/audio_processing.py:379-471` cleanly separates file input, RMS-trigger capture, harmonic-comb fallback, and noise handling.
+That split increases maintenance cost and keeps older library-hostile behavior
+alive, including process-oriented failure handling inside the older audio module.
 
-These modules are not perfect, but they are closer to explicit, composable units than the older `dune_tension` runtime path.
+Recommended cleanup:
 
-## Suggested Refactor Order
+- Decide on one authoritative audio stack.
+- Move any remaining required functionality into a small dedicated adapter layer.
+- Retire or isolate `dune_tension.audioProcessing` once the active runtime no
+  longer needs it.
 
-### Phase 1: Improve seams without changing behavior
+### Compatibility fallbacks
 
-- Add constructor injection to `Tensiometer`.
-- Add a position-provider abstraction.
-- Move timestamp and tension derivation out of `TensionResult`.
-- Convert GUI bootstrap to assemble dependencies once.
+Several modules still support both package-qualified imports and old top-level
+imports, including `tensiometer.py`, `services.py`, `results.py`,
+`tensiometer_functions.py`, and `summaries.py`.
 
-### Phase 2: Fix hot-path performance
+Those fallbacks were useful during migration, but they now:
 
-- Batch SQLite inserts.
-- Stop copying cached DataFrames on every append.
-- Precompute normalized latest-wire positions per run.
+- hide dependency failures
+- enlarge the number of runtime shapes that tests must support
+- encourage tests to patch global module state rather than use explicit
+  collaborators
 
-### Phase 3: Simplify package shape
+Recommended cleanup:
 
-- Remove legacy import fallbacks.
-- Retire or isolate `dune_tension.audioProcessing`.
-- Keep environment-variable logic at the outer bootstrap layer only.
+- Remove package-vs-top-level fallback imports once the remaining legacy tests are
+  replaced.
+- Keep one canonical import path and one runtime shape.
 
-### Phase 4: Expand targeted tests
+### Stale CSV-era helpers
 
-- Add unit tests for the measurement retry loop using fake motion, audio, repository, and clock objects.
-- Add repository tests for batched inserts and read-after-write behavior.
-- Add position-provider tests from small synthetic DataFrames.
-- Add a benchmark for `measure_auto()` setup time and append throughput.
+Not all CSV-era assumptions are gone. The stale `Tensiometer.load_tension_summary()`
+path is the clearest example because it no longer matches the SQLite-backed
+runtime. Similar helpers should either be rewritten around `summaries.py` or
+relocated into explicit migration utilities if they are only needed for old data
+flows.
 
-## Practical First Step
+## Recommended Refactor Order
 
-If only one refactor is started now, make it this:
+### Phase 1: extend the seams that already exist
 
-1. Introduce explicit dependency injection for `Tensiometer`.
-2. Build a cached `WirePositionProvider`.
-3. Add a batched SQLite repository.
+- Introduce a cached `WirePositionProvider`.
+- Add an explicit runtime bundle or `build_tensiometer(...)` factory.
+- Remove or rewrite the stale CSV summary path in `Tensiometer`.
 
-That combination addresses the largest current pain points in both performance and testability without requiring a full rewrite.
+### Phase 2: fix persistence hot paths
+
+- Add transaction-scoped repository behavior.
+- Batch sample and result inserts.
+- Replace full-copy cache updates with cheaper invalidation or append-aware logic.
+
+### Phase 3: consolidate bootstrap
+
+- Move environment resolution and hardware construction out of
+  `gui.context.create_context(...)`.
+- Share one runtime assembly path between GUI bootstrap and measurement runtime
+  construction.
+
+### Phase 4: modernize the tests
+
+- Replace stale `main.py` dependency tests.
+- Reduce broad `sys.modules` stubbing in tensiometer tests.
+- Add focused tests for injected collaborators, repository batching, and cached
+  wire-position lookup.
+
+### Phase 5: remove legacy paths
+
+- Collapse duplicate audio paths.
+- Remove compatibility import fallbacks after test migration.
+- Retire or relocate stale CSV-oriented helpers that no longer match the
+  SQLite-backed runtime.
+
+## Document Update Notes
+
+- This revision intentionally uses file and symbol references instead of brittle
+  line ranges.
+- The document reflects current code structure and intermediate refactor progress;
+  it does not assume that partial seams are complete.
+- Automated test execution could not be verified in this environment because
+  `pytest` was not installed in the available interpreters or the local `.venv`.
