@@ -1,192 +1,96 @@
+from __future__ import annotations
+
+from contextlib import contextmanager
+from datetime import datetime
 import sys
-from pathlib import Path
-import sqlite3
-import types
 import time
+import types
+
 import pytest
 
-# Ensure src is on path
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-
-# ----- Stub external dependencies -----
-# Minimal numpy
-numpy_stub = types.ModuleType("numpy")
+import dune_tension.results as results_module
+import dune_tension.tensiometer as tensiometer_module
+from dune_tension.results import TensionResult
+from dune_tension.tensiometer import Tensiometer
 
 
-def _avg(lst):
-    return sum(lst) / len(lst) if lst else 0.0
+class DummyRepository:
+    def __init__(self) -> None:
+        self.samples: list[TensionResult] = []
+        self.results: list[TensionResult] = []
+
+    @contextmanager
+    def run_scope(self):
+        yield self
+
+    def append_sample(self, result: TensionResult) -> None:
+        self.samples.append(result)
+
+    def append_result(self, result: TensionResult) -> None:
+        self.results.append(result)
+
+    def close(self) -> None:
+        return None
 
 
-def _std(lst):
-    m = _avg(lst)
-    return (sum((x - m) ** 2 for x in lst) / len(lst)) ** 0.5 if lst else 0.0
+def _make_motion_service(start_x: float = 0.0, start_y: float = 0.0):
+    state = {"x": float(start_x), "y": float(start_y)}
+    moves: list[tuple[float, float]] = []
+
+    def get_xy() -> tuple[float, float]:
+        return state["x"], state["y"]
+
+    def goto_xy(x: float, y: float, **_kwargs) -> bool:
+        moves.append((x, y))
+        state["x"] = float(x)
+        state["y"] = float(y)
+        return True
+
+    return types.SimpleNamespace(
+        get_xy=get_xy,
+        goto_xy=goto_xy,
+        increment=lambda *_args, **_kwargs: None,
+        reset_plc=lambda *_args, **_kwargs: None,
+        set_speed=lambda *_args, **_kwargs: True,
+        moves=moves,
+        state=state,
+    )
 
 
-def _linspace(a, b, n):
-    if n == 1:
-        return [a]
-    step = (b - a) / (n - 1)
-    return [a + i * step for i in range(n)]
+def _make_audio_service(sample_rate: int = 8000):
+    return types.SimpleNamespace(
+        samplerate=sample_rate,
+        noise_threshold=0.0,
+        record_audio=lambda *_args, **_kwargs: ([], 0.0),
+    )
 
 
-def _argmax(lst):
-    return max(range(len(lst)), key=lambda i: lst[i])
+def _patch_result_physics(monkeypatch) -> None:
+    monkeypatch.setattr(results_module, "zone_lookup", lambda _x: 1)
+    monkeypatch.setattr(
+        results_module,
+        "length_lookup",
+        lambda _layer, _wire, _zone, taped=False: 1.0,
+    )
+    monkeypatch.setattr(
+        results_module,
+        "wire_equation",
+        lambda length, frequency: {"tension": float(frequency) * 0.1, "frequency": frequency},
+    )
+    monkeypatch.setattr(results_module, "tension_pass", lambda _tension, _length: True)
 
 
-numpy_stub.average = _avg
-numpy_stub.std = _std
-numpy_stub.linspace = _linspace
-numpy_stub.argmax = _argmax
-numpy_stub.bool_ = bool
-numpy_stub.isscalar = lambda x: not isinstance(x, (list, tuple))
-numpy_stub.savez = lambda *a, **k: None
-sys.modules["numpy"] = numpy_stub
-
-# Minimal pandas
-pandas_stub = types.ModuleType("pandas")
-
-
-class _Column(list):
-    def tolist(self):
-        return list(self)
-
-
-class _DataFrame:
-    def __init__(self, data):
-        self._data = {k: _Column(v) for k, v in data.items()}
-
-    def __getitem__(self, key):
-        return self._data[key]
-
-    @property
-    def columns(self):
-        return list(self._data.keys())
-
-
-def _read_csv(path):
-    p = Path(path)
-    if not p.exists():
-        raise FileNotFoundError(path)
-    lines = [line.strip() for line in p.read_text().splitlines() if line.strip()]
-    headers = lines[0].split(",")
-    cols = {h: [] for h in headers}
-    for line in lines[1:]:
-        for h, val in zip(headers, line.split(",")):
-            try:
-                cols[h].append(float(val))
-            except ValueError:
-                cols[h].append(val)
-    return _DataFrame(cols)
-
-
-pandas_stub.read_csv = _read_csv
-sys.modules["pandas"] = pandas_stub
-
-# geometry
-geo_stub = types.ModuleType("geometry")
-geo_stub.zone_lookup = lambda x: 1
-geo_stub.length_lookup = lambda layer, wire, zone, taped=False: 1.0
-geo_stub.refine_position = lambda layer, side, zone, wire: (0.0, 0.0)
-sys.modules["geometry"] = geo_stub
-
-# tension_calculation
-tc_stub = types.ModuleType("tension_calculation")
-tc_stub.calculate_kde_max = lambda freqs: max(freqs)
-tc_stub.tension_lookup = lambda length, frequency: frequency * 0.1
-tc_stub.tension_pass = lambda tension, length: True
-tc_stub.has_cluster = lambda data, key, n: data[:n] if len(data) >= n else []
-tc_stub.tension_plausible = lambda t: True
-sys.modules["tension_calculation"] = tc_stub
-
-# audioProcessing
-ap_stub = types.ModuleType("audioProcessing")
-ap_stub.get_samplerate = lambda: None
-ap_stub.spoof_audio_sample = lambda p: []
-ap_stub.analyze_sample = lambda sample, sr, length: (sr, 1.0, 2.0, True)
-ap_stub.get_noise_threshold = lambda: 0.0
-sys.modules["audioProcessing"] = ap_stub
-
-# plc_io
-plc_stub = types.ModuleType("plc_io")
-plc_stub.is_web_server_active = lambda: False
-plc_stub.spoof_get_xy = lambda: (0.0, 0.0)
-plc_stub.spoof_goto_xy = lambda x, y: True
-plc_stub.spoof_wiggle = lambda m: None
-plc_stub.increment = lambda x, y: None
-plc_stub.set_speed = lambda speed=100: True
-plc_stub.reset_plc = lambda: None
-sys.modules["plc_io"] = plc_stub
-
-# data_cache
-dc_stub = types.ModuleType("data_cache")
-dc_stub.get_dataframe = lambda path: None
-dc_stub.update_dataframe = lambda path, df: None
-dc_stub.get_samples_dataframe = lambda path: None
-dc_stub.update_samples_dataframe = lambda path, df: None
-dc_stub.connect_write_database = lambda path: sqlite3.connect(":memory:")
-dc_stub.ensure_tables = lambda conn: None
-dc_stub.EXPECTED_COLUMNS = []
-sys.modules["data_cache"] = dc_stub
-
-# results stub
-results_stub = types.ModuleType("results")
-
-
-class _Dummy:
-    def __init__(self, **kwargs):
-        for k, v in kwargs.items():
-            setattr(self, k, v)
-        freq = kwargs.get("frequency", 0.0)
-        if "tension" not in kwargs:
-            self.tension = freq * 0.1
-        self.tension_pass = kwargs.get("tension_pass", True)
-        self.wires = kwargs.get("wires", [])
-        self.zone = 1
-        self.wire_length = 1.0
-        self.t_sigma = _std(self.wires) if self.wires else 0.0
-
-    @classmethod
-    def from_measurement(cls, **kwargs):
-        return cls(**kwargs)
-
-
-results_stub.TensionResult = _Dummy
-results_stub.RawSample = _Dummy
-results_stub.EXPECTED_COLUMNS = []
-sys.modules["results"] = results_stub
-
-# tensiometer_functions
-tf_stub = types.ModuleType("tensiometer_functions")
-
-
-def _make_config(**kwargs):
-    cfg = types.SimpleNamespace(**kwargs)
-    cfg.data_path = f"{cfg.apa_name}_{cfg.layer}.csv"
-    cfg.dy = 2.0
-    cfg.dx = 1.0
-    return cfg
-
-
-tf_stub.make_config = _make_config
-tf_stub.TensiometerConfig = type("TensiometerConfig", (), {})
-tf_stub.WirePositionProvider = type(
-    "WirePositionProvider",
-    (),
-    {"__init__": lambda self, *args, **kwargs: None, "get_xy": lambda self, cfg, num: (0.0, 0.0)},
-)
-tf_stub.measure_list = lambda **k: None
-tf_stub.plan_measurement_triplets = lambda **k: []
-tf_stub.get_xy_from_file = lambda cfg, num: (0.0, 0.0)
-tf_stub.check_stop_event = lambda evt, msg="": False
-sys.modules["tensiometer_functions"] = tf_stub
-
-import dune_tension.tensiometer as tensiometer_module  # noqa: E402
-from dune_tension.tensiometer import Tensiometer  # noqa: E402
-
-
-def test_generate_result_single_sample():
-    t = Tensiometer(apa_name="APA", layer="X", side="A", samples_per_wire=1)
-    sample = results_stub.TensionResult(
+def test_merge_results_returns_only_sample(monkeypatch):
+    _patch_result_physics(monkeypatch)
+    tensiometer = Tensiometer(
+        apa_name="APA",
+        layer="X",
+        side="A",
+        motion=_make_motion_service(),
+        audio=_make_audio_service(),
+        repository=DummyRepository(),
+    )
+    sample = TensionResult.from_measurement(
         apa_name="APA",
         layer="X",
         side="A",
@@ -195,25 +99,32 @@ def test_generate_result_single_sample():
         confidence=0.9,
         x=1.0,
         y=2.0,
-        wires=[2.0],
+        time=datetime(2026, 3, 15, 12, 0, 0),
     )
-    result = t._merge_results([sample], wire_number=1, wire_x=1.5, wire_y=2.5)
+
+    result = tensiometer._merge_results([sample], wire_number=1, wire_x=1.5, wire_y=2.5)
+
     assert result is sample
-    assert result.tension == 0.5
     assert result.frequency == 5.0
-    assert result.tension_pass
-    assert result.confidence == 0.9
-    assert result.x == 1.0
-    assert result.y == 2.0
+    assert result.tension == pytest.approx(0.5)
+    assert result.tension_pass is True
     assert result.zone == 1
-    assert result.wires == [2.0]
-    assert result.t_sigma == 0.0
+    assert result.wire_length == pytest.approx(1.0)
 
 
-def test_generate_result_multi_sample():
-    t = Tensiometer(apa_name="APA", layer="X", side="A", samples_per_wire=3)
-    wires = [
-        results_stub.TensionResult(
+def test_merge_results_returns_highest_confidence_sample(monkeypatch):
+    _patch_result_physics(monkeypatch)
+    tensiometer = Tensiometer(
+        apa_name="APA",
+        layer="X",
+        side="A",
+        motion=_make_motion_service(),
+        audio=_make_audio_service(),
+        repository=DummyRepository(),
+        samples_per_wire=3,
+    )
+    samples = [
+        TensionResult.from_measurement(
             apa_name="APA",
             layer="X",
             side="A",
@@ -222,9 +133,9 @@ def test_generate_result_multi_sample():
             confidence=0.5,
             x=0.0,
             y=0.0,
-            wires=[2.0],
+            time=datetime(2026, 3, 15, 12, 0, 0),
         ),
-        results_stub.TensionResult(
+        TensionResult.from_measurement(
             apa_name="APA",
             layer="X",
             side="A",
@@ -233,9 +144,9 @@ def test_generate_result_multi_sample():
             confidence=0.6,
             x=0.2,
             y=0.2,
-            wires=[2.2],
+            time=datetime(2026, 3, 15, 12, 0, 1),
         ),
-        results_stub.TensionResult(
+        TensionResult.from_measurement(
             apa_name="APA",
             layer="X",
             side="A",
@@ -244,23 +155,23 @@ def test_generate_result_multi_sample():
             confidence=0.7,
             x=0.4,
             y=0.4,
-            wires=[1.8],
+            time=datetime(2026, 3, 15, 12, 0, 2),
         ),
     ]
-    result = t._merge_results(wires, wire_number=1, wire_x=2.0, wire_y=3.0)
-    assert result is wires[-1]
+
+    result = tensiometer._merge_results(samples, wire_number=1, wire_x=2.0, wire_y=3.0)
+
+    assert result is samples[-1]
     assert result.frequency == 3.0
     assert result.tension == pytest.approx(0.3)
-    assert result.tension_pass
     assert result.confidence == pytest.approx(0.7)
-    assert result.t_sigma == pytest.approx(_std([1.8]))
-    assert result.x == pytest.approx(0.4, rel=1e-7)
-    assert result.y == pytest.approx(0.4, rel=1e-7)
-    assert result.wires == [1.8]
+    assert result.x == pytest.approx(0.4)
+    assert result.y == pytest.approx(0.4)
 
 
 def test_collect_samples_stops_when_confidence_threshold_is_met(monkeypatch):
-    appended_samples = []
+    _patch_result_physics(monkeypatch)
+    repository = DummyRepository()
 
     monkeypatch.setattr(tensiometer_module, "acquire_audio", lambda **_kwargs: [1.0])
     monkeypatch.setattr(
@@ -277,32 +188,28 @@ def test_collect_samples_stops_when_confidence_threshold_is_met(monkeypatch):
         "estimate_pitch_from_audio",
         lambda *_args: (5.0, 0.95),
     )
-    monkeypatch.setattr(tensiometer_module, "TensionResult", results_stub.TensionResult)
 
     def _raise_analysis(*_args, **_kwargs):
         raise RuntimeError("fallback to simple pitch estimate")
 
-    monkeypatch.setattr(
-        tensiometer_module,
-        "analyze_audio_with_pesto",
-        _raise_analysis,
-    )
+    monkeypatch.setattr(tensiometer_module, "analyze_audio_with_pesto", _raise_analysis)
 
-    t = Tensiometer(
+    tensiometer = Tensiometer(
         apa_name="APA",
         layer="X",
         side="A",
+        motion=_make_motion_service(start_x=1.0, start_y=2.0),
+        audio=_make_audio_service(),
+        repository=repository,
         samples_per_wire=5,
         confidence_threshold=0.9,
         measuring_duration=1.0,
+        datetime_provider=lambda: datetime(2026, 3, 15, 12, 0, 0),
     )
-    t.repository.append_sample = lambda result: appended_samples.append(result)
-    t.get_current_xy_position = lambda: (1.0, 2.0)
-    t.strum_func = lambda: None
-    t.focus_wiggle_func = lambda _delta: None
-    t.goto_xy_func = lambda *_args, **_kwargs: True
+    tensiometer.strum_func = lambda: None
+    tensiometer.focus_wiggle_func = lambda _delta: None
 
-    samples = t._collect_samples(
+    samples = tensiometer._collect_samples(
         wire_number=1,
         length=1.0,
         start_time=time.time(),
@@ -310,7 +217,7 @@ def test_collect_samples_stops_when_confidence_threshold_is_met(monkeypatch):
         wire_x=1.0,
     )
 
-    assert len(appended_samples) == 1
+    assert len(repository.samples) == 1
     assert len(samples) == 1
     assert samples[0].confidence == pytest.approx(0.95)
 
@@ -328,18 +235,23 @@ def test_measure_auto_reports_estimated_time(monkeypatch):
     )
 
     collected = []
-    t = Tensiometer(
+    times = iter([100.0, 110.0])
+    tensiometer = Tensiometer(
         apa_name="APA",
         layer="X",
         side="A",
+        motion=_make_motion_service(),
+        audio=_make_audio_service(),
+        repository=DummyRepository(),
         estimated_time_callback=eta_updates.append,
+        time_provider=lambda: next(times),
     )
-    times = iter([100.0, 110.0, 120.0])
-    t._time = lambda: next(times)
-    t.goto_xy_func = lambda *_args, **_kwargs: pytest.fail("measure_auto should use the shared planner output directly")
-    t.goto_collect_wire_data = lambda **kwargs: collected.append(kwargs)
+    tensiometer.goto_xy_func = lambda *_args, **_kwargs: pytest.fail(
+        "measure_auto should use the shared planner output directly"
+    )
+    tensiometer.goto_collect_wire_data = lambda **kwargs: collected.append(kwargs)
 
-    t.measure_auto()
+    tensiometer.measure_auto()
 
     assert len(planner_calls) == 1
     assert planner_calls[0]["wire_list"] == [1, 2]
@@ -360,9 +272,16 @@ def test_load_tension_summary_uses_sqlite_backed_summary_series(tmp_path, monkey
     )
     monkeypatch.setitem(sys.modules, "dune_tension.summaries", summaries_stub)
 
-    t = Tensiometer(apa_name="APA", layer="X", side="A")
-    t.config.data_path = str(db_path)
-    a, b = t.load_tension_summary()
+    tensiometer = Tensiometer(
+        apa_name="APA",
+        layer="X",
+        side="A",
+        motion=_make_motion_service(),
+        audio=_make_audio_service(),
+        repository=DummyRepository(),
+    )
+    tensiometer.config.data_path = str(db_path)
+    a, b = tensiometer.load_tension_summary()
 
     assert a[0] == 1.0
     assert a[1] != a[1]
@@ -373,11 +292,19 @@ def test_load_tension_summary_uses_sqlite_backed_summary_series(tmp_path, monkey
 
 
 def test_load_tension_summary_missing(tmp_path):
-    t = Tensiometer(apa_name="APA", layer="X", side="A")
-    t.config.data_path = str(tmp_path / "missing.db")
-    msg, a, b = t.load_tension_summary()
+    tensiometer = Tensiometer(
+        apa_name="APA",
+        layer="X",
+        side="A",
+        motion=_make_motion_service(),
+        audio=_make_audio_service(),
+        repository=DummyRepository(),
+    )
+    tensiometer.config.data_path = str(tmp_path / "missing.db")
+    msg, a, b = tensiometer.load_tension_summary()
     assert "File not found" in msg
-    assert a == [] and b == []
+    assert a == []
+    assert b == []
 
 
 def test_load_tension_summary_reports_missing_summary_rows(tmp_path, monkeypatch):
@@ -388,104 +315,121 @@ def test_load_tension_summary_reports_missing_summary_rows(tmp_path, monkeypatch
     summaries_stub.get_tension_series = lambda _config: {"A": {}, "B": {}}
     monkeypatch.setitem(sys.modules, "dune_tension.summaries", summaries_stub)
 
-    t = Tensiometer(apa_name="APA", layer="X", side="A")
-    t.config.data_path = str(db_path)
-    msg, a, b = t.load_tension_summary()
+    tensiometer = Tensiometer(
+        apa_name="APA",
+        layer="X",
+        side="A",
+        motion=_make_motion_service(),
+        audio=_make_audio_service(),
+        repository=DummyRepository(),
+    )
+    tensiometer.config.data_path = str(db_path)
+    msg, a, b = tensiometer.load_tension_summary()
     assert "No summary measurements found" in msg
-    assert a == [] and b == []
+    assert a == []
+    assert b == []
 
 
-def test_wiggle_start_stop(monkeypatch):
-    moves = []
-    plc = sys.modules["plc_io"]
-    monkeypatch.setattr(plc, "spoof_get_xy", lambda: (1.0, 2.0))
-    monkeypatch.setattr(
-        plc,
-        "spoof_goto_xy",
-        lambda x, y, speed=None: moves.append((x, y)) or True,
+def test_wiggle_start_stop():
+    motion = _make_motion_service(start_x=1.0, start_y=2.0)
+    tensiometer = Tensiometer(
+        apa_name="APA",
+        layer="X",
+        side="A",
+        motion=motion,
+        audio=_make_audio_service(),
+        repository=DummyRepository(),
+        gauss_func=lambda mean, _sigma: mean,
     )
 
-    t = Tensiometer(apa_name="APA", layer="X", side="A")
-
-    t.start_wiggle()
+    tensiometer.start_wiggle()
     time.sleep(0.05)
-    t.stop_wiggle()
+    tensiometer.stop_wiggle()
 
-    assert len(moves) >= 1
-    # first move should remain near the starting Y position
-    assert 1.0 <= moves[0][1] <= 3.0
+    assert len(motion.moves) >= 1
+    assert motion.moves[0] == (1.0, 2.0)
 
 
 def test_focus_wiggle_compensates_x_side_a():
     focus_deltas = []
-    moves = []
-    t = Tensiometer(
+    motion = _make_motion_service(start_x=1000.0, start_y=2000.0)
+    tensiometer = Tensiometer(
         apa_name="APA",
         layer="X",
         side="A",
+        motion=motion,
+        audio=_make_audio_service(),
+        repository=DummyRepository(),
         focus_wiggle=lambda delta: focus_deltas.append(delta),
     )
-    t.get_current_xy_position = lambda: (1000.0, 2000.0)
-    t.goto_xy_func = lambda x, y: moves.append((x, y)) or True
 
-    t._apply_focus_wiggle_with_x_compensation(400.0)
+    tensiometer._apply_focus_wiggle_with_x_compensation(400.0)
 
     assert focus_deltas == [400]
-    assert moves == [(998.8, 2000.0)]
+    assert motion.moves == [(998.8, 2000.0)]
 
 
 def test_focus_wiggle_compensates_x_side_b():
     focus_deltas = []
-    moves = []
-    t = Tensiometer(
+    motion = _make_motion_service(start_x=1000.0, start_y=2000.0)
+    tensiometer = Tensiometer(
         apa_name="APA",
         layer="X",
         side="B",
+        motion=motion,
+        audio=_make_audio_service(),
+        repository=DummyRepository(),
         focus_wiggle=lambda delta: focus_deltas.append(delta),
     )
-    t.get_current_xy_position = lambda: (1000.0, 2000.0)
-    t.goto_xy_func = lambda x, y: moves.append((x, y)) or True
 
-    t._apply_focus_wiggle_with_x_compensation(400.0)
+    tensiometer._apply_focus_wiggle_with_x_compensation(400.0)
 
     assert focus_deltas == [400]
-    assert moves == [(1001.2, 2000.0)]
+    assert motion.moves == [(1001.2, 2000.0)]
 
 
 def test_focus_wiggle_without_callback_does_not_adjust_x():
-    moves = []
-    t = Tensiometer(apa_name="APA", layer="X", side="A")
-    t.get_current_xy_position = lambda: (1000.0, 2000.0)
-    t.goto_xy_func = lambda x, y: moves.append((x, y)) or True
-
-    t._apply_focus_wiggle_with_x_compensation(400.0)
-
-    assert moves == []
-
-
-def test_optimizer_focus_step_uses_coupled_x_shift(monkeypatch):
-    current = {"x": 1000.0, "y": 2000.0}
-    focus_deltas = []
-    moves = []
-
-    t = Tensiometer(
+    motion = _make_motion_service(start_x=1000.0, start_y=2000.0)
+    tensiometer = Tensiometer(
         apa_name="APA",
         layer="X",
         side="A",
+        motion=motion,
+        audio=_make_audio_service(),
+        repository=DummyRepository(),
+    )
+
+    tensiometer._apply_focus_wiggle_with_x_compensation(400.0)
+
+    assert motion.moves == []
+
+
+def test_optimizer_focus_step_uses_coupled_x_shift(monkeypatch):
+    motion = _make_motion_service(start_x=1000.0, start_y=2000.0)
+    focus_deltas = []
+
+    tensiometer = Tensiometer(
+        apa_name="APA",
+        layer="X",
+        side="A",
+        motion=motion,
+        audio=_make_audio_service(),
+        repository=DummyRepository(),
         measuring_duration=10.0,
         focus_wiggle=lambda delta: focus_deltas.append(delta),
     )
-    t.get_current_xy_position = lambda: (current["x"], current["y"])
-    t.goto_xy_func = lambda x, y, **_kwargs: (
-        moves.append((x, y)),
-        current.update({"x": x, "y": y}),
-        True,
-    )[-1]
-    t.strum_func = lambda: None
+    tensiometer.strum_func = lambda: None
 
     monkeypatch.setattr(tensiometer_module, "acquire_audio", lambda **_kwargs: None)
+    monkeypatch.setattr(
+        tensiometer_module,
+        "wire_equation",
+        lambda *, length, frequency=None: {
+            "frequency": 80.0 if frequency is None else float(frequency),
+            "tension": 6.0,
+        },
+    )
 
-    # Run enough loop iterations to include a focus optimization move.
     stop_checks = {"count": 0}
 
     def _check_stop(_event, _msg=""):
@@ -494,7 +438,7 @@ def test_optimizer_focus_step_uses_coupled_x_shift(monkeypatch):
 
     monkeypatch.setattr(tensiometer_module, "check_stop_event", _check_stop)
 
-    t._collect_samples(
+    tensiometer._collect_samples(
         wire_number=1,
         length=1.0,
         start_time=time.time(),
@@ -503,4 +447,4 @@ def test_optimizer_focus_step_uses_coupled_x_shift(monkeypatch):
     )
 
     assert 100 in focus_deltas
-    assert any(abs(x - 999.7113) < 0.02 for x, _ in moves)
+    assert any(abs(x - 999.7113) < 0.02 for x, _ in motion.moves)
