@@ -1,5 +1,6 @@
 from dataclasses import dataclass, field, fields
 from datetime import datetime
+import math
 
 try:  # pragma: no cover - fallback for legacy test stubs
     from dune_tension.geometry import zone_lookup, length_lookup
@@ -22,6 +23,8 @@ class TensionResult:
     focus_position: int | None = None
     taped: bool = False
     time: datetime | None = None
+    measurement_mode: str = "legacy"
+    stream_session_id: str | None = None
 
     zone: int = field(init=False)
     wire_length: float = field(init=False)
@@ -36,6 +39,10 @@ class TensionResult:
             )
             self.tension = wire_equation(self.wire_length, self.frequency)["tension"]
             self.tension_pass = tension_pass(self.tension, self.wire_length)
+            if not math.isfinite(float(self.wire_length)) or not math.isfinite(
+                float(self.tension)
+            ):
+                raise ValueError("non-finite tension geometry")
         except ValueError:
             self.wire_length = 0
             self.tension = 0
