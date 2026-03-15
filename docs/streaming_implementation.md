@@ -5,6 +5,10 @@ and the intermediate draft in `docs/codex_streaming_PLAN.md`. It is the
 implementation-facing plan for adding a streaming measurement architecture to
 this repository without removing the current episodic workflow.
 
+For the status of the code that has actually been implemented, see
+`docs/streaming_status.md`. This document remains the design and target-state
+reference.
+
 ## Summary
 
 The repo currently measures one wire at a time by moving to a predicted pose,
