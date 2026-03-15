@@ -3,39 +3,13 @@
 from __future__ import annotations
 
 import logging
-import os
 from dataclasses import dataclass, field
 import threading
 from threading import Event, Thread
 from typing import Any, Callable
 import tkinter as tk
 
-from dune_tension.services import RuntimeBundle, build_runtime_bundle, resolve_runtime_options
-
-try:  # pragma: no cover - optional dependency
-    from dune_tension.plc_io import (  # type: ignore
-        get_cached_xy as plc_get_cached_xy,
-        get_xy as plc_get_xy,
-        goto_xy as plc_goto_xy,
-        spoof_get_xy,
-        spoof_goto_xy,
-    )
-except Exception:  # pragma: no cover - graceful fallback when PLC IO is absent
-
-    def plc_get_cached_xy() -> tuple[float, float]:
-        return (0.0, 0.0)
-
-    def plc_get_xy() -> tuple[float, float]:
-        return (0.0, 0.0)
-
-    def plc_goto_xy(x: float, y: float) -> bool:
-        return True
-
-    def spoof_get_xy() -> tuple[float, float]:
-        return (0.0, 0.0)
-
-    def spoof_goto_xy(x: float, y: float) -> bool:
-        return True
+from dune_tension.services import RuntimeBundle
 
 
 @dataclass(slots=True)
@@ -103,29 +77,18 @@ class GUIContext:
 LOGGER = logging.getLogger(__name__)
 
 
-def _resolve_plc_functions() -> tuple[
-    Callable[[], tuple[float, float]], Callable[[float, float], bool]
-]:
-    """Return PLC helpers honoring the ``SPOOF_PLC`` flag."""
-
-    if os.environ.get("SPOOF_PLC"):
-        return spoof_get_xy, spoof_goto_xy
-    return plc_get_cached_xy, plc_goto_xy
-
-
 def create_context(
     root: tk.Misc,
     widgets: GUIWidgets,
     state_file: str,
     *,
+    runtime_bundle: RuntimeBundle,
     focus_command_var: tk.StringVar | None = None,
     estimated_time_var: tk.StringVar | None = None,
-    runtime_bundle: RuntimeBundle | None = None,
 ) -> GUIContext:
     """Create and return a :class:`GUIContext` for the GUI."""
 
     stop_event = Event()
-    runtime = runtime_bundle or build_runtime_bundle(resolve_runtime_options())
     if focus_command_var is None:
         focus_command_var = tk.StringVar(master=root, value="4000")
     if estimated_time_var is None:
@@ -135,13 +98,13 @@ def create_context(
         root=root,
         widgets=widgets,
         state_file=state_file,
-        runtime=runtime,
+        runtime=runtime_bundle,
         stop_event=stop_event,
-        servo_controller=runtime.servo_controller,
-        valve_controller=runtime.valve_controller,
-        get_xy=runtime.motion.get_xy,
-        goto_xy=runtime.motion.goto_xy,
+        servo_controller=runtime_bundle.servo_controller,
+        valve_controller=runtime_bundle.valve_controller,
+        get_xy=runtime_bundle.motion.get_xy,
+        goto_xy=runtime_bundle.motion.goto_xy,
         focus_command_var=focus_command_var,
         estimated_time_var=estimated_time_var,
-        strum=runtime.strum,
+        strum=runtime_bundle.strum,
     )

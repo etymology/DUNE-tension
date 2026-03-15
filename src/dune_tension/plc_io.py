@@ -4,10 +4,7 @@ import time
 import logging
 from random import gauss
 
-try:  # pragma: no cover - fallback for legacy test stubs
-    from dune_tension.geometry import X_MAX, X_MIN, Y_MAX, Y_MIN, comb_positions
-except ImportError:  # pragma: no cover
-    from geometry import X_MAX, X_MIN, Y_MAX, Y_MIN, comb_positions
+from dune_tension.geometry import X_MAX, X_MIN, Y_MAX, Y_MIN, comb_positions
 
 LOGGER = logging.getLogger(__name__)
 

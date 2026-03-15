@@ -3,10 +3,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 
-try:  # pragma: no cover - fallback for legacy test stubs
-    from dune_tension.config import GEOMETRY_CONFIG
-except ImportError:  # pragma: no cover
-    from config import GEOMETRY_CONFIG
+from dune_tension.config import GEOMETRY_CONFIG
 
 X_MIN: int = GEOMETRY_CONFIG.x_min
 X_MAX: int = GEOMETRY_CONFIG.x_max

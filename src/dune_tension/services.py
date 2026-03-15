@@ -5,66 +5,32 @@ from dataclasses import dataclass
 import logging
 import os
 import sqlite3
-import sys
 from types import SimpleNamespace
 from typing import Any, Callable, Iterator, Mapping
 
-try:  # pragma: no cover - fallback for legacy test stubs
-    import dune_tension.data_cache as data_cache
-except Exception:  # pragma: no cover
-    try:
-        import data_cache  # type: ignore
-    except Exception:  # pragma: no cover
-        data_cache = SimpleNamespace(
-            append_dataframe_row=lambda _path, _row: None,
-            append_results_row=lambda _path, _row: None,
-            append_dataframe_rows=lambda _path, _rows, **_kwargs: None,
-            append_results_rows=lambda _path, _rows, **_kwargs: None,
-            connect_write_database=lambda _path: sqlite3.connect(":memory:"),
-            ensure_tables=lambda _conn: None,
-        )
-
-try:  # pragma: no cover - fallback for legacy test stubs
-    from dune_tension.results import EXPECTED_COLUMNS, TensionResult
-except Exception:  # pragma: no cover
-    from results import EXPECTED_COLUMNS, TensionResult  # type: ignore
+import dune_tension.data_cache as data_cache
+from dune_tension.results import EXPECTED_COLUMNS, TensionResult
 
 LOGGER = logging.getLogger(__name__)
 
 
 def _import_plc_module() -> Any:
-    plc_stub = sys.modules.get("plc_io")
-    if plc_stub is not None:
-        return plc_stub
-    try:
-        import dune_tension.plc_io as plc
-    except Exception:  # pragma: no cover - fallback for legacy test stubs
-        import plc_io as plc  # type: ignore
+    import dune_tension.plc_io as plc
+
     return plc
 
 
 def _import_audio_module() -> Any:
-    runtime_stub = sys.modules.get("dune_tension.audio_runtime")
-    if runtime_stub is not None:
-        return runtime_stub
-    audio_stub = sys.modules.get("audioProcessing")
-    if audio_stub is not None:
-        return audio_stub
-    try:
-        import dune_tension.audio_runtime as audio
-    except Exception:  # pragma: no cover - fallback for legacy test stubs
-        import audioProcessing as audio  # type: ignore
+    import dune_tension.audio_runtime as audio
+
     return audio
 
 
 def _build_wire_position_provider() -> Any | None:
     try:
         from dune_tension.tensiometer_functions import WirePositionProvider
-    except Exception:  # pragma: no cover - fallback for legacy test stubs
-        try:
-            from tensiometer_functions import WirePositionProvider  # type: ignore
-        except Exception:
-            return None
+    except Exception:
+        return None
     return WirePositionProvider()
 
 
@@ -302,16 +268,13 @@ def resolve_runtime_options(
 def _create_servo_controller(spoof_servo: bool) -> Any:
     try:
         from dune_tension.maestro import Controller, DummyController, ServoController
-    except Exception:  # pragma: no cover - fallback for legacy test stubs
-        try:
-            from maestro import Controller, DummyController, ServoController  # type: ignore
-        except Exception:
-            return SimpleNamespace(
-                focus_position=4000,
-                focus_target=lambda _target: None,
-                nudge_focus=lambda _delta: None,
-                on_focus_command=None,
-            )
+    except Exception:
+        return SimpleNamespace(
+            focus_position=4000,
+            focus_target=lambda _target: None,
+            nudge_focus=lambda _delta: None,
+            on_focus_command=None,
+        )
 
     if spoof_servo:
         return ServoController(servo=DummyController())
@@ -327,14 +290,8 @@ def _create_valve_controller(spoof_valve: bool) -> Any | None:
             DeviceNotFoundError,
             ValveController,
         )
-    except Exception:  # pragma: no cover - fallback for legacy test stubs
-        try:
-            from hardware.valve_trigger import (  # type: ignore
-                DeviceNotFoundError,
-                ValveController,
-            )
-        except Exception:
-            return None
+    except Exception:
+        return None
 
     try:
         return ValveController()

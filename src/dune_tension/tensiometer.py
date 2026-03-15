@@ -8,62 +8,26 @@ import time
 import numpy as np
 from random import gauss
 
-try:
-    from dune_tension.config import MEASUREMENT_WIGGLE_CONFIG
-except ImportError:  # pragma: no cover - fallback for legacy test stubs
-    from config import MEASUREMENT_WIGGLE_CONFIG
-
-try:
-    from dune_tension.geometry import zone_lookup, length_lookup
-    from dune_tension.tension_calculation import wire_equation, tension_plausible
-    from dune_tension.tensiometer_functions import (
-        TensiometerConfig,
-        WirePositionProvider,
-        make_config,
-        measure_list,
-        plan_measurement_triplets,
-        check_stop_event,
-    )
-    from dune_tension.results import TensionResult
-    from dune_tension.services import (
-        AudioCaptureService,
-        MotionService,
-        ResultRepository,
-        RuntimeBundle,
-        build_runtime_bundle,
-        resolve_runtime_options,
-    )
-except ImportError:  # pragma: no cover - fallback for legacy test stubs
-    from geometry import zone_lookup, length_lookup
-    try:
-        from tension_calculation import wire_equation, tension_plausible
-    except ImportError:
-        from tension_calculation import tension_lookup, tension_plausible
-
-        def wire_equation(*, length: float, frequency: float | None = None):
-            active_frequency = 1.0 if frequency is None else float(frequency)
-            return {
-                "frequency": active_frequency,
-                "tension": tension_lookup(length, active_frequency),
-            }
-
-    from tensiometer_functions import (
-        TensiometerConfig,
-        WirePositionProvider,
-        make_config,
-        measure_list,
-        plan_measurement_triplets,
-        check_stop_event,
-    )
-    from results import TensionResult
-    from dune_tension.services import (
-        AudioCaptureService,
-        MotionService,
-        ResultRepository,
-        RuntimeBundle,
-        build_runtime_bundle,
-        resolve_runtime_options,
-    )
+from dune_tension.config import MEASUREMENT_WIGGLE_CONFIG
+from dune_tension.geometry import zone_lookup, length_lookup
+from dune_tension.results import TensionResult
+from dune_tension.services import (
+    AudioCaptureService,
+    MotionService,
+    ResultRepository,
+    RuntimeBundle,
+    build_runtime_bundle,
+    resolve_runtime_options,
+)
+from dune_tension.tension_calculation import wire_equation, tension_plausible
+from dune_tension.tensiometer_functions import (
+    TensiometerConfig,
+    WirePositionProvider,
+    check_stop_event,
+    make_config,
+    measure_list,
+    plan_measurement_triplets,
+)
 
 LOGGER = logging.getLogger(__name__)
 FOCUS_MM_PER_QUARTER_US = 20.0 / 4000.0
@@ -827,10 +791,7 @@ class Tensiometer:
         if not os.path.exists(self.config.data_path):
             return f"❌ File not found: {self.config.data_path}", [], []
 
-        try:
-            from dune_tension.summaries import get_expected_range, get_tension_series
-        except ImportError:  # pragma: no cover - fallback for legacy test stubs
-            from summaries import get_expected_range, get_tension_series  # type: ignore
+        from dune_tension.summaries import get_expected_range, get_tension_series
 
         wire_range = list(get_expected_range(self.config.layer))
         if not wire_range:

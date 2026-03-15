@@ -5,29 +5,10 @@ import math
 from typing import List, Tuple
 from threading import Event
 
-try:  # pragma: no cover - fallback for legacy test stubs
-    from dune_tension.config import LAYER_LAYOUTS
-except ImportError:  # pragma: no cover
-    from config import LAYER_LAYOUTS
-
-try:  # pragma: no cover - fallback for legacy test stubs
-    from dune_tension.geometry import X_MAX, X_MIN, Y_MAX, Y_MIN
-except ImportError:  # pragma: no cover
-    from geometry import X_MAX, X_MIN, Y_MAX, Y_MIN
-
-try:  # pragma: no cover - fallback for legacy test stubs
-    from dune_tension.data_cache import get_dataframe
-except ImportError:  # pragma: no cover
-    from data_cache import get_dataframe
-
-try:  # pragma: no cover - fallback for legacy test stubs
-    from dune_tension.plc_io import is_motion_target_in_bounds
-except ImportError:  # pragma: no cover
-    try:
-        from plc_io import is_motion_target_in_bounds
-    except ImportError:  # pragma: no cover
-        def is_motion_target_in_bounds(x_target: float, y_target: float) -> bool:
-            return X_MIN <= float(x_target) <= X_MAX and Y_MIN <= float(y_target) <= Y_MAX
+from dune_tension.config import LAYER_LAYOUTS
+from dune_tension.data_cache import get_dataframe
+from dune_tension.geometry import X_MAX, X_MIN, Y_MAX, Y_MIN, refine_position
+from dune_tension.plc_io import is_motion_target_in_bounds
 
 LOGGER = logging.getLogger(__name__)
 
@@ -196,11 +177,6 @@ class WirePositionProvider:
         wire_number: int,
     ) -> Optional[tuple[float, float]]:
         import numpy as np
-
-        try:  # pragma: no cover - fallback for legacy test stubs
-            from dune_tension.geometry import refine_position
-        except ImportError:  # pragma: no cover
-            from geometry import refine_position
 
         snapshot = self._get_snapshot(config)
         if snapshot is None:

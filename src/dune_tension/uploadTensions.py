@@ -1,11 +1,6 @@
-try:  # pragma: no cover - fallback for local script execution
-    from dune_tension.m2m.common import ConnectToAPI, EditAction
-    from dune_tension.summaries import get_expected_range, get_tension_series
-    from dune_tension.tensiometer_functions import make_config
-except ImportError:  # pragma: no cover
-    from m2m.common import ConnectToAPI, EditAction
-    from summaries import get_expected_range, get_tension_series  # type: ignore
-    from tensiometer_functions import make_config  # type: ignore
+from dune_tension.m2m.common import ConnectToAPI, EditAction
+from dune_tension.summaries import get_expected_range, get_tension_series
+from dune_tension.tensiometer_functions import make_config
 
 
 def load_tension_summary(apa_name: str, layer: str) -> tuple[list, list]:

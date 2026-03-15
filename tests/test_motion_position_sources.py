@@ -3,6 +3,8 @@ from pathlib import Path
 import sys
 import types
 
+import dune_tension.services as services_module
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from dune_tension.services import MotionService
@@ -18,14 +20,14 @@ def test_motion_service_prefers_backlash_aware_cached_xy(monkeypatch):
         reset_plc=lambda *_args, **_kwargs: None,
         set_speed=lambda *_args, **_kwargs: True,
     )
-    monkeypatch.setitem(sys.modules, "plc_io", plc)
+    monkeypatch.setattr(services_module, "_import_plc_module", lambda: plc)
 
     motion = MotionService.build(spoof_movement=False)
 
     assert motion.get_xy() == (30.0, 40.0)
 
 
-def test_gui_context_prefers_backlash_aware_cached_xy(monkeypatch):
+def test_gui_context_uses_runtime_bundle_motion(monkeypatch):
     module_path = (
         Path(__file__).resolve().parents[1]
         / "src"
@@ -36,50 +38,11 @@ def test_gui_context_prefers_backlash_aware_cached_xy(monkeypatch):
 
     dune_pkg = types.ModuleType("dune_tension")
     dune_pkg.__path__ = []
-    gui_pkg = types.ModuleType("dune_tension.gui")
-    gui_pkg.__path__ = []
-
-    maestro = types.ModuleType("dune_tension.maestro")
-
-    class _DummyController:
-        pass
-
-    class _DummyServoController:
-        def __init__(self, servo=None):
-            self.servo = servo
-
-    maestro.Controller = _DummyController
-    maestro.DummyController = _DummyController
-    maestro.ServoController = _DummyServoController
-
-    hardware_pkg = types.ModuleType("dune_tension.hardware")
-    hardware_pkg.__path__ = []
-    valve_trigger = types.ModuleType("dune_tension.hardware.valve_trigger")
-    valve_trigger.DeviceNotFoundError = RuntimeError
-    valve_trigger.ValveController = type("ValveController", (), {})
-
     services = types.ModuleType("dune_tension.services")
     services.RuntimeBundle = object
-    services.build_runtime_bundle = lambda *_args, **_kwargs: None
-    services.resolve_runtime_options = lambda *_args, **_kwargs: None
-
-    plc_io = types.ModuleType("dune_tension.plc_io")
-    plc_io.get_xy = lambda: (10.0, 20.0)
-    plc_io.get_cached_xy = lambda: (30.0, 40.0)
-    plc_io.goto_xy = lambda *_args, **_kwargs: True
-    plc_io.spoof_get_xy = lambda: (50.0, 60.0)
-    plc_io.spoof_goto_xy = lambda *_args, **_kwargs: True
 
     monkeypatch.setitem(sys.modules, "dune_tension", dune_pkg)
-    monkeypatch.setitem(sys.modules, "dune_tension.gui", gui_pkg)
-    monkeypatch.setitem(sys.modules, "dune_tension.hardware", hardware_pkg)
-    monkeypatch.setitem(sys.modules, "dune_tension.maestro", maestro)
-    monkeypatch.setitem(
-        sys.modules, "dune_tension.hardware.valve_trigger", valve_trigger
-    )
     monkeypatch.setitem(sys.modules, "dune_tension.services", services)
-    monkeypatch.setitem(sys.modules, "dune_tension.plc_io", plc_io)
-    monkeypatch.delenv("SPOOF_PLC", raising=False)
 
     module_name = "gui_context_under_test"
     spec = importlib.util.spec_from_file_location(module_name, module_path)
@@ -89,7 +52,29 @@ def test_gui_context_prefers_backlash_aware_cached_xy(monkeypatch):
     monkeypatch.setitem(sys.modules, module_name, context)
     spec.loader.exec_module(context)
 
-    get_xy, goto_xy = context._resolve_plc_functions()
+    runtime_bundle = types.SimpleNamespace(
+        servo_controller=object(),
+        valve_controller=object(),
+        motion=types.SimpleNamespace(
+            get_xy=lambda: (30.0, 40.0),
+            goto_xy=lambda *_args, **_kwargs: True,
+        ),
+        strum=lambda: None,
+    )
+    focus_command_var = object()
+    estimated_time_var = object()
 
-    assert get_xy() == (30.0, 40.0)
-    assert goto_xy is plc_io.goto_xy
+    gui_context = context.create_context(
+        root=object(),
+        widgets=object(),
+        state_file="gui_state.json",
+        runtime_bundle=runtime_bundle,
+        focus_command_var=focus_command_var,
+        estimated_time_var=estimated_time_var,
+    )
+
+    assert gui_context.runtime is runtime_bundle
+    assert gui_context.get_xy() == (30.0, 40.0)
+    assert gui_context.goto_xy is runtime_bundle.motion.goto_xy
+    assert gui_context.focus_command_var is focus_command_var
+    assert gui_context.estimated_time_var is estimated_time_var
