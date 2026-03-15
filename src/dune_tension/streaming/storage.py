@@ -5,6 +5,7 @@ from datetime import datetime
 import json
 from pathlib import Path
 import sqlite3
+import threading
 import uuid
 import wave
 
@@ -49,81 +50,84 @@ class StreamingSessionRepository:
         self.audio_dir.mkdir(parents=True, exist_ok=True)
         self.db_path = self.session_dir / "streaming.db"
         self.manifest_path = self.session_dir / "manifest.json"
-        self._conn = sqlite3.connect(self.db_path)
+        self._lock = threading.Lock()
+        self._conn = sqlite3.connect(self.db_path, check_same_thread=False)
         self._ensure_schema()
 
     def close(self) -> None:
-        self._conn.close()
+        with self._lock:
+            self._conn.close()
 
     def _ensure_schema(self) -> None:
-        self._conn.executescript(
-            """
-            CREATE TABLE IF NOT EXISTS segments (
-                segment_id TEXT PRIMARY KEY,
-                mode TEXT,
-                status TEXT,
-                payload_json TEXT NOT NULL
-            );
-            CREATE TABLE IF NOT EXISTS pulse_events (
-                pulse_id TEXT PRIMARY KEY,
-                segment_id TEXT,
-                timestamp REAL,
-                payload_json TEXT NOT NULL
-            );
-            CREATE TABLE IF NOT EXISTS frames (
-                frame_id TEXT PRIMARY KEY,
-                segment_id TEXT,
-                timestamp REAL,
-                voiced_gate_pass INTEGER,
-                payload_json TEXT NOT NULL
-            );
-            CREATE TABLE IF NOT EXISTS voiced_windows (
-                window_id TEXT PRIMARY KEY,
-                segment_id TEXT,
-                start_time REAL,
-                end_time REAL,
-                payload_json TEXT NOT NULL
-            );
-            CREATE TABLE IF NOT EXISTS pitch_results (
-                pitch_result_id TEXT PRIMARY KEY,
-                window_id TEXT,
-                frequency_hz REAL,
-                confidence REAL,
-                payload_json TEXT NOT NULL
-            );
-            CREATE TABLE IF NOT EXISTS pitch_bins (
-                bin_id TEXT PRIMARY KEY,
-                x_bin REAL,
-                y_bin REAL,
-                payload_json TEXT NOT NULL
-            );
-            CREATE TABLE IF NOT EXISTS wire_candidates (
-                wire_number INTEGER PRIMARY KEY,
-                status TEXT,
-                payload_json TEXT NOT NULL
-            );
-            CREATE TABLE IF NOT EXISTS rescue_queue (
-                queue_id TEXT PRIMARY KEY,
-                wire_number INTEGER,
-                status TEXT,
-                payload_json TEXT NOT NULL
-            );
-            CREATE TABLE IF NOT EXISTS anchors (
-                anchor_id TEXT PRIMARY KEY,
-                payload_json TEXT NOT NULL
-            );
-            CREATE TABLE IF NOT EXISTS audio_chunks (
-                chunk_id TEXT PRIMARY KEY,
-                segment_id TEXT,
-                start_time REAL,
-                end_time REAL,
-                sample_rate INTEGER,
-                file_path TEXT,
-                payload_json TEXT NOT NULL
-            );
-            """
-        )
-        self._conn.commit()
+        with self._lock:
+            self._conn.executescript(
+                """
+                CREATE TABLE IF NOT EXISTS segments (
+                    segment_id TEXT PRIMARY KEY,
+                    mode TEXT,
+                    status TEXT,
+                    payload_json TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS pulse_events (
+                    pulse_id TEXT PRIMARY KEY,
+                    segment_id TEXT,
+                    timestamp REAL,
+                    payload_json TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS frames (
+                    frame_id TEXT PRIMARY KEY,
+                    segment_id TEXT,
+                    timestamp REAL,
+                    voiced_gate_pass INTEGER,
+                    payload_json TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS voiced_windows (
+                    window_id TEXT PRIMARY KEY,
+                    segment_id TEXT,
+                    start_time REAL,
+                    end_time REAL,
+                    payload_json TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS pitch_results (
+                    pitch_result_id TEXT PRIMARY KEY,
+                    window_id TEXT,
+                    frequency_hz REAL,
+                    confidence REAL,
+                    payload_json TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS pitch_bins (
+                    bin_id TEXT PRIMARY KEY,
+                    x_bin REAL,
+                    y_bin REAL,
+                    payload_json TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS wire_candidates (
+                    wire_number INTEGER PRIMARY KEY,
+                    status TEXT,
+                    payload_json TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS rescue_queue (
+                    queue_id TEXT PRIMARY KEY,
+                    wire_number INTEGER,
+                    status TEXT,
+                    payload_json TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS anchors (
+                    anchor_id TEXT PRIMARY KEY,
+                    payload_json TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS audio_chunks (
+                    chunk_id TEXT PRIMARY KEY,
+                    segment_id TEXT,
+                    start_time REAL,
+                    end_time REAL,
+                    sample_rate INTEGER,
+                    file_path TEXT,
+                    payload_json TEXT NOT NULL
+                );
+                """
+            )
+            self._conn.commit()
 
     def _payload_json(self, value: object) -> str:
         if is_dataclass(value):
@@ -148,14 +152,16 @@ class StreamingSessionRepository:
             f"INSERT INTO {table} ({column_names}) VALUES ({placeholders}) "
             f"ON CONFLICT({key_column}) DO UPDATE SET {updates}"
         )
-        self._conn.execute(sql, tuple(columns.values()))
-        self._conn.commit()
+        with self._lock:
+            self._conn.execute(sql, tuple(columns.values()))
+            self._conn.commit()
 
     def write_manifest(self, manifest: StreamingManifest) -> None:
-        self.manifest_path.write_text(
-            json.dumps(model_to_dict(manifest), indent=2, sort_keys=True) + "\n",
-            encoding="utf-8",
-        )
+        with self._lock:
+            self.manifest_path.write_text(
+                json.dumps(model_to_dict(manifest), indent=2, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
 
     def append_segment(self, segment: StreamingSegment) -> None:
         self._upsert(

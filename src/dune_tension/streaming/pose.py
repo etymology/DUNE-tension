@@ -26,6 +26,21 @@ def focus_to_x_delta_mm(delta_focus_units: float, side: str) -> float:
     )
 
 
+def stage_x_for_laser_target(
+    *,
+    x_laser_target: float,
+    focus: float,
+    focus_reference: float,
+    side: str,
+) -> float:
+    """Return the stage X command that keeps the laser on ``x_laser_target``."""
+
+    return float(x_laser_target) - focus_to_x_delta_mm(
+        float(focus) - float(focus_reference),
+        side,
+    )
+
+
 def build_measurement_pose(
     *,
     x_true: float,
