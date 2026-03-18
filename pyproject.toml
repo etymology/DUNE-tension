@@ -20,5 +20,9 @@ dependencies = [
 [project.scripts]
 dune-tension-gui = "dune_tension.main:main"
 dune-tension-periodic-plots = "dune_tension.periodic_save_plots:main"
+dune-tension-stream-sweep = "dune_tension.streaming.cli:main_stream_sweep"
+dune-tension-stream-rescue = "dune_tension.streaming.cli:main_stream_rescue"
+dune-tension-fit-focus = "dune_tension.streaming.cli:main_fit_focus"
+dune-tension-stream-replay = "dune_tension.streaming.cli:main_stream_replay"
 dune-spectrum-compare = "spectrum_analysis.compare_pitch_cli:main"
 dune-spectrum-scroller = "spectrum_analysis.cli:main"

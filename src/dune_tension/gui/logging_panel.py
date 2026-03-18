@@ -7,7 +7,7 @@ import logging
 from queue import Empty, SimpleQueue
 from typing import Any
 
-LOGGER_NAMES = ("dune_tension", "spectrum_analysis", "valve_trigger")
+LOGGER_NAMES = ("dune_tension", "dune_tension.hardware", "spectrum_analysis")
 
 
 class TkTextLogHandler(logging.Handler):

@@ -11,9 +11,10 @@ Residual definition throughout: `Chicago - UK`.
 ## Data Availability
 
 - The UK JSON contains both side A and side B measurements.
-- The Chicago summary CSV now contains partial data on both sides.
+- The Chicago summary CSV now contains all currently available U-layer data on
+  both sides.
 - The available Chicago side-B wires span wire numbers `241` through `967`.
-- The current CSV contains `641` non-null side-B measurements and `323` aligned
+- The current CSV contains `641` non-null side-B measurements and `385` aligned
   side-A comparison rows.
 
 This report still focuses on the available side-B subset, since the U-layer
@@ -37,7 +38,7 @@ with no reversal term.
 - Side A data are now available in the Chicago summary and are included below as
   a direct raw-data comparison.
 - For the currently available A-side rows, the mean residual is about
-  `-0.454 N`.
+  `-0.544 N`.
 - Under the current indexing, the partial B-side comparison is already strongly
   negative on average, with mean residual about `-0.871 N`.
 - Scanning constant shifts from `-80` to `+80` shows the best correlation at
@@ -70,14 +71,14 @@ with no reversal term.
 
 | Comparison | Count | Chicago Mean (N) | UK Mean (N) | Corr | Mean Diff (N) | Std Diff (N) | MAE (N) | Negative Fraction |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| Side A | 323 | 5.372 | 5.826 | -0.073 | -0.454 | 0.614 | 0.584 | 0.783 |
+| Side A | 385 | 5.419 | 5.962 | 0.104 | -0.544 | 0.524 | 0.610 | 0.855 |
 
 ### Interpretation
 
 - Side A is now available as a direct UK-versus-Chicago comparison.
 - The mean residual is negative, consistent with the same overall direction of
   change seen elsewhere.
-- The A-side correlation is weak in the currently available subset, so the
+- The A-side correlation is still weak in the currently available subset, so the
   report keeps its main focus on the B-side offset question rather than trying
   to build an indexing model for side A.
 

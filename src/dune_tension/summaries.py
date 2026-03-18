@@ -6,14 +6,9 @@ import pandas as pd
 import seaborn as sns
 from matplotlib.figure import Figure
 
-try:  # pragma: no cover - fallback for legacy test stubs
-    from dune_tension.data_cache import get_dataframe
-    from dune_tension.tension_calculation import tension_plausible
-    from dune_tension.tensiometer_functions import TensiometerConfig
-except ImportError:  # pragma: no cover
-    from data_cache import get_dataframe
-    from tension_calculation import tension_plausible
-    from tensiometer_functions import TensiometerConfig
+from dune_tension.data_cache import get_dataframe
+from dune_tension.tension_calculation import tension_plausible
+from dune_tension.tensiometer_functions import TensiometerConfig
 
 
 def get_expected_range(layer: str) -> range:

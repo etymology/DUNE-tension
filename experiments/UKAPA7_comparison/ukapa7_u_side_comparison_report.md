@@ -10,11 +10,11 @@ Residual definition throughout: `Chicago - UK`.
 ## Data Availability
 
 - The UK JSON contains `1141` non-null tensions on both side A and side B.
-- The current Chicago summary CSV contains `417` side-A values and `641` side-B
+- The current Chicago summary CSV contains `385` side-A values and `641` side-B
   values.
 - All non-null Chicago values align to non-null UK values at the same wire
   number.
-- The aligned wire ranges are `400` through `940` on side A and `241` through
+- The aligned wire ranges are `500` through `940` on side A and `241` through
   `967` on side B.
 
 This is therefore a direct same-index comparison over the currently available
@@ -22,9 +22,9 @@ Chicago subset on each side, not a full-layer comparison over all U wires.
 
 ## Executive Summary
 
-- Side A currently has `417` aligned wires. Its residuals are broadly negative,
-  with mean `-0.600 N`, standard deviation `0.646 N`, and weak correlation
-  (`-0.017`) between the Chicago and UK measurements.
+- Side A currently has `385` aligned wires. Its residuals are broadly negative,
+  with mean `-0.544 N`, standard deviation `0.524 N`, and weak but positive
+  correlation (`0.104`) between the Chicago and UK measurements.
 - Side B currently has `641` aligned wires. It is also systematically negative,
   with mean residual `-0.871 N`, standard deviation `0.548 N`, and noticeably
   stronger correlation (`0.509`) than side A.
@@ -47,7 +47,7 @@ Chicago subset on each side, not a full-layer comparison over all U wires.
 
 | Side | Aligned Wires | Wire Range | Chicago Mean (N) | UK Mean (N) | Corr | Mean Diff (N) | Median Diff (N) | Std Diff (N) | MAE (N) | RMSE (N) | Negative Fraction |
 | --- | ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| A | 417 | `400-940` | 5.366 | 5.966 | -0.017 | -0.600 | -0.515 | 0.646 | 0.685 | 0.881 | 0.837 |
+| A | 385 | `500-940` | 5.419 | 5.962 | 0.104 | -0.544 | -0.505 | 0.524 | 0.610 | 0.755 | 0.855 |
 | B | 641 | `241-967` | 5.331 | 6.202 | 0.509 | -0.871 | -0.810 | 0.548 | 0.895 | 1.029 | 0.972 |
 
 ## Raw Side-A Comparison
@@ -56,12 +56,13 @@ Chicago subset on each side, not a full-layer comparison over all U wires.
 
 ### Interpretation
 
-- The Chicago A-side mean is about `0.600 N` below the UK A-side mean over the
+- The Chicago A-side mean is about `0.544 N` below the UK A-side mean over the
   populated Chicago window.
-- The trace-level correlation is currently very weak, so side A does not show a
-  strong wire-by-wire match in this subset.
-- The residuals are mostly negative, but they are wide enough that side A
-  should be treated as a noisy comparison rather than a nearly constant shift.
+- The trace-level correlation is still weak, but it is no longer negative in
+  the current A-side subset.
+- The residuals are mostly negative and somewhat tighter than in the previous
+  partial A-side comparison, but side A should still be treated as a noisy
+  comparison rather than a nearly constant shift.
 
 ## Raw Side-B Comparison
 

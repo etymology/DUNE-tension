@@ -68,6 +68,20 @@ def _cache_key(file_path: str, table: str) -> str:
     return f"{file_path}::{table}"
 
 
+def _invalidate_cached_table(file_path: str, table: str) -> None:
+    _dataframe_cache.pop(_cache_key(file_path, table), None)
+
+
+def connect_write_database(file_path: str) -> sqlite3.Connection:
+    path = Path(file_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    return sqlite3.connect(path)
+
+
+def ensure_tables(conn: sqlite3.Connection) -> None:
+    _ensure_tables(conn)
+
+
 def _get_table_dataframe(file_path: str, table: str) -> pd.DataFrame:
     key = _cache_key(file_path, table)
     if key in _dataframe_cache:
@@ -97,25 +111,45 @@ def _normalize_row(row: dict[str, Any]) -> dict[str, Any]:
     return normalized
 
 
-def _append_row(file_path: str, table: str, row: dict[str, Any]) -> None:
-    normalized = _normalize_row(row)
+def _append_rows(
+    file_path: str,
+    table: str,
+    rows: Iterable[dict[str, Any]],
+    *,
+    conn: sqlite3.Connection | None = None,
+    ensure_schema: bool = True,
+    commit: bool = True,
+) -> None:
+    normalized_rows = [_normalize_row(row) for row in rows]
+    if not normalized_rows:
+        return
+
     columns = ", ".join(EXPECTED_COLUMNS)
     placeholders = ", ".join("?" for _ in EXPECTED_COLUMNS)
-    values = [normalized[col] for col in EXPECTED_COLUMNS]
+    values = [
+        tuple(normalized[col] for col in EXPECTED_COLUMNS) for normalized in normalized_rows
+    ]
 
-    with sqlite3.connect(file_path) as conn:
-        _ensure_tables(conn)
-        conn.execute(
+    owns_connection = conn is None
+    active_conn = conn or connect_write_database(file_path)
+    try:
+        if ensure_schema:
+            _ensure_tables(active_conn)
+        active_conn.executemany(
             f"INSERT INTO {table} ({columns}) VALUES ({placeholders})",
             values,
         )
-        conn.commit()
+        if commit:
+            active_conn.commit()
+    finally:
+        if owns_connection:
+            active_conn.close()
 
-    key = _cache_key(file_path, table)
-    if key in _dataframe_cache:
-        cache_df = _dataframe_cache[key].copy()
-        cache_df.loc[len(cache_df)] = normalized
-        _dataframe_cache[key] = cache_df
+    _invalidate_cached_table(file_path, table)
+
+
+def _append_row(file_path: str, table: str, row: dict[str, Any]) -> None:
+    _append_rows(file_path, table, [row])
 
 
 def get_dataframe(file_path: str) -> pd.DataFrame:
@@ -130,7 +164,7 @@ def update_dataframe(file_path: str, df: pd.DataFrame) -> None:
     normalized_df = _normalize_dataframe_columns(df)
     key = _cache_key(file_path, TABLE_TENSION_DATA)
     _dataframe_cache[key] = normalized_df.copy()
-    with sqlite3.connect(file_path) as conn:
+    with connect_write_database(file_path) as conn:
         _ensure_tables(conn)
         normalized_df.to_sql(TABLE_TENSION_DATA, conn, if_exists="replace", index=False)
 
@@ -139,6 +173,26 @@ def append_dataframe_row(file_path: str, row: dict[str, Any]) -> None:
     """Append one row to ``tension_data`` without rewriting the full table."""
 
     _append_row(file_path, TABLE_TENSION_DATA, row)
+
+
+def append_dataframe_rows(
+    file_path: str,
+    rows: Iterable[dict[str, Any]],
+    *,
+    conn: sqlite3.Connection | None = None,
+    ensure_schema: bool = True,
+    commit: bool = True,
+) -> None:
+    """Append multiple rows to ``tension_data`` efficiently."""
+
+    _append_rows(
+        file_path,
+        TABLE_TENSION_DATA,
+        rows,
+        conn=conn,
+        ensure_schema=ensure_schema,
+        commit=commit,
+    )
 
 
 def get_results_dataframe(file_path: str) -> pd.DataFrame:
@@ -163,7 +217,7 @@ def update_results_dataframe(file_path: str, df: pd.DataFrame) -> None:
     normalized_df = _normalize_dataframe_columns(df)
     key = _cache_key(file_path, TABLE_TENSION_SAMPLES)
     _dataframe_cache[key] = normalized_df.copy()
-    with sqlite3.connect(file_path) as conn:
+    with connect_write_database(file_path) as conn:
         _ensure_tables(conn)
         normalized_df.to_sql(TABLE_TENSION_SAMPLES, conn, if_exists="replace", index=False)
 
@@ -172,6 +226,26 @@ def append_results_row(file_path: str, row: dict[str, Any]) -> None:
     """Append one row to ``tension_samples`` without rewriting the full table."""
 
     _append_row(file_path, TABLE_TENSION_SAMPLES, row)
+
+
+def append_results_rows(
+    file_path: str,
+    rows: Iterable[dict[str, Any]],
+    *,
+    conn: sqlite3.Connection | None = None,
+    ensure_schema: bool = True,
+    commit: bool = True,
+) -> None:
+    """Append multiple rows to ``tension_samples`` efficiently."""
+
+    _append_rows(
+        file_path,
+        TABLE_TENSION_SAMPLES,
+        rows,
+        conn=conn,
+        ensure_schema=ensure_schema,
+        commit=commit,
+    )
 
 
 def _drop_wire_numbers(

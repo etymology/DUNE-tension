@@ -17,6 +17,7 @@ LOGGER = logging.getLogger(__name__)
 @dataclass(slots=True)
 class _PersistedState:
     apa_name: str
+    measurement_mode: str
     layer: str
     side: str
     flipped: bool
@@ -57,6 +58,7 @@ def save_state(ctx: GUIContext) -> None:
 
     state = _PersistedState(
         apa_name=w.entry_apa.get(),
+        measurement_mode=w.measurement_mode_var.get(),
         layer=w.layer_var.get(),
         side=w.side_var.get(),
         flipped=bool(w.flipped_var.get()),
@@ -101,6 +103,7 @@ def load_state(ctx: GUIContext) -> None:
 
     w = ctx.widgets
     _set_entry(w.entry_apa, data.get("apa_name", ""))
+    w.measurement_mode_var.set(data.get("measurement_mode", "legacy"))
     w.layer_var.set(data.get("layer", "X"))
     w.side_var.set(data.get("side", "A"))
     w.flipped_var.set(bool(data.get("flipped", False)))

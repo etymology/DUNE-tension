@@ -11,7 +11,7 @@ from typing import Sequence
 import numpy as np
 
 from . import plc_io
-from .audioProcessing import get_samplerate, record_audio_filtered
+from .audio_runtime import get_samplerate, record_audio_filtered
 
 MicrophoneSampler = Callable[
     [float, int], tuple[Sequence[float] | np.ndarray | None, float]
@@ -94,7 +94,7 @@ def calibrate(
         msg = "Scan step must be positive."
         raise ValueError(msg)
 
-    x_start, y_start = plc_io.get_xy()
+    x_start, y_start = plc_io.get_cached_xy()
     y_lower = y_start - dy / 2
 
     goto_kwargs = {"speed": cfg.speed} if cfg.speed is not None else {}

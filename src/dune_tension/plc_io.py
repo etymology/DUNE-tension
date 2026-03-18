@@ -6,10 +6,7 @@ from typing import Any
 
 import requests
 
-try:  # pragma: no cover - fallback for legacy test stubs
-    from dune_tension.geometry import X_MAX, X_MIN, Y_MAX, Y_MIN, comb_positions
-except ImportError:  # pragma: no cover
-    from geometry import X_MAX, X_MIN, Y_MAX, Y_MIN, comb_positions
+from dune_tension.geometry import X_MAX, X_MIN, Y_MAX, Y_MIN, comb_positions
 
 LOGGER = logging.getLogger(__name__)
 
@@ -187,9 +184,25 @@ def get_xy() -> tuple[float, float]:
     return x, y
 
 
-def get_cached_xy() -> tuple[float | None, float | None]:
-    """Return the internally tracked XY position."""
+def _ensure_tracked_xy() -> tuple[float, float]:
+    """Return the tracked XY position, seeding it from the PLC if needed."""
+
+    if _TRUE_XY[0] is None or _TRUE_XY[1] is None:
+        _TRUE_XY[0], _TRUE_XY[1] = get_xy()
     return tuple(_TRUE_XY)
+
+
+def get_cached_xy() -> tuple[float, float]:
+    """Return the internally tracked XY position.
+
+    ``goto_xy`` keeps ``_TRUE_XY`` updated whenever a move command is issued.
+    If no tracked state exists yet, seed it from the PLC once. Callers should
+    prefer this over ``get_xy`` when doing motion math so backlash compensation
+    stays internally consistent.
+    """
+
+    with PLC_LOCK:
+        return _ensure_tracked_xy()
 
 
 def get_state() -> int:
@@ -235,12 +248,7 @@ def goto_xy(
 
     global _TRUE_XY, _LAST_X_DIR, _X_DEADZONE_LEFT
 
-    if _TRUE_XY[0] is None or _TRUE_XY[1] is None:
-        try:
-            _TRUE_XY[0], _TRUE_XY[1] = get_xy()
-        except RuntimeError as exc:
-            LOGGER.warning("Unable to initialize cached XY before move: %s", exc)
-            return False
+    _ensure_tracked_xy()
 
     if check_comb:
         cur_x = _TRUE_XY[0]
@@ -350,7 +358,9 @@ def goto_xy(
             try:
                 move_type = get_movetype()
             except RuntimeError as exc:
-                LOGGER.warning("Unable to read MOVE_TYPE while waiting for move: %s", exc)
+                LOGGER.warning(
+                    "Unable to read MOVE_TYPE while waiting for move: %s", exc
+                )
                 return False
             if move_type != XY_MOVE_TYPE:
                 break

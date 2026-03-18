@@ -44,7 +44,7 @@ def _spectral_flatness(magnitude: np.ndarray) -> float:
     return float(geom_mean / (arith_mean + eps))
 
 
-def _harmonic_comb_response(
+def harmonic_comb_response(
     frame: np.ndarray,
     sample_rate: int,
     window: np.ndarray,
@@ -116,6 +116,10 @@ def _harmonic_comb_response(
             found = True
 
     return best_r, sfm, found
+
+
+# Backward-compatible alias for older callers.
+_harmonic_comb_response = harmonic_comb_response
 
 
 def record_with_harmonic_comb(
@@ -191,7 +195,7 @@ def record_with_harmonic_comb(
 
             while frame_buffer.size >= frame_size:
                 frame = frame_buffer[:frame_size]
-                r_value, sfm, valid = _harmonic_comb_response(
+                r_value, sfm, valid = harmonic_comb_response(
                     frame,
                     sample_rate,
                     window,
@@ -261,3 +265,10 @@ def record_with_harmonic_comb(
         return None
 
     return np.concatenate(collected).astype(np.float32)
+
+
+__all__ = [
+    "HarmonicCombConfig",
+    "harmonic_comb_response",
+    "record_with_harmonic_comb",
+]

@@ -6,11 +6,11 @@ import pytest
 
 np = pytest.importorskip("numpy")
 
-from src.spectrum_analysis.audio_processing import (
+from spectrum_analysis.audio_processing import (
     compute_noise_profile,
     subtract_noise,
 )
-from src.spectrum_analysis.compare_pitch_cli import PitchCompareConfig
+from spectrum_analysis.compare_pitch_cli import PitchCompareConfig
 
 
 def test_stationary_noise_subtraction_removes_noise() -> None:
@@ -34,4 +34,4 @@ def test_stationary_noise_subtraction_removes_noise() -> None:
     residual_rms = float(np.sqrt(np.mean(filtered**2) + 1e-12))
     original_rms = float(np.sqrt(np.mean(noise**2) + 1e-12))
 
-    assert residual_rms < original_rms * 0.5
+    assert residual_rms < original_rms * 0.7

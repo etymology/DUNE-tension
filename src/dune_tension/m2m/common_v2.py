@@ -6,34 +6,19 @@ M2M client implementation.
 
 from __future__ import annotations
 
-try:  # pragma: no cover - normal package import
-    from dune_tension.m2m.common import (  # noqa: F401
-        M2MError,
-        ConnectToAPI,
-        ConvertShortUUID,
-        CreateComponent,
-        GetComponent,
-        EditComponent,
-        GetListOfComponents,
-        PerformAction,
-        GetAction,
-        EditAction,
-        GetListOfActions,
-    )
-except ImportError:  # pragma: no cover - fallback for legacy script execution
-    from common import (  # type: ignore # noqa: F401
-        M2MError,
-        ConnectToAPI,
-        ConvertShortUUID,
-        CreateComponent,
-        GetComponent,
-        EditComponent,
-        GetListOfComponents,
-        PerformAction,
-        GetAction,
-        EditAction,
-        GetListOfActions,
-    )
+from dune_tension.m2m.common import (  # noqa: F401
+    M2MError,
+    ConnectToAPI,
+    ConvertShortUUID,
+    CreateComponent,
+    EditAction,
+    EditComponent,
+    GetAction,
+    GetComponent,
+    GetListOfActions,
+    GetListOfComponents,
+    PerformAction,
+)
 
 __all__ = [
     "M2MError",

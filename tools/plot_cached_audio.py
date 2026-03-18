@@ -1,11 +1,17 @@
 import os
 import csv
+import sys
+from pathlib import Path
+
 import numpy as np
 import matplotlib
 
 matplotlib.use("Agg")  # Use a non-interactive backend
 import matplotlib.pyplot as plt
-from audioProcessing import (
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+
+from dune_tension.audioProcessing import (
     get_pitch_crepe,
     get_pitch_naive_fft,
     get_pitch_autocorrelation,

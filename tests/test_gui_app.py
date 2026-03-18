@@ -75,6 +75,11 @@ def _load_app_module(monkeypatch):
     logging_panel.configure_gui_logging = lambda *args, **kwargs: None
     monkeypatch.setitem(sys.modules, "dune_tension.gui.logging_panel", logging_panel)
 
+    services = types.ModuleType("dune_tension.services")
+    services.build_runtime_bundle = lambda *_args, **_kwargs: object()
+    services.resolve_runtime_options = lambda *_args, **_kwargs: object()
+    monkeypatch.setitem(sys.modules, "dune_tension.services", services)
+
     state = types.ModuleType("dune_tension.gui.state")
     state.load_state = lambda *args, **kwargs: None
     monkeypatch.setitem(sys.modules, "dune_tension.gui.state", state)

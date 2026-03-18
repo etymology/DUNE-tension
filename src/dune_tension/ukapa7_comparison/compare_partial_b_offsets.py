@@ -7,7 +7,10 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-from dune_tension.compare_tension_sources import load_action_json, load_summary_csv
+from dune_tension.ukapa7_comparison.compare_tension_sources import (
+    load_action_json,
+    load_summary_csv,
+)
 
 
 def _rolling_mean(series: pd.Series, window: int = 15) -> pd.Series:

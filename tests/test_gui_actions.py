@@ -40,6 +40,7 @@ def _load_actions_module(monkeypatch):
 
     tensiometer = types.ModuleType("dune_tension.tensiometer")
     tensiometer.Tensiometer = object
+    tensiometer.build_tensiometer = lambda **kwargs: kwargs
     monkeypatch.setitem(sys.modules, "dune_tension.tensiometer", tensiometer)
 
     tensiometer_functions = types.ModuleType("dune_tension.tensiometer_functions")
@@ -113,6 +114,86 @@ def test_measurement_threads_are_serialized(monkeypatch):
 
     fake_measurement(ctx)
     assert _wait_for(lambda: len(calls) == 2)
+
+
+def test_create_tensiometer_uses_context_runtime_bundle(monkeypatch):
+    actions = _load_actions_module(monkeypatch)
+
+    build_calls = []
+
+    monkeypatch.setitem(
+        sys.modules,
+        "dune_tension.tensiometer",
+        types.SimpleNamespace(
+            build_tensiometer=lambda **kwargs: build_calls.append(kwargs) or kwargs,
+            Tensiometer=object,
+        ),
+    )
+
+    runtime = object()
+    servo_controller = types.SimpleNamespace(
+        focus_position=4100,
+        nudge_focus=lambda _delta: None,
+    )
+    ctx = types.SimpleNamespace(
+        runtime=runtime,
+        stop_event=threading.Event(),
+        strum=lambda: None,
+        servo_controller=servo_controller,
+        widgets=types.SimpleNamespace(),
+    )
+    inputs = types.SimpleNamespace(
+        apa_name="APA",
+        layer="X",
+        side="A",
+        flipped=False,
+        a_taped=False,
+        b_taped=False,
+        samples=2,
+        confidence=0.9,
+        record_duration=0.5,
+        measuring_duration=5.0,
+        wiggle_y_sigma_mm=0.4,
+        focus_wiggle_sigma_quarter_us=50.0,
+        plot_audio=True,
+    )
+
+    actions.create_tensiometer(ctx, inputs)
+
+    assert len(build_calls) == 1
+    assert build_calls[0]["runtime_bundle"] is runtime
+
+
+def test_measure_calibrate_dispatches_to_streaming_controller(monkeypatch):
+    actions = _load_actions_module(monkeypatch)
+    monkeypatch.setattr(actions, "save_state", lambda _ctx: None)
+
+    inputs = types.SimpleNamespace(
+        measurement_mode="stream_rescue",
+        wire_number="7",
+    )
+    monkeypatch.setattr(actions, "_capture_worker_inputs", lambda _ctx: inputs)
+
+    calls = []
+    monkeypatch.setattr(
+        actions,
+        "_run_streaming_for_wires",
+        lambda _ctx, stream_inputs, wire_numbers: calls.append(
+            (stream_inputs.measurement_mode, wire_numbers)
+        ),
+    )
+
+    ctx = types.SimpleNamespace(
+        stop_event=threading.Event(),
+        measurement_lock=threading.Lock(),
+        measurement_active=False,
+        active_measurement_name="",
+    )
+
+    actions.measure_calibrate(ctx)
+
+    assert _wait_for(lambda: len(calls) == 1)
+    assert calls == [("stream_rescue", [7])]
 
 
 def test_erase_distribution_outliers_uses_bulk_detector(monkeypatch):
@@ -306,7 +387,7 @@ def test_adjust_focus_with_x_compensation_side_a(monkeypatch):
     actions.adjust_focus_with_x_compensation(ctx, 4400)
 
     assert focus_targets == [4400]
-    assert moves == [(1002.0, 2000.0)]
+    assert moves == [(998.8, 2000.0)]
 
 
 def test_adjust_focus_with_x_compensation_side_b(monkeypatch):
@@ -331,4 +412,4 @@ def test_adjust_focus_with_x_compensation_side_b(monkeypatch):
     actions.adjust_focus_with_x_compensation(ctx, 4200)
 
     assert focus_targets == [4200]
-    assert moves == [(999.0, 2000.0)]
+    assert moves == [(1000.6, 2000.0)]

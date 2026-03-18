@@ -6,6 +6,14 @@ Wire-tension measurement tooling for DUNE APA work, including:
 - PLC/servo/valve control integration
 - Logging, summaries, plots, and M2M upload utilities
 
+## Repository Layout
+- `src/dune_tension/`: installable GUI/runtime package
+- `src/dune_tension/ukapa7_comparison/`: UKAPA7-specific comparison and report-generation helpers
+- `src/dune_tension/hardware/`: hardware-facing helpers such as the valve trigger
+- `src/spectrum_analysis/`: installable spectrum/pitch analysis package
+- `tools/`: ad hoc developer utilities not shipped as packages
+- `experiments/`: exploratory scripts and datasets kept out of the install path
+
 ## Requirements
 - Python `>=3.12`
 - macOS/Linux with audio input support

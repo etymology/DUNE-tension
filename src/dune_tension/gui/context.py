@@ -3,36 +3,13 @@
 from __future__ import annotations
 
 import logging
-import os
 from dataclasses import dataclass, field
 import threading
 from threading import Event, Thread
 from typing import Any, Callable
 import tkinter as tk
 
-from dune_tension.maestro import Controller, DummyController, ServoController
-from valve_trigger import DeviceNotFoundError, ValveController
-
-try:  # pragma: no cover - optional dependency
-    from dune_tension.plc_io import (  # type: ignore
-        get_xy as plc_get_xy,
-        goto_xy as plc_goto_xy,
-        spoof_get_xy,
-        spoof_goto_xy,
-    )
-except Exception:  # pragma: no cover - graceful fallback when PLC IO is absent
-
-    def plc_get_xy() -> tuple[float, float]:
-        return (0.0, 0.0)
-
-    def plc_goto_xy(x: float, y: float) -> bool:
-        return True
-
-    def spoof_get_xy() -> tuple[float, float]:
-        return (0.0, 0.0)
-
-    def spoof_goto_xy(x: float, y: float) -> bool:
-        return True
+from dune_tension.services import RuntimeBundle
 
 
 @dataclass(slots=True)
@@ -40,6 +17,7 @@ class GUIWidgets:
     """Collection of Tkinter widgets used by the GUI."""
 
     entry_apa: tk.Entry
+    measurement_mode_var: tk.StringVar
     layer_var: tk.StringVar
     side_var: tk.StringVar
     flipped_var: tk.BooleanVar
@@ -61,6 +39,11 @@ class GUIWidgets:
     entry_set_tension: tk.Entry
     focus_slider: tk.Scale
     entry_xy: tk.Entry
+    stream_segment_var: tk.StringVar
+    stream_comb_var: tk.StringVar
+    stream_focus_var: tk.StringVar
+    stream_pitch_backlog_var: tk.StringVar
+    stream_rescue_queue_var: tk.StringVar
 
 
 @dataclass
@@ -70,9 +53,10 @@ class GUIContext:
     root: tk.Misc
     widgets: GUIWidgets
     state_file: str
+    runtime: RuntimeBundle
     stop_event: Event
-    servo_controller: ServoController
-    valve_controller: ValveController | None
+    servo_controller: Any
+    valve_controller: Any | None
     get_xy: Callable[[], tuple[float, float]]
     goto_xy: Callable[[float, float], bool]
     focus_command_var: tk.StringVar
@@ -93,71 +77,18 @@ class GUIContext:
 LOGGER = logging.getLogger(__name__)
 
 
-def _create_servo_controller() -> ServoController:
-    """Return a :class:`ServoController` respecting spoof settings."""
-
-    if os.environ.get("SPOOF_SERVO"):
-        return ServoController(servo=DummyController())
-    return ServoController(Controller())
-
-
-def _create_valve_controller() -> ValveController | None:
-    """Attempt to create a :class:`ValveController`, logging failures."""
-
-    if os.environ.get("SPOOF_VALVE"):
-        return None
-
-    try:
-        return ValveController()
-    except (DeviceNotFoundError, RuntimeError) as exc:
-        LOGGER.warning("Unable to initialise valve controller: %s", exc)
-        return None
-
-
-def _make_strum_callback(controller: ValveController | None) -> Callable[[], None]:
-    """Return a callable that emits a single valve pulse when invoked."""
-
-    if controller is None:
-
-        def _noop() -> None:
-            return
-
-        return _noop
-
-    def _strum() -> None:
-        try:
-            controller.pulse(0.002)
-        except Exception as exc:
-            LOGGER.warning("Valve pulse failed: %s", exc)
-
-    return _strum
-
-
-def _resolve_plc_functions() -> tuple[
-    Callable[[], tuple[float, float]], Callable[[float, float], bool]
-]:
-    """Return PLC helpers honoring the ``SPOOF_PLC`` flag."""
-
-    if os.environ.get("SPOOF_PLC"):
-        return spoof_get_xy, spoof_goto_xy
-    return plc_get_xy, plc_goto_xy
-
-
 def create_context(
     root: tk.Misc,
     widgets: GUIWidgets,
     state_file: str,
     *,
+    runtime_bundle: RuntimeBundle,
     focus_command_var: tk.StringVar | None = None,
     estimated_time_var: tk.StringVar | None = None,
 ) -> GUIContext:
     """Create and return a :class:`GUIContext` for the GUI."""
 
     stop_event = Event()
-    servo_controller = _create_servo_controller()
-    valve_controller = _create_valve_controller()
-    strum = _make_strum_callback(valve_controller)
-    get_xy, goto_xy = _resolve_plc_functions()
     if focus_command_var is None:
         focus_command_var = tk.StringVar(master=root, value="4000")
     if estimated_time_var is None:
@@ -167,12 +98,13 @@ def create_context(
         root=root,
         widgets=widgets,
         state_file=state_file,
+        runtime=runtime_bundle,
         stop_event=stop_event,
-        servo_controller=servo_controller,
-        valve_controller=valve_controller,
-        get_xy=get_xy,
-        goto_xy=goto_xy,
+        servo_controller=runtime_bundle.servo_controller,
+        valve_controller=runtime_bundle.valve_controller,
+        get_xy=runtime_bundle.motion.get_xy,
+        goto_xy=runtime_bundle.motion.goto_xy,
         focus_command_var=focus_command_var,
         estimated_time_var=estimated_time_var,
-        strum=strum,
+        strum=runtime_bundle.strum,
     )

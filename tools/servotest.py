@@ -1,8 +1,11 @@
-# servotest_gui.py
-
 import tkinter as tk
-from threading import Thread, Event
 import time
+from pathlib import Path
+import sys
+from threading import Event, Thread
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+
 from dune_tension.maestro import Controller
 
 

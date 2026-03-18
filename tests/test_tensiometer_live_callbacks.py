@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 import types
 import time
 
@@ -129,7 +130,7 @@ def test_goto_collect_wire_data_invokes_summary_refresh_callback(monkeypatch) ->
     )
     _patch_result_physics(monkeypatch)
 
-    result = TensionResult(
+    result = TensionResult.from_measurement(
         apa_name="APA",
         layer="X",
         side="A",
@@ -138,6 +139,7 @@ def test_goto_collect_wire_data_invokes_summary_refresh_callback(monkeypatch) ->
         confidence=0.95,
         x=1.0,
         y=2.0,
+        time=datetime(2026, 3, 15, 12, 0, 0),
     )
 
     tensiometer = Tensiometer(
