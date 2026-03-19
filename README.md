@@ -18,7 +18,7 @@ Wire-tension measurement tooling for DUNE APA work, including:
 - Python `>=3.12`
 - macOS/Linux with audio input support
 - Optional hardware:
-  - PLC reachable by `src/dune_tension/tension_server.py`
+  - PLC reachable either directly via `pycomm3` or through `src/dune_tension/tension_server.py`
   - Pololu Micro Maestro servo controller
   - Supported valve trigger device
 
@@ -49,12 +49,21 @@ After install, the following console commands are available:
 
 ## Quick Start
 
-### 1. Start the PLC tension server (machine connected to PLC)
+### 1. Choose a PLC transport mode
+For the existing networked setup, start the PLC tension server on the machine connected to the PLC:
 ```bash
 python3 -m dune_tension.tension_server
 ```
 
-Edit `PLC_IP_ADDRESS`/`SERVER_PORT` in [src/dune_tension/tension_server.py](src/dune_tension/tension_server.py) as needed.
+Configure it with environment variables as needed:
+```bash
+PLC_IP_ADDRESS=192.168.140.13 SERVER_PORT=5000 python3 -m dune_tension.tension_server
+```
+
+For a machine with direct PLC access, skip the HTTP server and launch the GUI with direct mode enabled:
+```bash
+PLC_IO_MODE=direct PLC_IP_ADDRESS=192.168.140.13 dune-tension-gui
+```
 
 ### 2. Launch the GUI
 ```bash
@@ -69,9 +78,19 @@ dune-tension-periodic-plots USAPA5 X --interval 900
 ```
 
 ## Hardware and Network Notes
-- Ensure the PLC server host is reachable from the GUI machine.
+- In `PLC_IO_MODE=server`, ensure the PLC server host is reachable from the GUI machine.
+- In `PLC_IO_MODE=direct`, ensure the GUI machine can reach the PLC at `PLC_IP_ADDRESS`.
 - Configure audio input device (historically "USB PnP" style device names).
 - Servo controller reference: <https://www.pololu.com/product/1350/resources>
+
+## PLC Environment Variables
+Set these before launching the GUI or server as needed:
+
+- `PLC_IO_MODE=server|direct` : choose HTTP server mode or direct `pycomm3` PLC access
+- `TENSION_SERVER_URL=http://host:5000` : URL for HTTP PLC server mode
+- `PLC_IP_ADDRESS=192.168.140.13` : PLC address for direct mode or the server process
+- `PLC_COMM_RETRIES=2` : retry count for direct `pycomm3` communication
+- `SERVER_PORT=5000` : Flask tension server port
 
 ## Spoof / Dry-Run Modes
 Set environment variables before launching the GUI:
@@ -131,5 +150,6 @@ pytest
 
 ## Troubleshooting
 - If audio/GUI imports fail, verify system audio libs and `sounddevice` install.
-- If PLC movement fails, confirm `TENSION_SERVER_URL` in [src/dune_tension/plc_io.py](src/dune_tension/plc_io.py).
+- If PLC movement fails in server mode, confirm `TENSION_SERVER_URL` and that the tension server is running.
+- If PLC movement fails in direct mode, confirm `PLC_IO_MODE=direct`, `PLC_IP_ADDRESS`, and that `pycomm3` is installed.
 - If `uv` is not found after install, add `~/.local/bin` to your shell `PATH`.
