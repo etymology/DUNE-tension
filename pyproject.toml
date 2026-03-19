@@ -5,11 +5,13 @@ description = "Measure wire tension through GUI."
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "flask>=3.1.0",
     "numpy>=1.26.4",
     "matplotlib>=3.10.3",
     "nnaudio>=0.3.3",
     "pandas>=2.3.0",
     "pesto-pitch>=2.0.1",
+    "pycomm3>=1.2.14",
     "pyserial>=3.5",
     "requests>=2.32.3",
     "scipy>=1.15.3",
