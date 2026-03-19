@@ -46,7 +46,9 @@ class MotionService:
     def build(cls, spoof_movement: bool) -> "MotionService":
         plc = _import_plc_module()
 
-        is_web_server_active = getattr(plc, "is_web_server_active", lambda: False)
+        is_plc_available = getattr(plc, "is_plc_available", None)
+        if is_plc_available is None:
+            is_plc_available = getattr(plc, "is_web_server_active", lambda: False)
         increment = getattr(plc, "increment", lambda *_args, **_kwargs: None)
         set_speed = getattr(plc, "set_speed", lambda *_args, **_kwargs: True)
         reset_plc = getattr(plc, "reset_plc", lambda *_args, **_kwargs: None)
@@ -59,13 +61,13 @@ class MotionService:
         spoof_goto_xy = getattr(plc, "spoof_goto_xy", lambda *_args, **_kwargs: True)
 
         try:
-            web_ok = bool(is_web_server_active())
+            plc_ok = bool(is_plc_available())
         except Exception:
-            web_ok = False
+            plc_ok = False
 
         if (
             not spoof_movement
-            and web_ok
+            and plc_ok
             and get_cached_xy is not None
             and goto_xy is not None
         ):
@@ -73,7 +75,7 @@ class MotionService:
             active_goto_xy = goto_xy
         else:
             LOGGER.warning(
-                "Web server is not active or spoof_movement enabled. Using dummy functions."
+                "PLC is not available or spoof_movement enabled. Using dummy functions."
             )
             active_get_xy = spoof_get_xy
             active_goto_xy = spoof_goto_xy

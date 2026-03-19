@@ -1,4 +1,5 @@
 import logging
+import os
 import threading
 import time
 from random import gauss
@@ -7,6 +8,14 @@ from typing import Any
 import requests
 
 from dune_tension.geometry import X_MAX, X_MIN, Y_MAX, Y_MIN, comb_positions
+from dune_tension.plc_direct import (
+    PLCCommunicationError,
+    PLCTagReadError,
+    PLCTagWriteError,
+    is_direct_plc_available,
+    read_tag_value,
+    write_tag_value,
+)
 
 LOGGER = logging.getLogger(__name__)
 
@@ -35,7 +44,11 @@ _TRUE_XY = [None, None]
 _LAST_X_DIR = 0
 _X_DEADZONE_LEFT = 0.0
 
-TENSION_SERVER_URL = "http://192.168.137.1:5000"
+DEFAULT_TENSION_SERVER_URL = "http://192.168.137.1:5000"
+TENSION_SERVER_URL = DEFAULT_TENSION_SERVER_URL
+DEFAULT_PLC_IO_MODE = "server"
+VALID_PLC_IO_MODES = {"server", "direct"}
+_WARNED_PLC_IO_MODE_VALUES: set[str | None] = set()
 IDLE_MOVE_TYPE = 0
 IDLE_STATE = 1
 XY_MOVE_TYPE = 2
@@ -49,6 +62,40 @@ READ_RETRY_INTERVAL = 0.05
 STATE_POLL_INTERVAL = 0.05
 IDLE_WAIT_TIMEOUT = 20.0
 MOVE_WAIT_TIMEOUT = 120.0
+
+
+def get_tension_server_url() -> str:
+    """Return the configured tension server URL."""
+    return os.getenv("TENSION_SERVER_URL", DEFAULT_TENSION_SERVER_URL).strip()
+
+
+def _warn_plc_mode_once(raw_mode: str | None, message: str) -> None:
+    """Log a PLC mode warning only once per raw env value."""
+    if raw_mode in _WARNED_PLC_IO_MODE_VALUES:
+        return
+    _WARNED_PLC_IO_MODE_VALUES.add(raw_mode)
+    LOGGER.warning(message)
+
+
+def get_plc_io_mode() -> str:
+    """Return the configured PLC transport mode."""
+    raw_mode = os.getenv("PLC_IO_MODE")
+    if raw_mode is None:
+        _warn_plc_mode_once(
+            None,
+            "PLC_IO_MODE is not set. Falling back to 'server' mode.",
+        )
+        return DEFAULT_PLC_IO_MODE
+
+    mode = raw_mode.strip().lower()
+    if mode not in VALID_PLC_IO_MODES:
+        _warn_plc_mode_once(
+            raw_mode,
+            f"Invalid PLC_IO_MODE={raw_mode!r}. Falling back to 'server' mode.",
+        )
+        return DEFAULT_PLC_IO_MODE
+
+    return mode
 
 
 def _get_http_session() -> Any:
@@ -145,6 +192,65 @@ def is_motion_target_in_bounds(x_target: float, y_target: float) -> bool:
     return X_MIN <= float(x_target) <= X_MAX and Y_MIN <= float(y_target) <= Y_MAX
 
 
+def _read_tag_server(tag_name: str) -> Any:
+    """Read a PLC tag through the HTTP tension server."""
+    url = f"{get_tension_server_url()}/tags/{tag_name}"
+
+    try:
+        response = _request_with_retries("GET", url)
+        if response.status_code == 200:
+            try:
+                return _parse_read_value(tag_name, response.json())
+            except (KeyError, TypeError, ValueError, IndexError) as exc:
+                return {"error": f"Malformed response: {exc}"}
+        return {
+            "error": "Failed to read tag",
+            "status_code": response.status_code,
+        }
+    except Exception as exc:
+        return {"error": str(exc)}
+
+
+def _read_tag_direct(tag_name: str) -> Any:
+    """Read a PLC tag directly through pycomm3."""
+    try:
+        return read_tag_value(tag_name)
+    except (PLCCommunicationError, PLCTagReadError) as exc:
+        return {"error": str(exc)}
+    except Exception as exc:
+        return {"error": str(exc)}
+
+
+def _write_tag_server(tag_name: str, value: Any) -> dict[str, Any]:
+    """Write a PLC tag through the HTTP tension server."""
+    url = f"{get_tension_server_url()}/tags/{tag_name}"
+    payload = {"value": value}
+
+    try:
+        response = _request_with_retries("POST", url, json_payload=payload)
+    except Exception as exc:
+        return {"error": str(exc)}
+
+    if response.status_code != 200:
+        return {"error": "Failed to write tag", "status_code": response.status_code}
+
+    try:
+        return response.json()
+    except ValueError:
+        return {tag_name: value, "value": value}
+
+
+def _write_tag_direct(tag_name: str, value: Any) -> dict[str, Any]:
+    """Write a PLC tag directly through pycomm3."""
+    try:
+        write_tag_value(tag_name, value)
+    except (PLCCommunicationError, PLCTagWriteError) as exc:
+        return {"error": str(exc)}
+    except Exception as exc:
+        return {"error": str(exc)}
+    return {"tag": tag_name, "value": value, tag_name: value}
+
+
 def read_tag(
     tag_name: str,
     *,
@@ -152,25 +258,18 @@ def read_tag(
     retry_interval: float = READ_RETRY_INTERVAL,
 ) -> Any:
     """Read a PLC tag with retries until timeout expires."""
-    url = f"{TENSION_SERVER_URL}/tags/{tag_name}"
     end_time = time.monotonic() + timeout
     last_error: dict[str, Any] | None = None
+    transport = get_plc_io_mode()
 
     while time.monotonic() < end_time:
-        try:
-            response = _request_with_retries("GET", url)
-            if response.status_code == 200:
-                try:
-                    return _parse_read_value(tag_name, response.json())
-                except (KeyError, TypeError, ValueError, IndexError) as exc:
-                    last_error = {"error": f"Malformed response: {exc}"}
-            else:
-                last_error = {
-                    "error": "Failed to read tag",
-                    "status_code": response.status_code,
-                }
-        except Exception as exc:
-            last_error = {"error": str(exc)}
+        if transport == "direct":
+            last_error = _read_tag_direct(tag_name)
+        else:
+            last_error = _read_tag_server(tag_name)
+
+        if not (isinstance(last_error, dict) and "error" in last_error):
+            return last_error
 
         time.sleep(retry_interval)
 
@@ -217,21 +316,9 @@ def get_movetype() -> int:
 
 def write_tag(tag_name: str, value: Any) -> dict[str, Any]:
     """Write a value to a PLC tag via the tension server."""
-    url = f"{TENSION_SERVER_URL}/tags/{tag_name}"
-    payload = {"value": value}
-
-    try:
-        response = _request_with_retries("POST", url, json_payload=payload)
-    except Exception as exc:
-        return {"error": str(exc)}
-
-    if response.status_code != 200:
-        return {"error": "Failed to write tag", "status_code": response.status_code}
-
-    try:
-        return response.json()
-    except ValueError:
-        return {tag_name: value, "value": value}
+    if get_plc_io_mode() == "direct":
+        return _write_tag_direct(tag_name, value)
+    return _write_tag_server(tag_name, value)
 
 
 def goto_xy(
@@ -430,14 +517,14 @@ def set_speed(speed: float = 300) -> bool:
 
 
 def is_web_server_active() -> bool:
-    """Check whether the tension server is active."""
+    """Check whether the HTTP tension server is active."""
     last_error: Exception | None = None
 
     for endpoint in ("/health", "/"):
         try:
             response = _request_with_retries(
                 "GET",
-                f"{TENSION_SERVER_URL}{endpoint}",
+                f"{get_tension_server_url()}{endpoint}",
                 timeout=(HTTP_CONNECT_TIMEOUT, 0.75),
                 retries=0,
             )
@@ -448,6 +535,13 @@ def is_web_server_active() -> bool:
 
     LOGGER.warning("An error occurred while checking the server: %s", last_error)
     return False
+
+
+def is_plc_available() -> bool:
+    """Check whether the configured PLC transport is available."""
+    if get_plc_io_mode() == "direct":
+        return is_direct_plc_available()
+    return is_web_server_active()
 
 
 # ---------------------------------------------------------------------------
