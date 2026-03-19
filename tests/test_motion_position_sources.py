@@ -27,6 +27,66 @@ def test_motion_service_prefers_backlash_aware_cached_xy(monkeypatch):
     assert motion.get_xy() == (30.0, 40.0)
 
 
+def test_motion_service_uses_generic_plc_availability_when_present(monkeypatch):
+    plc = types.SimpleNamespace(
+        is_plc_available=lambda: True,
+        is_web_server_active=lambda: False,
+        get_xy=lambda: (10.0, 20.0),
+        get_cached_xy=lambda: (30.0, 40.0),
+        goto_xy=lambda *_args, **_kwargs: True,
+        increment=lambda *_args, **_kwargs: None,
+        reset_plc=lambda *_args, **_kwargs: None,
+        set_speed=lambda *_args, **_kwargs: True,
+        spoof_get_xy=lambda: (-1.0, -1.0),
+        spoof_goto_xy=lambda *_args, **_kwargs: False,
+    )
+    monkeypatch.setattr(services_module, "_import_plc_module", lambda: plc)
+
+    motion = MotionService.build(spoof_movement=False)
+
+    assert motion.get_xy() == (30.0, 40.0)
+
+
+def test_motion_service_falls_back_to_spoof_when_plc_unavailable(monkeypatch):
+    plc = types.SimpleNamespace(
+        is_plc_available=lambda: False,
+        get_xy=lambda: (10.0, 20.0),
+        get_cached_xy=lambda: (30.0, 40.0),
+        goto_xy=lambda *_args, **_kwargs: True,
+        increment=lambda *_args, **_kwargs: None,
+        reset_plc=lambda *_args, **_kwargs: None,
+        set_speed=lambda *_args, **_kwargs: True,
+        spoof_get_xy=lambda: (-1.0, -2.0),
+        spoof_goto_xy=lambda *_args, **_kwargs: "spoofed",
+    )
+    monkeypatch.setattr(services_module, "_import_plc_module", lambda: plc)
+
+    motion = MotionService.build(spoof_movement=False)
+
+    assert motion.get_xy() == (-1.0, -2.0)
+    assert motion.goto_xy(1.0, 2.0) == "spoofed"
+
+
+def test_motion_service_spoof_flag_overrides_live_plc(monkeypatch):
+    plc = types.SimpleNamespace(
+        is_plc_available=lambda: True,
+        get_xy=lambda: (10.0, 20.0),
+        get_cached_xy=lambda: (30.0, 40.0),
+        goto_xy=lambda *_args, **_kwargs: True,
+        increment=lambda *_args, **_kwargs: None,
+        reset_plc=lambda *_args, **_kwargs: None,
+        set_speed=lambda *_args, **_kwargs: True,
+        spoof_get_xy=lambda: (-3.0, -4.0),
+        spoof_goto_xy=lambda *_args, **_kwargs: "spoofed",
+    )
+    monkeypatch.setattr(services_module, "_import_plc_module", lambda: plc)
+
+    motion = MotionService.build(spoof_movement=True)
+
+    assert motion.get_xy() == (-3.0, -4.0)
+    assert motion.goto_xy(1.0, 2.0) == "spoofed"
+
+
 def test_gui_context_uses_runtime_bundle_motion(monkeypatch):
     module_path = (
         Path(__file__).resolve().parents[1]
