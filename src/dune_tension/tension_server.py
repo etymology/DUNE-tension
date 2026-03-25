@@ -37,10 +37,15 @@ def read_tag(tag_name: str) -> tuple[Any, int]:
     """Read and return a PLC tag using a stable JSON response shape."""
     try:
         value = read_tag_value(tag_name)
-    except PLCCommunicationError:
+    except PLCCommunicationError as exc:
+        app.logger.warning("PLC communication error reading %s: %s", tag_name, exc)
         return jsonify({"error": "PLC communication error"}), 502
     except PLCTagReadError as exc:
+        app.logger.warning("PLC tag read failed for %s: %s", tag_name, exc)
         return jsonify({"error": str(exc)}), 404
+    except Exception as exc:
+        app.logger.exception("Unexpected PLC read failure for %s", tag_name)
+        return jsonify({"error": str(exc)}), 500
 
     return jsonify({"tag": tag_name, "value": value, tag_name: value}), 200
 
@@ -58,10 +63,15 @@ def write_tag(tag_name: str) -> tuple[Any, int]:
 
     try:
         write_tag_value(tag_name, value)
-    except PLCCommunicationError:
+    except PLCCommunicationError as exc:
+        app.logger.warning("PLC communication error writing %s=%r: %s", tag_name, value, exc)
         return jsonify({"error": "PLC communication error"}), 502
     except PLCTagWriteError as exc:
+        app.logger.warning("PLC tag write failed for %s=%r: %s", tag_name, value, exc)
         return jsonify({"error": str(exc)}), 400
+    except Exception as exc:
+        app.logger.exception("Unexpected PLC write failure for %s=%r", tag_name, value)
+        return jsonify({"error": str(exc)}), 500
 
     return jsonify({"tag": tag_name, "value": value, tag_name: value}), 200
 

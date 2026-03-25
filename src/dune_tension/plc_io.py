@@ -166,6 +166,28 @@ def _parse_read_value(tag_name: str, payload: Any) -> Any:
     return value
 
 
+def _build_http_error(response: Any, default_message: str) -> dict[str, Any]:
+    """Return a consistent error payload from an HTTP response."""
+    message = default_message
+
+    try:
+        payload = response.json()
+    except ValueError:
+        payload = None
+
+    if isinstance(payload, dict) and payload.get("error"):
+        message = str(payload["error"])
+    else:
+        body = getattr(response, "text", "")
+        if isinstance(body, str) and body.strip():
+            message = body.strip()
+
+    return {
+        "error": message,
+        "status_code": getattr(response, "status_code", None),
+    }
+
+
 def _read_numeric_tag(tag_name: str) -> float:
     """Read and coerce a numeric PLC tag, raising on communication/protocol errors."""
     value = read_tag(tag_name)
@@ -181,7 +203,16 @@ def _write_required(tag_name: str, value: Any) -> bool:
     """Write a tag and return False when the operation fails."""
     response = write_tag(tag_name, value)
     if isinstance(response, dict) and "error" in response:
-        LOGGER.warning("Failed to write %s: %s", tag_name, response["error"])
+        status_code = response.get("status_code")
+        if status_code is None:
+            LOGGER.warning("Failed to write %s: %s", tag_name, response["error"])
+        else:
+            LOGGER.warning(
+                "Failed to write %s: %s (HTTP %s)",
+                tag_name,
+                response["error"],
+                status_code,
+            )
         return False
     return True
 
@@ -203,10 +234,7 @@ def _read_tag_server(tag_name: str) -> Any:
                 return _parse_read_value(tag_name, response.json())
             except (KeyError, TypeError, ValueError, IndexError) as exc:
                 return {"error": f"Malformed response: {exc}"}
-        return {
-            "error": "Failed to read tag",
-            "status_code": response.status_code,
-        }
+        return _build_http_error(response, "Failed to read tag")
     except Exception as exc:
         return {"error": str(exc)}
 
@@ -232,7 +260,7 @@ def _write_tag_server(tag_name: str, value: Any) -> dict[str, Any]:
         return {"error": str(exc)}
 
     if response.status_code != 200:
-        return {"error": "Failed to write tag", "status_code": response.status_code}
+        return _build_http_error(response, "Failed to write tag")
 
     try:
         return response.json()
