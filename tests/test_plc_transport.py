@@ -95,3 +95,45 @@ def test_is_plc_available_uses_server_probe_in_server_mode(monkeypatch):
     )
 
     assert plc.is_plc_available() is True
+
+
+class _FakeHttpResponse:
+    def __init__(self, status_code, payload=None, text=""):
+        self.status_code = status_code
+        self._payload = payload
+        self.text = text
+
+    def json(self):
+        if isinstance(self._payload, Exception):
+            raise self._payload
+        return self._payload
+
+
+def test_write_tag_server_preserves_error_message(monkeypatch):
+    monkeypatch.setattr(
+        plc,
+        "_request_with_retries",
+        lambda *_args, **_kwargs: _FakeHttpResponse(
+            400, {"error": "Tag STATE is read-only"}
+        ),
+    )
+
+    assert plc._write_tag_server("STATE", 1) == {
+        "error": "Tag STATE is read-only",
+        "status_code": 400,
+    }
+
+
+def test_read_tag_server_preserves_error_message(monkeypatch):
+    monkeypatch.setattr(
+        plc,
+        "_request_with_retries",
+        lambda *_args, **_kwargs: _FakeHttpResponse(
+            502, {"error": "PLC communication error"}
+        ),
+    )
+
+    assert plc._read_tag_server("STATE") == {
+        "error": "PLC communication error",
+        "status_code": 502,
+    }

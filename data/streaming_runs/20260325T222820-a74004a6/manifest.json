@@ -1,0 +1,22 @@
+{
+  "anchors": [],
+  "apa_name": "USAPA12",
+  "code_version": null,
+  "flipped": false,
+  "focus_plane_coefficients": {
+    "a": 0.0,
+    "b": 0.0,
+    "c": 0.0
+  },
+  "layer": "X",
+  "measurement_mode": "stream_sweep",
+  "runtime_config": {
+    "frame_size": 2048,
+    "hop_size": 1024,
+    "pulse_interval_s": 0.75,
+    "sample_rate": 48000
+  },
+  "session_id": "20260325T222820-a74004a6",
+  "side": "A",
+  "sweep_corridors": []
+}
